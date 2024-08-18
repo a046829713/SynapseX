@@ -1,4 +1,4 @@
 # SynapseX
 
 
-![LOGO](images/example.png)
+![LOGO](images/Logo.jpg)
