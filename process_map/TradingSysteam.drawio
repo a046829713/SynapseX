@@ -1,0 +1,30 @@
+<mxfile host="app.diagrams.net" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36" version="24.7.6">
+  <diagram name="第 1 页" id="SDOEiuFJKP3wH-4CS8k9">
+    <mxGraphModel dx="819" dy="422" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="4nxn5QBFErgZFxEq-GJf-3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" target="4nxn5QBFErgZFxEq-GJf-2">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="330" y="320" as="sourcePoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="4nxn5QBFErgZFxEq-GJf-5" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="4nxn5QBFErgZFxEq-GJf-2" target="4nxn5QBFErgZFxEq-GJf-4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="4nxn5QBFErgZFxEq-GJf-2" value="&lt;font style=&quot;font-size: 24px;&quot;&gt;BasePreparator&lt;/font&gt;" style="whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="210" y="380" width="240" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="4nxn5QBFErgZFxEq-GJf-4" value="&lt;font style=&quot;font-size: 24px;&quot;&gt;DataProvider&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="210" y="510" width="240" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="4nxn5QBFErgZFxEq-GJf-6" value="&lt;span style=&quot;font-size: 24px;&quot;&gt;Trading_system&lt;/span&gt;" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="210" y="260" width="240" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="4nxn5QBFErgZFxEq-GJf-7" value="&lt;font style=&quot;font-size: 24px;&quot;&gt;AsyncTrading_system&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="540" y="260" width="270" height="60" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

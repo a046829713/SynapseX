@@ -1,0 +1,19 @@
+<mxfile host="app.diagrams.net" modified="2024-01-29T05:25:25.999Z" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36" etag="tWg4mmzMUZik-cs6Yy2U" version="23.0.1" type="device">
+  <diagram name="第 1 页" id="LRuqO_7vqK1I6e3Aqp5h">
+    <mxGraphModel dx="2261" dy="772" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="F68tjXUOxmJzYtq3zZYK-1" value="&lt;font style=&quot;font-size: 18px;&quot;&gt;PortfolioOptimizationEnv&lt;/font&gt;" style="swimlane;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="-250" y="50" width="1350" height="390" as="geometry" />
+        </mxCell>
+        <mxCell id="F68tjXUOxmJzYtq3zZYK-2" value="&lt;font style=&quot;font-size: 18px;&quot;&gt;temporal variation(跟據parer裡面，這個是用來產生收盤價之差異，並且用來計算投資組合回報的)&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;align=center;" vertex="1" parent="F68tjXUOxmJzYtq3zZYK-1">
+          <mxGeometry x="40" y="40" width="480" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="F68tjXUOxmJzYtq3zZYK-3" value="&lt;font style=&quot;font-size: 18px;&quot;&gt;原始資料不變(我認為在餵往神經網絡時改變即可)&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="F68tjXUOxmJzYtq3zZYK-1">
+          <mxGeometry x="544" y="40" width="416" height="130" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

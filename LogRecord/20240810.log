@@ -1,0 +1,149 @@
+2024-08-10 11:23 ERROR Traceback (most recent call last):
+  File "c:\Users\user\Desktop\program\Reinforcement_learninng\finrl_achieve\project\Major\DataProvider.py", line 105, in reload_all_data
+    original_df, eachCatchDf = self.reload_data(
+  File "c:\Users\user\Desktop\program\Reinforcement_learninng\finrl_achieve\project\Major\DataProvider.py", line 62, in reload_data
+    original_df, eachCatchDf = self.Binanceapp.BinanceDate.download(
+  File "c:\Users\user\Desktop\program\Reinforcement_learninng\finrl_achieve\project\Major\custom.py", line 42, in wrapper
+    result = func(self, client, *args, **kwargs)
+  File "c:\Users\user\Desktop\program\Reinforcement_learninng\finrl_achieve\project\Major\custom.py", line 240, in download
+    klines = cls.historicalklines(symbol, kline_size, oldest_point.strftime("%d %b %Y %H:%M:%S"),
+  File "c:\Users\user\Desktop\program\Reinforcement_learninng\finrl_achieve\project\Major\custom.py", line 103, in historicalklines
+    first_valid_ts = client._get_earliest_valid_timestamp(
+  File "C:\Users\user\Desktop\program\Reinforcement_learninng\lib\site-packages\binance\client.py", line 955, in _get_earliest_valid_timestamp
+    kline = self._klines(
+  File "C:\Users\user\Desktop\program\Reinforcement_learninng\lib\site-packages\binance\client.py", line 934, in _klines
+    return self.get_klines(**params)
+  File "C:\Users\user\Desktop\program\Reinforcement_learninng\lib\site-packages\binance\client.py", line 919, in get_klines
+    return self._get('klines', data=params, version=self.PRIVATE_API_VERSION)
+  File "C:\Users\user\Desktop\program\Reinforcement_learninng\lib\site-packages\binance\client.py", line 415, in _get
+    return self._request_api('get', path, signed, version, **kwargs)
+  File "C:\Users\user\Desktop\program\Reinforcement_learninng\lib\site-packages\binance\client.py", line 378, in _request_api
+    return self._request(method, uri, signed, **kwargs)
+  File "C:\Users\user\Desktop\program\Reinforcement_learninng\lib\site-packages\binance\client.py", line 359, in _request
+    return self._handle_response(self.response)
+  File "C:\Users\user\Desktop\program\Reinforcement_learninng\lib\site-packages\binance\client.py", line 368, in _handle_response
+    raise BinanceAPIException(response, response.status_code, response.text)
+binance.exceptions.BinanceAPIException: APIError(code=-1121): Invalid symbol.
+
+2024-08-10 11:23 ERROR symbol = DEFIUSDT
+2024-08-10 11:24 ERROR Traceback (most recent call last):
+  File "c:\Users\user\Desktop\program\Reinforcement_learninng\finrl_achieve\project\Major\DataProvider.py", line 105, in reload_all_data
+    original_df, eachCatchDf = self.reload_data(
+  File "c:\Users\user\Desktop\program\Reinforcement_learninng\finrl_achieve\project\Major\DataProvider.py", line 62, in reload_data
+    original_df, eachCatchDf = self.Binanceapp.BinanceDate.download(
+  File "c:\Users\user\Desktop\program\Reinforcement_learninng\finrl_achieve\project\Major\custom.py", line 42, in wrapper
+    result = func(self, client, *args, **kwargs)
+  File "c:\Users\user\Desktop\program\Reinforcement_learninng\finrl_achieve\project\Major\custom.py", line 240, in download
+    klines = cls.historicalklines(symbol, kline_size, oldest_point.strftime("%d %b %Y %H:%M:%S"),
+  File "c:\Users\user\Desktop\program\Reinforcement_learninng\finrl_achieve\project\Major\custom.py", line 103, in historicalklines
+    first_valid_ts = client._get_earliest_valid_timestamp(
+  File "C:\Users\user\Desktop\program\Reinforcement_learninng\lib\site-packages\binance\client.py", line 955, in _get_earliest_valid_timestamp
+    kline = self._klines(
+  File "C:\Users\user\Desktop\program\Reinforcement_learninng\lib\site-packages\binance\client.py", line 934, in _klines
+    return self.get_klines(**params)
+  File "C:\Users\user\Desktop\program\Reinforcement_learninng\lib\site-packages\binance\client.py", line 919, in get_klines
+    return self._get('klines', data=params, version=self.PRIVATE_API_VERSION)
+  File "C:\Users\user\Desktop\program\Reinforcement_learninng\lib\site-packages\binance\client.py", line 415, in _get
+    return self._request_api('get', path, signed, version, **kwargs)
+  File "C:\Users\user\Desktop\program\Reinforcement_learninng\lib\site-packages\binance\client.py", line 378, in _request_api
+    return self._request(method, uri, signed, **kwargs)
+  File "C:\Users\user\Desktop\program\Reinforcement_learninng\lib\site-packages\binance\client.py", line 359, in _request
+    return self._handle_response(self.response)
+  File "C:\Users\user\Desktop\program\Reinforcement_learninng\lib\site-packages\binance\client.py", line 368, in _handle_response
+    raise BinanceAPIException(response, response.status_code, response.text)
+binance.exceptions.BinanceAPIException: APIError(code=-1121): Invalid symbol.
+
+2024-08-10 11:24 ERROR symbol = BTCDOMUSDT
+2024-08-10 11:24 ERROR Traceback (most recent call last):
+  File "c:\Users\user\Desktop\program\Reinforcement_learninng\finrl_achieve\project\Major\DataProvider.py", line 105, in reload_all_data
+    original_df, eachCatchDf = self.reload_data(
+  File "c:\Users\user\Desktop\program\Reinforcement_learninng\finrl_achieve\project\Major\DataProvider.py", line 62, in reload_data
+    original_df, eachCatchDf = self.Binanceapp.BinanceDate.download(
+  File "c:\Users\user\Desktop\program\Reinforcement_learninng\finrl_achieve\project\Major\custom.py", line 42, in wrapper
+    result = func(self, client, *args, **kwargs)
+  File "c:\Users\user\Desktop\program\Reinforcement_learninng\finrl_achieve\project\Major\custom.py", line 226, in download
+    oldest_point, newest_point = cls.minutes_of_new_data(
+  File "c:\Users\user\Desktop\program\Reinforcement_learninng\finrl_achieve\project\Major\custom.py", line 188, in minutes_of_new_data
+    new = pd.to_datetime(client.futures_klines(symbol=symbol, interval=kline_size)[-1][0],
+  File "C:\Users\user\Desktop\program\Reinforcement_learninng\lib\site-packages\binance\client.py", line 6202, in futures_klines
+    return self._request_futures_api('get', 'klines', data=params)
+  File "C:\Users\user\Desktop\program\Reinforcement_learninng\lib\site-packages\binance\client.py", line 383, in _request_futures_api
+    return self._request(method, uri, signed, True, **kwargs)
+  File "C:\Users\user\Desktop\program\Reinforcement_learninng\lib\site-packages\binance\client.py", line 358, in _request
+    self.response = getattr(self.session, method)(uri, **kwargs)
+  File "C:\Users\user\Desktop\program\Reinforcement_learninng\lib\site-packages\requests\sessions.py", line 602, in get
+    return self.request("GET", url, **kwargs)
+  File "C:\Users\user\Desktop\program\Reinforcement_learninng\lib\site-packages\requests\sessions.py", line 589, in request
+    resp = self.send(prep, **send_kwargs)
+  File "C:\Users\user\Desktop\program\Reinforcement_learninng\lib\site-packages\requests\sessions.py", line 703, in send
+    r = adapter.send(request, **kwargs)
+  File "C:\Users\user\Desktop\program\Reinforcement_learninng\lib\site-packages\requests\adapters.py", line 486, in send
+    resp = conn.urlopen(
+  File "C:\Users\user\Desktop\program\Reinforcement_learninng\lib\site-packages\urllib3\connectionpool.py", line 703, in urlopen
+    httplib_response = self._make_request(
+  File "C:\Users\user\Desktop\program\Reinforcement_learninng\lib\site-packages\urllib3\connectionpool.py", line 449, in _make_request
+    six.raise_from(e, None)
+  File "<string>", line 3, in raise_from
+  File "C:\Users\user\Desktop\program\Reinforcement_learninng\lib\site-packages\urllib3\connectionpool.py", line 444, in _make_request
+    httplib_response = conn.getresponse()
+  File "C:\Program Files\Python310\lib\http\client.py", line 1368, in getresponse
+    response.begin()
+  File "C:\Program Files\Python310\lib\http\client.py", line 317, in begin
+    version, status, reason = self._read_status()
+  File "C:\Program Files\Python310\lib\http\client.py", line 278, in _read_status
+    line = str(self.fp.readline(_MAXLINE + 1), "iso-8859-1")
+  File "C:\Program Files\Python310\lib\socket.py", line 705, in readinto
+    return self._sock.recv_into(b)
+  File "C:\Program Files\Python310\lib\ssl.py", line 1273, in recv_into
+    return self.read(nbytes, buffer)
+  File "C:\Program Files\Python310\lib\ssl.py", line 1129, in read
+    return self._sslobj.read(len, buffer)
+KeyboardInterrupt
+
+2024-08-10 11:24 ERROR symbol = PEOPLEUSDT
+2024-08-10 11:24 ERROR Traceback (most recent call last):
+  File "c:\Users\user\Desktop\program\Reinforcement_learninng\finrl_achieve\project\Major\DataProvider.py", line 105, in reload_all_data
+    original_df, eachCatchDf = self.reload_data(
+  File "c:\Users\user\Desktop\program\Reinforcement_learninng\finrl_achieve\project\Major\DataProvider.py", line 62, in reload_data
+    original_df, eachCatchDf = self.Binanceapp.BinanceDate.download(
+  File "c:\Users\user\Desktop\program\Reinforcement_learninng\finrl_achieve\project\Major\custom.py", line 42, in wrapper
+    result = func(self, client, *args, **kwargs)
+  File "c:\Users\user\Desktop\program\Reinforcement_learninng\finrl_achieve\project\Major\custom.py", line 226, in download
+    oldest_point, newest_point = cls.minutes_of_new_data(
+  File "c:\Users\user\Desktop\program\Reinforcement_learninng\finrl_achieve\project\Major\custom.py", line 188, in minutes_of_new_data
+    new = pd.to_datetime(client.futures_klines(symbol=symbol, interval=kline_size)[-1][0],
+  File "C:\Users\user\Desktop\program\Reinforcement_learninng\lib\site-packages\binance\client.py", line 6202, in futures_klines
+    return self._request_futures_api('get', 'klines', data=params)
+  File "C:\Users\user\Desktop\program\Reinforcement_learninng\lib\site-packages\binance\client.py", line 383, in _request_futures_api
+    return self._request(method, uri, signed, True, **kwargs)
+  File "C:\Users\user\Desktop\program\Reinforcement_learninng\lib\site-packages\binance\client.py", line 358, in _request
+    self.response = getattr(self.session, method)(uri, **kwargs)
+  File "C:\Users\user\Desktop\program\Reinforcement_learninng\lib\site-packages\requests\sessions.py", line 602, in get
+    return self.request("GET", url, **kwargs)
+  File "C:\Users\user\Desktop\program\Reinforcement_learninng\lib\site-packages\requests\sessions.py", line 589, in request
+    resp = self.send(prep, **send_kwargs)
+  File "C:\Users\user\Desktop\program\Reinforcement_learninng\lib\site-packages\requests\sessions.py", line 703, in send
+    r = adapter.send(request, **kwargs)
+  File "C:\Users\user\Desktop\program\Reinforcement_learninng\lib\site-packages\requests\adapters.py", line 486, in send
+    resp = conn.urlopen(
+  File "C:\Users\user\Desktop\program\Reinforcement_learninng\lib\site-packages\urllib3\connectionpool.py", line 703, in urlopen
+    httplib_response = self._make_request(
+  File "C:\Users\user\Desktop\program\Reinforcement_learninng\lib\site-packages\urllib3\connectionpool.py", line 386, in _make_request
+    self._validate_conn(conn)
+  File "C:\Users\user\Desktop\program\Reinforcement_learninng\lib\site-packages\urllib3\connectionpool.py", line 1042, in _validate_conn
+    conn.connect()
+  File "C:\Users\user\Desktop\program\Reinforcement_learninng\lib\site-packages\urllib3\connection.py", line 414, in connect
+    self.sock = ssl_wrap_socket(
+  File "C:\Users\user\Desktop\program\Reinforcement_learninng\lib\site-packages\urllib3\util\ssl_.py", line 449, in ssl_wrap_socket
+    ssl_sock = _ssl_wrap_socket_impl(
+  File "C:\Users\user\Desktop\program\Reinforcement_learninng\lib\site-packages\urllib3\util\ssl_.py", line 493, in _ssl_wrap_socket_impl
+    return ssl_context.wrap_socket(sock, server_hostname=server_hostname)
+  File "C:\Program Files\Python310\lib\ssl.py", line 512, in wrap_socket
+    return self.sslsocket_class._create(
+  File "C:\Program Files\Python310\lib\ssl.py", line 1070, in _create
+    self.do_handshake()
+  File "C:\Program Files\Python310\lib\ssl.py", line 1341, in do_handshake
+    self._sslobj.do_handshake()
+KeyboardInterrupt
+
+2024-08-10 11:24 ERROR symbol = ROSEUSDT

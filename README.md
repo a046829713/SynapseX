@@ -1,4 +1,4 @@
-![LOGO](images/Logo.jpg)
+![LOGO](resource/images/Logo.jpg)
 
 ---
 
