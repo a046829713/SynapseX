@@ -12,7 +12,7 @@ from binance.exceptions import BinanceAPIException
 import pandas as pd
 from dateutil import parser
 import math
-from datetime import timedelta, datetime
+from datetime import timedelta, datetime, timezone
 import re
 import time
 import json
@@ -72,8 +72,13 @@ def SetConnectClose(custom_user):
         return wrapper
     return actual_decorator
 
+def change_ts_to_str(time_stamp: int):
+    """
+        將時間戳 轉換成字串
+    """
+    return str(datetime.fromtimestamp(time_stamp, tz=timezone.utc).replace(tzinfo=None))
 
-class BinanceDate(object):
+class BinanceData(object):
     """
         'pip install python-binance'
     """
@@ -81,6 +86,8 @@ class BinanceDate(object):
     binsizes = {"1m": 1, "5m": 5, '15m': 15, '30m': 30,
                 "1h": 60, '2h': 120, "4h": 240, "1d": 1440}
     batch_size = 750
+    
+
 
     @classmethod
     def historicalklines(cls, symbol, interval, start_str=None, end_str=None, limit=1000,
@@ -114,7 +121,7 @@ class BinanceDate(object):
         idx = 0
 
         with tqdm() as pbar:
-            pbar.set_description(parser_time.change_ts_to_str(start_ts/1000))
+            pbar.set_description(change_ts_to_str(start_ts/1000))
             while True:
                 # fetch the klines from start_ts up to max 500 entries or the end_ts if set
                 temp_data = client._klines(
@@ -144,8 +151,8 @@ class BinanceDate(object):
                     break
 
                 pbar.set_description("{} - {}".format(
-                    parser_time.change_ts_to_str(start_ts/1000),
-                    parser_time.change_ts_to_str(end_ts/1000)
+                    change_ts_to_str(start_ts/1000),
+                    change_ts_to_str(end_ts/1000)
                 ))
 
                 # sleep after every 3rd call to be kind to the API
@@ -215,8 +222,28 @@ class BinanceDate(object):
         HistoricalKlinesType.FUTURES期貨交易
         HistoricalKlinesType.FUTURES_COIN幣本位期貨交易
 
+        klines = [
+            [
+                1499040000000,      // 开盘时间
+                "0.01634790",       // 开盘价
+                "0.80000000",       // 最高价
+                "0.01575800",       // 最低价
+                "67954.9",          // 收盘价(当前K线未结束的即为最新价)
+                "29.806",           // 成交量
+                1499644799999,      // 收盘时间
+                "2025230",          // 成交额
+                642,                // 成交笔数
+                "20.498",           // 主动买入成交量
+                "1392760",          // 主动买入成交额
+                "17928899.62484339" // 请忽略该参数
+            ]
+        ]
+        
         Returns:
             pd.DataFrame: OHLCV data for all
+            
+            
+            
         """
         assert symbol_type is not None, "ERROR symbol type can't be None"
 
@@ -275,7 +302,7 @@ class Binance_server(object):
 
     def __init__(self) -> None:
         self.trade_count = 0
-        self.BinanceDate = BinanceDate()
+        self.BinanceData = BinanceData()
 
     @SetConnectClose("author")
     def getfuturesinfo(self, client: Client) -> dict:

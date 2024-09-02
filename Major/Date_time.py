@@ -7,13 +7,6 @@ T = Union[str, datetime]
 
 class parser_time:
     @staticmethod
-    def change_ts_to_str(time_stamp: int):
-        """
-            將時間戳 轉換成字串
-        """
-        return str(datetime.utcfromtimestamp(time_stamp))
-
-    @staticmethod
     def changetime(input_time: T):
         """
             將輸入的時間(UTC時區) 改成台灣時間

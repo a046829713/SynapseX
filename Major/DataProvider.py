@@ -60,26 +60,12 @@ class DataProvider:
             df = pd.DataFrame()
 
         # 這邊的資料為原始的UTC資料 無任何加工
-        original_df, eachCatchDf = self.Binanceapp.BinanceDate.download(
+        original_df, eachCatchDf = self.Binanceapp.BinanceData.download(
             df, f"{symbol_name}", kline_size=time_type, symbol_type=symbol_type)
 
         return original_df, eachCatchDf
-
-    def save_data(self, symbol_name, original_df, symbol_type: str, time_type: str, iflower=True, exists="replace"):
-        """
-            保存資料到SQL
-        """
-        # 你可以这样调用这个函数
-        table_name = self.datatransformer.generate_table_name(
-            symbol_name, symbol_type, time_type, iflower)
-
-        if exists == 'replace':
-            self.SQL.write_Dateframe(original_df, table_name)
-        else:
-            self.SQL.write_Dateframe(
-                original_df, table_name, exists=exists)
-
-    def reload_all_data(self, time_type: str, symbol_type, specify_symbol: str = None):
+    
+    def reload_all_data(self, time_type: str, symbol_type):
         """
             Args:
             time_type (str): 
@@ -99,27 +85,38 @@ class DataProvider:
         """
         for symbol_name in self.Binanceapp.get_targetsymobls():
             try:
-                if specify_symbol:
-                    if symbol_name != specify_symbol:
-                        continue
-
                 original_df, eachCatchDf = self.reload_data(
                     symbol_name, time_type=time_type, reload_type="History", symbol_type=symbol_type)
+                
                 eachCatchDf.drop(
                     [eachCatchDf.index[0], eachCatchDf.index[-1]], inplace=True)
 
                 if len(eachCatchDf) != 0:
                     eachCatchDf.set_index('Datetime', inplace=True)
-                    print(eachCatchDf)                    
-                    time.sleep(100)
                     
-                    # self.save_data(symbol_name, eachCatchDf,
-                    #                symbol_type, time_type, exists="append")
+                    self.save_data(symbol_name, eachCatchDf,
+                                   symbol_type, time_type, exists="append")
                     
                     
             except:
                 debug.print_info()
                 debug.record_msg(error_msg=f"symbol = {symbol_name}", log_level=logging.error)
+                
+    def save_data(self, symbol_name, original_df, symbol_type: str, time_type: str, iflower=True, exists="replace"):
+        """
+            保存資料到SQL
+        """
+        # 你可以这样调用这个函数
+        table_name = self.datatransformer.generate_table_name(
+            symbol_name, symbol_type, time_type, iflower)
+
+        if exists == 'replace':
+            self.SQL.write_Dateframe(original_df, table_name)
+        else:
+            self.SQL.write_Dateframe(
+                original_df, table_name, exists=exists)
+
+
 
     def get_symbols_history_data(self, symbol_type, time_type=None, iflower=True) -> list:
         """

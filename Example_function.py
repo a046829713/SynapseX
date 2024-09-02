@@ -15,7 +15,7 @@ def example_get_symboldata():
     # symbols = ['BTCUSDT','BCHUSDT','BTCDOMUSDT','BNBUSDT','ARUSDT','BTCUSDT','ETHUSDT','SOLUSDT','SSVUSDT']
     # symbols = ['ENSUSDT','LPTUSDT','GMXUSDT','TRBUSDT','ARUSDT','XMRUSDT','ETHUSDT', 'AAVEUSDT',  'ZECUSDT', 'SOLUSDT', 'DEFIUSDT', 'BTCUSDT',  'ETCUSDT',  'BNBUSDT', 'LTCUSDT', 'BCHUSDT']
 
-    symbols = ['PEOPLEUSDT']
+    symbols = ['TRBUSDT']
     for _each_symbol_name in symbols:
         DataProvider().Downloader(symbol_name=_each_symbol_name, save=True, freq=30)
 
@@ -48,13 +48,13 @@ def example_get_MTM_target_symbol():
     print(example)
 
 
-def example_reload_all_data(time_type: str, specify_symbol: str = None):
+def example_reload_all_data(time_type: str):
     """
     Args:
         time_type (str): '1m','1d'
     """
     DataProvider().reload_all_data(time_type=time_type,
-                                   symbol_type='FUTURES', specify_symbol=specify_symbol)
+                                   symbol_type='FUTURES')
 
 
 def example_Train_neural_networks():
@@ -73,4 +73,4 @@ def example_simple_evaluate():
                                     Meta_path=r'EIIE\Meta\policy_EIIE.pt')
 
 
-example_reload_all_data(time_type='1d')
+example_get_symboldata()

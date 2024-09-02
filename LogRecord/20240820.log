@@ -1,0 +1,49 @@
+2024-08-20 14:07 ERROR Traceback (most recent call last):
+  File "c:\Users\user\Desktop\program\synapsex_project\SynapseX\Database\SQL_operate.py", line 13, in get_db_data
+    self.userconn = router.Router().mysql_conn
+                    ^^^^^^^^^^^^^^^
+  File "c:\Users\user\Desktop\program\synapsex_project\SynapseX\Database\router.py", line 13, in __init__
+    self._mysql_conn = self.get_mysql_conn()
+                       ^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\user\Desktop\program\synapsex_project\SynapseX\Database\router.py", line 27, in get_mysql_conn
+    engine = create_engine(self.address + '/crypto_data')
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<string>", line 2, in create_engine
+  File "C:\Users\user\Desktop\program\synapsex_project\Lib\site-packages\sqlalchemy\util\deprecations.py", line 281, in warned
+    return fn(*args, **kwargs)  # type: ignore[no-any-return]
+           ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\user\Desktop\program\synapsex_project\Lib\site-packages\sqlalchemy\engine\create.py", line 599, in create_engine
+    dbapi = dbapi_meth(**dbapi_args)
+            ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\user\Desktop\program\synapsex_project\Lib\site-packages\sqlalchemy\dialects\mysql\pymysql.py", line 75, in import_dbapi
+    return __import__("pymysql")
+           ^^^^^^^^^^^^^^^^^^^^^
+ModuleNotFoundError: No module named 'pymysql'
+
+2024-08-20 14:18 ERROR Traceback (most recent call last):
+  File "c:\Users\user\Desktop\program\synapsex_project\SynapseX\Major\DataProvider.py", line 106, in reload_all_data
+    original_df, eachCatchDf = self.reload_data(
+                               ^^^^^^^^^^^^^^^^^
+  File "c:\Users\user\Desktop\program\synapsex_project\SynapseX\Major\DataProvider.py", line 63, in reload_data
+    original_df, eachCatchDf = self.Binanceapp.BinanceData.download(
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\user\Desktop\program\synapsex_project\SynapseX\Major\custom.py", line 44, in wrapper
+    result = func(self, client, *args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\user\Desktop\program\synapsex_project\SynapseX\Major\custom.py", line 242, in download
+    klines = cls.historicalklines(symbol, kline_size, oldest_point.strftime("%d %b %Y %H:%M:%S"),
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\user\Desktop\program\synapsex_project\SynapseX\Major\custom.py", line 120, in historicalklines
+    temp_data = client._klines(
+                ^^^^^^^^^^^^^^^
+  File "C:\Users\user\Desktop\program\synapsex_project\Lib\site-packages\binance\client.py", line 939, in _klines
+    return self.futures_klines(**params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\user\Desktop\program\synapsex_project\Lib\site-packages\binance\client.py", line 6205, in futures_klines
+    return self._request_futures_api('get', 'klines', data=params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\user\Desktop\program\synapsex_project\Lib\site-packages\binance\client.py", line 385, in _request_futures_api
+    time.sleep(1)
+KeyboardInterrupt
+
+2024-08-20 14:18 ERROR symbol = BTCUSDT

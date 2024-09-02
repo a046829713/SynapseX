@@ -1,7 +1,6 @@
 import pandas as pd
 from Major.Date_time import parser_time
 import numpy as np
-from Count.Base import Pandas_count
 from decimal import Decimal
 import time
 
@@ -22,6 +21,7 @@ class Datatransformer:
 
         """
         df = original_df.copy()
+        
         # 讀取資料(UTC原始資料)
         df.reset_index(inplace=True)
 
@@ -41,16 +41,43 @@ class Datatransformer:
             rule=f'{freq}min', label="left").last()
         new_df['Volume'] = df['Volume'].resample(
             rule=f'{freq}min', label="left").sum()
+        # quote_av// 成交额
+        new_df['quote_av'] = df['quote_av'].resample(
+            rule=f'{freq}min', label="left").sum()
+        #  trades// 成交笔数
+        new_df['trades'] = df['trades'].resample(
+            rule=f'{freq}min', label="left").sum()
+        
+        # tb_base_av// 主动买入成交量
+        new_df['tb_base_av'] = df['tb_base_av'].resample(
+            rule=f'{freq}min', label="left").sum()
+        
+        # tb_quote_av// 主动买入成交额
+        new_df['tb_quote_av'] = df['tb_quote_av'].resample(
+            rule=f'{freq}min', label="left").sum()
         return new_df
 
     def drop_colunms(self, df: pd.DataFrame):
         """
-            拋棄不要的Data
+                
+            df(pd.DataFrame):                               Datetime    Open    High     Low   Close  Volume    close_time    quote_av  trades  tb_base_av  tb_quote_av  ignore
+                                Datetime
+                                2020-09-03 15:02:00 2020-09-03 15:02:00  57.000  58.070  55.900  56.893   611.9  1.599120e+12  34902.3000   125.0       329.8   18842.3000     0.0
+                                2020-09-03 15:03:00 2020-09-03 15:03:00  56.741  58.284  56.695  58.284  1195.2  1.599120e+12  68911.6000   448.0       730.1   42054.3000     0.0
+                                2020-09-03 15:04:00 2020-09-03 15:04:00  58.300  59.200  57.651  58.882  1568.8  1.599120e+12  91677.7000   385.0       957.6   56024.1000     0.0
+                                2020-09-03 15:05:00 2020-09-03 15:05:00  58.739  59.077  58.101  58.101   595.4  1.599120e+12  34876.2000   221.0       257.4   15127.4000     0.0
+                                2020-09-03 15:06:00 2020-09-03 15:06:00  58.542  58.675  58.211  58.473    81.3  1.599120e+12   4752.1000    41.0        58.9    3448.1300     0.0
+                                ...                                 ...     ...     ...     ...     ...     ...           ...         ...     ...         ...          ...     ...
+                                2024-08-27 15:23:00 2024-08-27 15:23:00  70.709  70.781  70.702  70.763   405.7  1.724743e+12  28703.8550   247.0       239.0   16908.3223     0.0
+                                2024-08-27 15:24:00 2024-08-27 15:24:00  70.762  70.816  70.760  70.760   318.0  1.724743e+12  22508.1561   227.0       187.6   13278.4140     0.0
+                                2024-08-27 15:25:00 2024-08-27 15:25:00  70.755  70.805  70.737  70.793   271.2  1.724744e+12  19191.3057   247.0       163.4   11563.4161     0.0
+                                2024-08-27 15:26:00 2024-08-27 15:26:00  70.792  70.793  70.716  70.722   315.4  1.724744e+12  22313.2490   216.0        92.8    6564.4374     0.0
+                                2024-08-27 15:27:00 2024-08-27 15:27:00  70.721  70.769  70.697  70.769   329.1  1.724744e+12  23279.6646   177.0       282.7   19998.5423     0.0
 
         """
 
         for key in df.columns:
-            if key not in ['Datetime', 'Open', 'High', 'Low', 'Close', 'Volume']:
+            if key in ['close_time', 'ignore']:
                 df = df.drop(columns=[key])
 
         return df
