@@ -1,9 +1,8 @@
-import gym
-import gym.spaces
 import enum
 import numpy as np
 import time
-
+import torch
+import gymnasium as gym
 
 class Actions(enum.Enum):
     Close = 0
@@ -168,23 +167,35 @@ class State:
 
 class State_time_step(State):
     """
+        專門用於transformer的時序函數。
     """
     @property
     def shape(self):
-        return (self.bars_count, 6)
+        return (self.bars_count, 14)
 
     def encode(self):
-        res = np.zeros(shape=self.shape, dtype=np.float32)
+        res = torch.zeros(size=self.shape, dtype=torch.float32)
+        
         ofs = self.bars_count
         for bar_idx in range(self.bars_count):
             res[bar_idx][0] = self._prices.high[self._offset - ofs + bar_idx]
             res[bar_idx][1] = self._prices.low[self._offset - ofs + bar_idx]
             res[bar_idx][2] = self._prices.close[self._offset - ofs + bar_idx]
             res[bar_idx][3] = self._prices.volume[self._offset - ofs + bar_idx]
+            res[bar_idx][4] = self._prices.volume2[self._offset - ofs + bar_idx]
+            res[bar_idx][5] = self._prices.quote_av[self._offset - ofs + bar_idx]
+            res[bar_idx][6] = self._prices.quote_av2[self._offset - ofs + bar_idx]
+            res[bar_idx][7] = self._prices.trades[self._offset - ofs + bar_idx]
+            res[bar_idx][8] = self._prices.trades2[self._offset - ofs + bar_idx]
+            res[bar_idx][9] = self._prices.tb_base_av[self._offset - ofs + bar_idx]
+            res[bar_idx][10] = self._prices.tb_base_av2[self._offset - ofs + bar_idx]
+            res[bar_idx][11] = self._prices.tb_quote_av[self._offset - ofs + bar_idx]
+            res[bar_idx][12] = self._prices.tb_quote_av2[self._offset - ofs + bar_idx]
+
 
         if self.have_position:
-            res[:, 4] = 1.0
-            res[:, 5] = (self._cur_close() - self.open_price) / \
+            res[:, 13] = 1.0
+            res[:, 14] = (self._cur_close() - self.open_price) / \
                 self.open_price
 
         return res
@@ -241,17 +252,11 @@ class State2D(State):
         return res
 
 class Env(gym.Env):
-    metadata = {'render.modes': ['human']}
-
     def __init__(self, prices, state, random_ofs_on_reset):
 
         self._prices = prices
         self._state = state
         self.action_space = gym.spaces.Discrete(n=len(Actions))
-
-        self.observation_space = gym.spaces.Box(
-            low=-np.inf, high=np.inf, shape=self._state.shape, dtype=np.float32)
-
         self.random_ofs_on_reset = random_ofs_on_reset
 
     def reset(self):
@@ -263,8 +268,11 @@ class Env(gym.Env):
             offset = np.random.choice(prices.high.shape[0]-bars*10) + bars
         else:
             offset = bars
+            
         print("目前步數:", offset)
+        
         self._state.reset(prices, offset)
+        
         return self._state.encode()
 
     def step(self, action_idx):

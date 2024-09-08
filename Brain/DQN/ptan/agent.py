@@ -8,7 +8,7 @@ import torch.nn.functional as F
 
 from . import actions
 import time
-from DQN.lib.common import turn_to_tensor
+from SynapseX.Brain.DQN.lib.common import turn_to_tensor
 
 class BaseAgent:
     """

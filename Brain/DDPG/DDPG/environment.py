@@ -44,10 +44,6 @@ class State:
         }
 
         self._prices = prices
-        
-        print(self._prices)
-        
-        time.sleep(100)
         self.action = 0
 
     def step(self, action):
@@ -73,7 +69,13 @@ class State:
         # 取得即時下單比例
         thisusemoeny = (self._map['last_share'] * _cur_close +
                         self._map['calculate_cash']) * abs(action)
-
+        print("step內---------------------------------------------------------")
+        print("此次內容:")
+        print("本次動作:",self.action)
+        print("本次動作:",self.action)
+        
+        time.sleep(50)
+        print("step內---------------------------------------------------------")
         # 預估說大概可以購買多少的部位並且不能超過原始本金
         cost = _cur_close * (1 + self.default_slippage + self.commission_perc)
         share = thisusemoeny / cost
@@ -108,14 +110,42 @@ class State:
         # 判斷遊戲是否結束
         done |= self._offset >= self._prices.close.shape[0] - 1
 
-        print("step內---------------------------------------------------------")
-        print("此次內容:")
-        print(self._map)
-        time.sleep(5)
-        print("step內---------------------------------------------------------")
+
         return reward, done
 
 
+
+
+class State_time_step(State):
+    """
+        專門用於transformer的時序函數。
+    """
+    @property
+    def shape(self):
+        return (self.bars_count, 14)
+
+    def encode(self):
+        res = torch.zeros(size=self.shape, dtype=torch.float32)
+        
+        ofs = self.bars_count
+        for bar_idx in range(self.bars_count):
+            res[bar_idx][0] = self._prices.high[self._offset - ofs + bar_idx]
+            res[bar_idx][1] = self._prices.low[self._offset - ofs + bar_idx]
+            res[bar_idx][2] = self._prices.close[self._offset - ofs + bar_idx]
+            res[bar_idx][3] = self._prices.volume[self._offset - ofs + bar_idx]
+            res[bar_idx][4] = self._prices.volume2[self._offset - ofs + bar_idx]
+            res[bar_idx][5] = self._prices.quote_av[self._offset - ofs + bar_idx]
+            res[bar_idx][6] = self._prices.quote_av2[self._offset - ofs + bar_idx]
+            res[bar_idx][7] = self._prices.trades[self._offset - ofs + bar_idx]
+            res[bar_idx][8] = self._prices.trades2[self._offset - ofs + bar_idx]
+            res[bar_idx][9] = self._prices.tb_base_av[self._offset - ofs + bar_idx]
+            res[bar_idx][10] = self._prices.tb_base_av2[self._offset - ofs + bar_idx]
+            res[bar_idx][11] = self._prices.tb_quote_av[self._offset - ofs + bar_idx]
+            res[bar_idx][12] = self._prices.tb_quote_av2[self._offset - ofs + bar_idx]
+
+        res[:, 13] = self._map['last_action']
+        return res
+    
 class State2D(State):
     """
         用於處理 2D 數據，如圖像。輸入數據的形狀通常是 (N, C, H, W)，其中 N 是批次大小，C 是通道數，H 是高度，W 是寬度。
@@ -136,31 +166,7 @@ class State2D(State):
 
         res = res.unsqueeze(0)
         return res
-
-class State_time_step(State):
-    """
-    """
-    @property
-    def shape(self):
-        print()
-        return (self.bars_count, len(self._prices))
-
-    def encode(self):
-        res = np.zeros(shape=self.shape, dtype=np.float32)
-        ofs = self.bars_count
-        for bar_idx in range(self.bars_count):
-            res[bar_idx][0] = self._prices.high[self._offset - ofs + bar_idx]
-            res[bar_idx][1] = self._prices.low[self._offset - ofs + bar_idx]
-            res[bar_idx][2] = self._prices.close[self._offset - ofs + bar_idx]
-            res[bar_idx][3] = self._prices.volume[self._offset - ofs + bar_idx]
-
-        if self.have_position:
-            res[:, 4] = 1.0
-            res[:, 5] = (self._cur_close() - self.open_price) / \
-                self.open_price
-
-        return res
-
+    
 class Env:
     def __init__(self, keyword:str, bars_count: int, commission_perc: float, default_slippage: float, prices: dict, random_ofs_on_reset: bool, device: torch.device):
         self.bars_count = bars_count
@@ -189,8 +195,7 @@ class Env:
 
         bars = self._count_state.bars_count
         if self.random_ofs_on_reset:
-            offset = random.randint(0, prices.high.size()[
-                                    0] - bars * 10) + bars
+            offset = random.randint(0, prices.high.size()[0] - bars * 10) + bars
         else:
             offset = bars
 
@@ -200,12 +205,15 @@ class Env:
 
     def step(self, action):
         reward, done = self._count_state.step(action)  # 這邊會更新步數
+
+        
         obs = self._count_state.encode()  # 呼叫這裡的時候就會取得新的狀態
         info = {
             "instrument": self._instrument,
             "offset": self._count_state._offset,
 
         }
+        
         return obs, reward, done, info
 
     def render(self):
@@ -215,12 +223,26 @@ class Env:
     def close(self):
         pass
 
+    def env_info(self):
+        """
+            用來儲存這個環境的資訊
+        """
+        return {
+            "input_size":self._count_state.shape[1],
+            "action_size":1
+        }
+        
     def action_sample(self):
-        return torch.rand(1, dtype=torch.float32)
+        """
 
-# app = TimeStep(bars_count=300, commission_perc=0.002)
-# app.reset(prices=DataFeature().get_train_net_work_data_by_path(
-#     ['BTCUSDT'])['BTCUSDT'], offset=300)
+        Returns:
+            _type_: _description_
+        """
+        return torch.rand(1, dtype=torch.float32)
+# app = State_time_step(bars_count=300, commission_perc=0.002)
+# app.reset(prices=DataFeature().get_train_net_work_data_by_path(['TRBUSDT'])['TRBUSDT'], offset=300)
+
+
 # while True:
 #     app.step(action=np.random.uniform(0, 1))
 #     time.sleep(1)

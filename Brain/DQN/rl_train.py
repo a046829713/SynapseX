@@ -1,17 +1,17 @@
-from DQN.lib import environment, models, common
-from DQN.lib.environment import State2D, State_time_step
+from SynapseX.Brain.DQN.lib import environment, common
+from SynapseX.Brain.DQN.lib.environment import State2D, State_time_step
 import os
 import numpy as np
 import torch
 import torch.optim as optim
-from DQN import ptan
-from DQN.lib.DataFeature import DataFeature
+from SynapseX.Brain.DQN import ptan
+from SynapseX.Brain.Common.DataFeature import DataFeature
 from datetime import datetime
 from tensorboardX import SummaryWriter
 import time
-from DQN.lib import offical_transformer
+from SynapseX.Brain.DQN.lib import offical_transformer
 from abc import ABC, abstractmethod
-from DQN.lib.EfficientnetV2 import EfficientnetV2SmallDuelingModel
+from SynapseX.Brain.DQN.lib.EfficientnetV2 import EfficientnetV2SmallDuelingModel
 from abc import ABC
 
 class RL_prepare(ABC):
@@ -30,6 +30,9 @@ class RL_prepare(ABC):
     def _prepare_keyword(self):
         self.keyword = 'Transformer'
         print("This Experiment is:",self.keyword)
+    
+    def show_setting(self,title:str,content:str):
+        print(f"--{title}--:{content}")
     
     def _prepare_device(self):
         self.device = torch.device(
@@ -107,7 +110,7 @@ class RL_prepare(ABC):
                 nhead=2,
                 d_hid=2048,
                 nlayers=8,
-                num_actions=self.train_env.action_space.n,  # 假设有5种可能的动作
+                num_actions=self.train_env.action_space_len,  # 假设有5种可能的动作
                 hidden_size=64,  # 使用隐藏层
                 seq_dim=self.BARS_COUNT,
                 dropout=0.1  # 适度的dropout以防过拟合

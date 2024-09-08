@@ -9,13 +9,13 @@
 
 from abc import ABC
 import torch
-from lib.DataFeature import DataFeature
+from SynapseX.Brain.Common.DataFeature import DataFeature
 import time
 from DDPG.environment import Env
+from DDPG.model import Actor, Critic
+import torch.optim as optim
+import os
 
-# import os
-# import torch.optim as optim
-# from DDPG.model import Actor, Critic
 # from DDPG.experience import ReplayBuffer
 
 
@@ -27,22 +27,27 @@ class RL_prepare(ABC):
         self._prepare_hyperparameters()
         self._prepare_env()
         self._prepare_model()
-
+    
+    def show_setting(self,title:str,content:str):
+        print(f"--{title}--:{content}")
+    
     def _prepare_keyword(self):
         self.KEYWORD = 'Transformer'
-        print("--KEYWORD--:", self.KEYWORD)
+        self.show_setting(title="KEYWORD",content=self.KEYWORD)
+        
 
     def _prepare_device(self):
         self.device = torch.device(
             "cuda" if torch.cuda.is_available() else "cpu")
-        print("There is device:", self.device)
+        self.show_setting(title="DEVICE",content=self.device)
 
     def _prepare_symbols(self):
         # symbols = ['BTCUSDT', 'ENSUSDT', 'LPTUSDT', 'GMXUSDT', 'TRBUSDT', 'ARUSDT', 'XMRUSDT',
         #            'ETHUSDT', 'AAVEUSDT',  'ZECUSDT', 'SOLUSDT', 'DEFIUSDT',  'ETCUSDT', 'LTCUSDT', 'BCHUSDT']
         symbols = ['TRBUSDT']
         self.symbols = list(set(symbols))
-        print("There are symobls:", self.symbols)
+        self.show_setting(title="SYMBOLS",content=self.symbols)
+        
 
     def _prepare_hyperparameters(self):
         self.BARS_COUNT = 300  # 用來準備要取樣的特徵長度,例如:開高低收成交量各取10根K棒
@@ -51,8 +56,7 @@ class RL_prepare(ABC):
         self.ACTOR_LR = 0.0001
         self.Q_LR = 0.0001
         self.REPLAY_SIZE = 100000
-        self.MAX_EPISODE_LENGTH = 1000  # 根據gym的描述 1000步就會結束
-
+        self.MAX_EPISODE_LENGTH = 1000  
         self.START_STRPS = 10000
         # self.batch_size = 100
         # self.discount_factor = 0.99
@@ -71,31 +75,43 @@ class RL_prepare(ABC):
             device=self.device)
         
         
-        self.train_env.reset()
-        
 
     def _prepare_model(self):
-        # get size of state space and action space
-        self.state_size = self.train_env._count_state.shape[0]
+        # 获取环境信息
+        env_info = self.train_env.env_info()
+        input_size = env_info['input_size']
+        action_size = env_info['action_size']
 
-        # 只有一種行為
-        self.action_size = 1
+        # 初始化 Actor 和 Target Actor
+        def create_actor():
+            return Actor(
+                d_model=input_size,
+                nhead=2,
+                d_hid=2048,
+                nlayers=8,
+                num_actions=action_size,
+                hidden_size=64,
+                seq_dim=self.BARS_COUNT,
+                dropout=0.1
+            ).to(self.device)
 
-        self.actor = Actor(in_channels=1, action_size=self.action_size)
-        self.target_actor = Actor(in_channels=1, action_size=self.action_size)
+        self.actor = create_actor()
+        self.target_actor = create_actor()
         self.target_actor.load_state_dict(self.actor.state_dict())
 
-        self.critic = Critic(self.state_size, self.action_size)
-        self.target_critic = Critic(self.state_size, self.action_size)
+        # 初始化 Critic 和 Target Critic
+        self.critic = Critic(input_size, action_size)
+        self.target_critic = Critic(input_size, action_size)
         self.target_critic.load_state_dict(self.critic.state_dict())
 
-        self.actor_optimizer = optim.Adam(
-            self.actor.parameters(), lr=self.ACTOR_LR)
-        self.critic_optimizer = optim.Adam(
-            self.critic.parameters(), lr=self.Q_LR)
+        # 优化器
+        self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=self.ACTOR_LR)
+        self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=self.Q_LR)
 
-        print("--STATE_SIZE--:", self.state_size)
-        print("--ACTION_SIZE--:", self.action_size)
+        # 打印信息
+        self.show_setting(title="STATE_SIZE",content=input_size)
+        self.show_setting(title="ACTION_SIZE",content=action_size)
+
 
 
 class DDPG(RL_prepare):
@@ -167,7 +183,6 @@ class DDPG(RL_prepare):
 
     def train(self):
         i_episode = 0
-
         returns = []
         q_losses = []
         mu_losses = []
@@ -175,26 +190,27 @@ class DDPG(RL_prepare):
 
         while True:
             # reset env
-            state, episode_return, episode_length, d = self.train_env.reset(), 0, 0, False
-
-            while not (d or (episode_length == self.MAX_EPISODE_LENGTH)):
+            state, episode_return, episode_length, done = self.train_env.reset(), 0, 0, False
+            while not (done or (episode_length == self.MAX_EPISODE_LENGTH)):
                 # For the first `START_STRPS` steps, use randomly sampled actions
                 # in order to encourage exploration.
                 if num_steps > self.START_STRPS:
                     action = self.get_action(state, self.action_noise)
                 else:
-                    action = self.train_env.action_space.sample()
+                    action = self.train_env.action_sample()
 
-                print(action)
-                time.sleep(100)
+
+
                 # Keep track of the number of steps done
                 num_steps += 1
                 if num_steps == self.START_STRPS:
                     print("USING AGENT ACTIONS NOW")
 
                 # # Step the env
-                next_state, reward, terminated, truncated, info = self.train_env.step(
-                    action)
+                next_state, reward, terminated, truncated, info = self.train_env.step(action)
+                
+                
+                
                 episode_return += reward
                 episode_length += 1
 
@@ -351,4 +367,4 @@ class RL_Train(RL_prepare):
 if __name__ == "__main__":
     # 我認為可以訓練出通用的模型了
     # 多數據供應
-    RL_prepare()
+    DDPG()

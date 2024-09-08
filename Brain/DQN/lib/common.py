@@ -7,8 +7,6 @@ import pandas as pd
 import numpy as np
 import pandas as pd
 import time
-from utils.Debug_tool import debug
-
 
 class RewardTracker:
     def __init__(self, writer, stop_reward, group_rewards=1):
