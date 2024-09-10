@@ -28,9 +28,9 @@ class RL_prepare(ABC):
         self._prepare_agent()
     
     def _prepare_keyword(self):
-        self.keyword = 'Transformer'
-        print("This Experiment is:",self.keyword)
-    
+        self.keyword = 'Transformer'        
+        self.show_setting("KEYWORD:",self.keyword)
+        
     def show_setting(self,title:str,content:str):
         print(f"--{title}--:{content}")
     
@@ -40,8 +40,8 @@ class RL_prepare(ABC):
         print("There is device:", self.device)
 
     def _prepare_symbols(self):
-        symbols = ['PEOPLEUSDT','BTCUSDT', 'ENSUSDT', 'LPTUSDT', 'GMXUSDT', 'TRBUSDT', 'ARUSDT', 'XMRUSDT', 'ETHUSDT', 'AAVEUSDT', 'ZECUSDT', 'SOLUSDT', 'DEFIUSDT', 'ETCUSDT', 'LTCUSDT', 'BCHUSDT', 'ORDIUSDT', 'BNBUSDT', 'AVAXUSDT', 'MKRUSDT', 'BTCDOMUSDT']
-        # symbols = ['BTCUSDT']
+        # symbols = ['PEOPLEUSDT','BTCUSDT', 'ENSUSDT', 'LPTUSDT', 'GMXUSDT', 'TRBUSDT', 'ARUSDT', 'XMRUSDT', 'ETHUSDT', 'AAVEUSDT', 'ZECUSDT', 'SOLUSDT', 'DEFIUSDT', 'ETCUSDT', 'LTCUSDT', 'BCHUSDT', 'ORDIUSDT', 'BNBUSDT', 'AVAXUSDT', 'MKRUSDT', 'BTCDOMUSDT']
+        symbols = ['TRBUSDT']
         self.symbols = list(set(symbols))
         print("There are symobls:", self.symbols)
 
@@ -108,10 +108,10 @@ class RL_prepare(ABC):
             self.net = offical_transformer.TransformerDuelingModel(
                 d_model=engine_info['input_size'],
                 nhead=2,
-                d_hid=2048,
-                nlayers=8,
-                num_actions=self.train_env.action_space_len,  # 假设有5种可能的动作
-                hidden_size=64,  # 使用隐藏层
+                d_hid=64,
+                nlayers=1,
+                num_actions=self.train_env.action_space.n,  # 假设有5种可能的动作
+                hidden_size=8,  # 使用隐藏层
                 seq_dim=self.BARS_COUNT,
                 dropout=0.1  # 适度的dropout以防过拟合
             ).to(self.device)
@@ -174,7 +174,8 @@ class RL_Train(RL_prepare):
         with common.RewardTracker(self.writer, np.inf, group_rewards=2) as reward_tracker:
             while True:
                 self.step_idx += 1
-                self.buffer.populate(1)
+                self.buffer.populate(1)                
+                
                 # 探索率
                 self.selector.epsilon = max(
                     self.EPSILON_STOP, self.EPSILON_START - self.step_idx / self.EPSILON_STEPS)
@@ -182,7 +183,7 @@ class RL_Train(RL_prepare):
                 # [(-2.5305491551459296, 10)]
                 # 跑了一輪之後,清空原本的數據,並且取得獎勵
                 new_rewards = self.exp_source.pop_rewards_steps()
-
+                
                 if new_rewards:
                     reward_tracker.reward(
                         new_rewards[0], self.step_idx, self.selector.epsilon)
@@ -195,6 +196,8 @@ class RL_Train(RL_prepare):
 
                 loss_v = common.calc_loss(
                     batch, self.net, self.tgt_net.target_model, self.GAMMA ** self.REWARD_STEPS, device=self.device)
+                
+                
                 if self.step_idx % self.WRITER_EVERY_STEP == 0:
                     self.writer.add_scalar(
                         "Loss_Value", loss_v.item(), self.step_idx)

@@ -166,8 +166,7 @@ def calc_loss(batch, net, tgt_net, gamma, device="cpu"):
     
     next_state_values[done_mask] = 0.0
     # detach 單純的tensor 沒有grad_fn
-    expected_state_action_values = next_state_values.detach() * gamma + rewards_v    
-    
+    expected_state_action_values = next_state_values.detach() * gamma + rewards_v 
     return nn.MSELoss()(state_action_values, expected_state_action_values)
 
 

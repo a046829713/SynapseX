@@ -1,8 +1,7 @@
 import enum
-import numpy as np
 import time
-import torch
 import gymnasium as gym
+import numpy as np
 
 class Actions(enum.Enum):
     Close = 0
@@ -36,52 +35,6 @@ class State:
 
         # 用來記錄各個時間的
         self.diff_percent = 0.0
-
-    @property
-    def shape(self):
-        return (3*self.bars_count + 1 + 1, )
-
-    def encode(self):
-        """
-        Convert current state into numpy array.
-
-        用來製作state 一維狀態的函數
-
-        return res:
-            [ 0.01220753 -0.00508647 -0.00508647  0.00204918 -0.0204918  -0.0204918
-            0.01781971 -0.00419287 -0.00419287  0.         -0.0168421  -0.00736842
-            0.01359833 -0.0041841   0.00732218  0.00314795 -0.00629591 -0.00314795
-            0.00634249 -0.00422833 -0.00317125  0.01800847  0.          0.01800847
-            0.01155462 -0.00315126  0.00945378  0.0096463  -0.00214362  0.0096463
-            0.          0.        ]
-
-            # 倒數第二個0 為部位
-        """
-        res = np.ndarray(shape=self.shape, dtype=np.float32)
-
-        shift = 0
-
-        # 我認為這邊有一些問題,為甚麼要從1開始,而不從0開始呢?
-        # 1-10
-        for bar_idx in range(-self.bars_count+1, 1):
-            res[shift] = self._prices.high[self._offset + bar_idx]
-            shift += 1
-            res[shift] = self._prices.low[self._offset + bar_idx]
-            shift += 1
-            res[shift] = self._prices.close[self._offset + bar_idx]
-            shift += 1
-            res[shift] = self._prices.volume[self._offset + bar_idx]
-            shift += 1
-
-        res[shift] = float(self.have_position)
-        shift += 1
-        if not self.have_position:
-            res[shift] = 0.0
-        else:
-            res[shift] = (self._cur_close() - self.open_price) / \
-                self.open_price
-
-        return res
 
     def _cur_close(self):
         """
@@ -171,10 +124,10 @@ class State_time_step(State):
     """
     @property
     def shape(self):
-        return (self.bars_count, 14)
+        return (self.bars_count, 15)
 
     def encode(self):
-        res = torch.zeros(size=self.shape, dtype=torch.float32)
+        res = np.zeros(shape=self.shape, dtype=np.float32)
         
         ofs = self.bars_count
         for bar_idx in range(self.bars_count):
@@ -195,8 +148,7 @@ class State_time_step(State):
 
         if self.have_position:
             res[:, 13] = 1.0
-            res[:, 14] = (self._cur_close() - self.open_price) / \
-                self.open_price
+            res[:, 14] = (self._cur_close() - self.open_price) / self.open_price
 
         return res
 
@@ -253,7 +205,6 @@ class State2D(State):
 
 class Env(gym.Env):
     def __init__(self, prices, state, random_ofs_on_reset):
-
         self._prices = prices
         self._state = state
         self.action_space = gym.spaces.Discrete(n=len(Actions))

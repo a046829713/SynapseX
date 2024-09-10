@@ -96,8 +96,9 @@ class TransformerDuelingModel(nn.Module):
             output Tensor of shape ``[batch_size, num_actions]``
 
         """
+        
         src = self.embedding(src)
-
+        
         # src = torch.Size([1, 300, 6])
         if self.batch_first:
             src = self.pos_encoder(src.transpose(0, 1))
@@ -116,14 +117,11 @@ class TransformerDuelingModel(nn.Module):
         x = x.view(x.size(0), -1)
 
 
-
         value = self.fc_val(x)
         # 狀態值和優勢值
         advantage = self.fc_adv(x)
 
         # 計算最終的Q值
         q_values = value + (advantage - advantage.mean(dim=1, keepdim=True))
-        
-
         
         return q_values
