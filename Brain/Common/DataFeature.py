@@ -33,7 +33,7 @@ class DataFeature():
         out_dict = {}
         for symbol in symbols:
             df = pd.read_csv(
-                f'Brain/simulation/data/{symbol}-F-30-Min.csv')
+                f'simulation/data/{symbol}-F-30-Min.csv')
             df.set_index('Datetime', inplace=True)
             self.df = df
             # 使用 PyTorch Tensor 的方法
@@ -54,7 +54,7 @@ class DataFeature():
         shift_data = np.roll(values, shift=1, axis=0)
         shift_data[0] = 0
         diff_data = values - shift_data
-        return np.where(shift_data != 0, diff_data / shift_data, np.zeros_like(diff_data))
+        return np.divide(diff_data, shift_data, out=np.zeros_like(diff_data), where=shift_data != 0)
     
     def calculate_current_change(self, values):
         """
@@ -70,7 +70,7 @@ class DataFeature():
         shift_data = np.roll(values, shift=1, axis=0)
         shift_data[0] = 0
         diff_data = values - shift_data
-        return np.where(values != 0, diff_data / values, np.zeros_like(diff_data))
+        return np.divide(diff_data, values, out=np.zeros_like(diff_data), where=values != 0)
     
     def load_relative(self):
         """

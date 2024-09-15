@@ -2,7 +2,7 @@ from .Error import InvalidModeError
 import pandas as pd
 import numpy as np
 import torch
-from DQN.lib.DataFeature import DataFeature
+from Common.DataFeature import DataFeature
 from DQN.lib import environment
 from DQN.lib import common
 from DQN.lib.environment import State1D, State_time_step
@@ -102,10 +102,10 @@ class RL_evaluate():
         model = offical_transformer.TransformerDuelingModel(
                 d_model=engine_info['input_size'],
                 nhead=2,
-                d_hid=2048,
-                nlayers=8,
+                d_hid=64,
+                nlayers=4,
                 num_actions=self.evaluate_env.action_space.n,  # 假设有5种可能的动作
-                hidden_size=64,  # 使用隐藏层
+                hidden_size=8,  # 使用隐藏层
                 seq_dim=self.BARS_COUNT,
                 dropout=0.1  # 适度的dropout以防过拟合
             ).to(self.device)
@@ -153,16 +153,6 @@ class RL_evaluate():
 
 class Backtest(object):
     def __init__(self, re_evaluate: RL_evaluate, strategy: Strategy) -> None:
-        self.strategy = strategy
-        self.bars_count = re_evaluate.BARS_COUNT
-        self.Symbol_data = self.strategy.df
-
-        self._cwd = Path("./")
-        # results file
-        self._results_file = self._cwd / "results" / "rl"
-        self._results_file.mkdir(parents=True, exist_ok=True)
-
-    def order_becktest(self, order: list, ifplot: bool):
         """
 
         order (list):
@@ -176,8 +166,23 @@ class Backtest(object):
                 'size': 1.0,
                 'fee': 0.002}
         """
+        self.strategy = strategy
+        self.bars_count = re_evaluate.BARS_COUNT
+        self.order:list = re_evaluate.record_orders
+        self.Symbol_data = self.strategy.df
+
+        self._cwd = Path("./")
+        print("目前根目錄:",self._cwd)
+        # results file
+        self._results_file = self._cwd / "results" / "rl"
+        self._results_file.mkdir(parents=True, exist_ok=True)
+
+    def order_becktest(self, ifplot: bool):
+        """
+            透過order 來產生回測績效表
+        """
         # 從類神經網絡拿order的一個狀態
-        self.shiftorder = np.array(order)
+        self.shiftorder = np.array(self.order)
         self.shiftorder = np.roll(self.shiftorder, 1)
         self.shiftorder[0] = 0  # 一率將其歸零即可
         datetime_list = self.Symbol_data.index.to_list()

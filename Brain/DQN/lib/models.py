@@ -6,7 +6,6 @@ import time
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from utils.Debug_tool import debug
 
 # class DQNConv1D(nn.Module):
 #     def __init__(self, shape, actions_n):
