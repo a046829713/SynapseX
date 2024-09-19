@@ -13,9 +13,9 @@ def example_get_symboldata():
 
     """
     # symbols = ['BTCUSDT','BCHUSDT','BTCDOMUSDT','BNBUSDT','ARUSDT','BTCUSDT','ETHUSDT','SOLUSDT','SSVUSDT']
-    # symbols = ['ENSUSDT','LPTUSDT','GMXUSDT','TRBUSDT','ARUSDT','XMRUSDT','ETHUSDT', 'AAVEUSDT',  'ZECUSDT', 'SOLUSDT', 'DEFIUSDT', 'BTCUSDT',  'ETCUSDT',  'BNBUSDT', 'LTCUSDT', 'BCHUSDT']
+    symbols = ['KSMUSDT','ENSUSDT','LPTUSDT','GMXUSDT','TRBUSDT','ARUSDT','XMRUSDT','ETHUSDT', 'AAVEUSDT',  'ZECUSDT', 'SOLUSDT', 'DEFIUSDT', 'BTCUSDT',  'ETCUSDT',  'BNBUSDT', 'LTCUSDT', 'BCHUSDT']
 
-    symbols = ['BTCUSDT']
+    # symbols = ['BTCUSDT']
     for _each_symbol_name in symbols:
         DataProvider().Downloader(symbol_name=_each_symbol_name, save=True, freq=30)
 
@@ -73,3 +73,4 @@ def example_simple_evaluate():
                                     Meta_path=r'EIIE\Meta\policy_EIIE.pt')
 
 
+example_get_symboldata()
