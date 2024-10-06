@@ -73,4 +73,4 @@ def example_simple_evaluate():
                                     Meta_path=r'EIIE\Meta\policy_EIIE.pt')
 
 
-example_get_symboldata()
+example_reload_all_data(time_type='1m')

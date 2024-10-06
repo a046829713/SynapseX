@@ -1,4 +1,4 @@
-from DQN.lib.Backtest import Strategy, RL_evaluate, Backtest
+from Brain.DQN.lib.Backtest import Strategy, RL_evaluate, Backtest
 from utils.AppSetting import AppSetting
 import pandas as pd
 import re
@@ -27,19 +27,18 @@ class EngineBase():
                 df[df['tic'] == each_strategy.symbol_name])
 
             re_evaluate = RL_evaluate(each_strategy)
-            info = Backtest(re_evaluate, each_strategy).order_becktest(
-                re_evaluate.record_orders, ifplot=False)
+            info = Backtest(re_evaluate, each_strategy).order_becktest(ifplot=False)
 
-            print(info)
             if_order_map[each_strategy.symbol_name] = info['marketpostion_array'][-1]
         return if_order_map
     
     def create_strategy(self, model_path: str, symbol: str = None):
+        print(model_path)
         info,feature,data = model_path.split('-')
         
         feature_len = re.findall('\d+',feature)[0]
         data_len = re.findall('\d+',data)[0]    
-        strategytype, _, symbol_from_path = info.split(os.sep)
+        _, strategytype, _, symbol_from_path = info.split(os.sep)
         symbol_name = symbol if symbol else symbol_from_path
 
         return Strategy(strategytype=strategytype,
@@ -54,7 +53,7 @@ class EngineBase():
     def strategy_prepare(self, targetsymbols):        
         if self.strategy_keyword == 'ONE_TO_MANY':                    
             # singl model path            
-            Meta_model_path = os.path.join('DQN','Meta','Meta-300B-30K.pt')        
+            Meta_model_path = os.path.join("Brain",'DQN','Meta','Meta-300B-30K.pt')        
 
             self.strategys = []
             for symbol in targetsymbols:                     

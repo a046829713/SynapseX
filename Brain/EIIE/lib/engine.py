@@ -1,9 +1,9 @@
 import pandas as pd
 import time
-from EIIE.lib.environment import PortfolioOptimizationEnv
-from EIIE.lib.common import PVM
+from Brain.EIIE.lib.environment import PortfolioOptimizationEnv
+from Brain.EIIE.lib.common import PVM
 import numpy as np
-from EIIE.lib.model import GradientPolicy
+from Brain.EIIE.lib.model import GradientPolicy
 import torch
 
 

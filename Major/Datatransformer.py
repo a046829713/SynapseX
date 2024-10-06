@@ -313,6 +313,8 @@ class Datatransformer:
         all_times = set(df['date'])
 
         new_df = pd.DataFrame()
+
+        print(df)
         # 對每個 tic 進行處理
         for tic in df['tic'].unique():
             # 找出當前 tic 的數據

@@ -23,6 +23,9 @@ class DataFeature():
         """
         out_dict = {}
         self.df = df
+        print("get_train_net_work_data_by_pd 裡面的df")
+        print(df)
+        print('*'*120)
         out_dict.update({symbol: self.load_relative()})        
         return out_dict
     

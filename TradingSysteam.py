@@ -11,8 +11,8 @@ import copy
 from utils import Debug_tool, Data_parser
 from utils.Debug_tool import ExcessiveTradeException, print_syslog
 from binance.exceptions import BinanceAPIException
-from EIIE.lib.engine import EngineBase
-from DQN.lib.engine import EngineBase as DQN_EngineBase
+from Brain.EIIE.lib.engine import EngineBase
+from Brain.DQN.lib.engine import EngineBase as DQN_EngineBase
 import asyncio
 import os
 
@@ -41,7 +41,7 @@ class Trading_system():
         用來創建回測系統，並且將DQN判斷是否送出訂單
 
         """
-        meta_path = os.path.join('EIIE', 'Meta', 'policy_EIIE.pt')
+        meta_path = os.path.join('Brain','EIIE', 'Meta', 'policy_EIIE.pt')
         self.engine = EngineBase(Meta_path=meta_path)
         self.DQN_engin = DQN_EngineBase(self.strategy_keyword)
 
@@ -199,7 +199,7 @@ class AsyncTrading_system(Trading_system):
             # 取得binance實際擁有標的,合併 (因為原本有部位的也要持續追蹤)
             self.targetsymbols = self.datatransformer.target_symobl(
                 market_symobl, self.dataprovider.Binanceapp.getfutures_account_name())
-
+            
         elif self.strategy_keyword == 'ONE_TO_ONE':
             old_symbol = self.dataprovider.Binanceapp.getfutures_account_name()  # 第一次運行會是空的
             # 合併舊的商品 因為這樣更新的商品的時候可以把庫存清掉
@@ -248,7 +248,8 @@ class AsyncTrading_system(Trading_system):
         # 準備將資料塞入神經網絡或是策略裡面
         finally_df = self.dataprovider.get_trade_data(
             self.targetsymbols, self.symbol_map, freq=self.engine_setting['FREQ_TIME'])
-
+        
+        print(finally_df)
         # 在底層(oderbacktest會將最後一個拋棄)
         if_order_map = self.DQN_engin.get_if_order_map(finally_df)
 

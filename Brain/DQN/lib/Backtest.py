@@ -2,17 +2,17 @@ from .Error import InvalidModeError
 import pandas as pd
 import numpy as np
 import torch
-from Common.DataFeature import DataFeature
-from DQN.lib import environment
-from DQN.lib import common
-from DQN.lib.environment import State1D, State_time_step
-from DQN.lib import environment, models
-from Count import nb
+from Brain.Common.DataFeature import DataFeature
+from Brain.DQN.lib import environment
+from Brain.DQN.lib import common
+from Brain.DQN.lib.environment import State1D, State_time_step
+from Brain.DQN.lib import environment, models
+from Brain.Count import nb
 import matplotlib.pyplot as plt
 import quantstats as qs
 from pathlib import Path
 import time
-from DQN.lib import offical_transformer
+from Brain.DQN.lib import offical_transformer
 
 
 class Strategy(object):
@@ -55,7 +55,8 @@ class Strategy(object):
         self.df.set_index("Datetime", inplace=True)
 
     def load_Real_time_data(self, df: pd.DataFrame):
-        self.df = df[['date', 'close', 'high', 'low', 'open', 'volume']].copy()
+        self.df = df[['date', 'open', 'high', 'low', 'close', 'volume', 'quote_av', 'trades',
+       'tb_base_av', 'tb_quote_av']].copy()
         self.df.rename(columns={"date": 'Datetime',
                                 'open': 'Open',
                                 "high": "High",
@@ -103,7 +104,7 @@ class RL_evaluate():
                 d_model=engine_info['input_size'],
                 nhead=4,
                 d_hid=2048,
-                nlayers=4,
+                nlayers=12,
                 num_actions=self.evaluate_env.action_space.n,  # 假设有5种可能的动作
                 hidden_size=64, # 使用隐藏层
                 seq_dim=self.BARS_COUNT,

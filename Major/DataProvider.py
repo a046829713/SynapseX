@@ -12,7 +12,7 @@ from . import custom
 from .UserManager import UserManager
 from .Datatransformer import Datatransformer
 import time
-
+from datetime import timedelta, timezone
 class DataProvider:
     """
         用來整合 binance 的 API
@@ -43,7 +43,7 @@ class DataProvider:
                 df = self.SQL.read_Dateframe(SQL_Q)
 
             elif reload_type == 'Online':
-                parser_date = str(datetime.date.today() + timedelta(days=-100))
+                parser_date = str(datetime.date.today() + timedelta(days=-30))
                 df = self.SQL.read_Dateframe(
                     f'SELECT * FROM `{table_name}` where Datetime > "{parser_date}"')
 
@@ -220,7 +220,8 @@ class AsyncDataProvider():
 
     async def process_message(self, res):
         filterdata = res['data']['k']
-        data = {"Datetime": datetime.datetime.utcfromtimestamp(filterdata["t"]/1000).strftime("%Y-%m-%d %H:%M:%S"),  # 将 Unix 时间戳转换为 datetime 格式
+
+        data = {"Datetime": str(datetime.datetime.fromtimestamp(filterdata["t"]/1000, tz=timezone.utc).replace(tzinfo=None)),  # 将 Unix 时间戳转换为 datetime 格式
                 "Open": filterdata["o"],
                 "High": filterdata["h"],
                 "Low": filterdata["l"],
@@ -282,3 +283,4 @@ class AsyncDataProvider():
                 #     print(self.all_data[symbol])
                 #     print('*' * 120)
                 #     last_all[symbol] = len(self.all_data[symbol])
+

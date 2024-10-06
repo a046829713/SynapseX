@@ -4,7 +4,7 @@ import numpy as np
 from torch.utils.data.dataset import IterableDataset
 from tqdm import tqdm
 from torch.optim import AdamW
-from EIIE.lib.model import GradientPolicy
+from Brain.EIIE.lib.model import GradientPolicy
 import copy
 from torch.utils.data import DataLoader
 import torch

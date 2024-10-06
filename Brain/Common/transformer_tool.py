@@ -217,7 +217,6 @@ class TransformerEncoderLayer(nn.Module):
                     merged_mask,
                     mask_type,
                 )
-
         # ReZero 機制應用於自注意力塊
         src2 = self._sa_block(src, src_mask, src_key_padding_mask, is_causal=is_causal)
         src = src + self.alpha * src2
