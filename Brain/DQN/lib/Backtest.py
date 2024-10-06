@@ -173,7 +173,6 @@ class Backtest(object):
         self.Symbol_data = self.strategy.df
 
         self._cwd = Path("./")
-        print("目前根目錄:",self._cwd)
         # results file
         self._results_file = self._cwd / "results" / "rl"
         self._results_file.mkdir(parents=True, exist_ok=True)
