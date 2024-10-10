@@ -3,6 +3,7 @@ import torch
 from torch import nn, Tensor
 from torch.nn import TransformerEncoder
 from Brain.Common.transformer_tool import TransformerEncoderLayer, PositionalEncoding
+
 import time
 
 

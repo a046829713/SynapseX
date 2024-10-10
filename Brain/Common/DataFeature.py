@@ -33,7 +33,7 @@ class DataFeature():
         out_dict = {}
         for symbol in symbols:
             df = pd.read_csv(
-                f'simulation/data/{symbol}-F-30-Min.csv')
+                f'Brain/simulation/data/{symbol}-F-30-Min.csv')
             df.set_index('Datetime', inplace=True)
             self.df = df
             # 使用 PyTorch Tensor 的方法
