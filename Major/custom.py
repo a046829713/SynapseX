@@ -312,6 +312,15 @@ class Binance_server(object):
             _type_: _description_
         """
         return client.futures_exchange_info()
+    
+    @SetConnectClose("author")
+    def getExchangeInfo(self, client: Client) -> dict:
+        """ 回傳交易所的合約
+
+        Returns:
+            _type_: _description_
+        """
+        return client.get_exchange_info()
 
     @SetConnectClose("author")
     def getMinimumOrderQuantity(self, client: Client):
@@ -325,8 +334,9 @@ class Binance_server(object):
             out_dict.update({symbol['symbol']: symbol['filters'][2]['minQty']})
 
         return out_dict
-
-    def get_targetsymobls(self) -> list:
+    
+    
+    def get_targetsymobls(self,symbol_type:str) -> list:
         """
             to call api get futures symbol and clean data
 
@@ -334,19 +344,27 @@ class Binance_server(object):
         Returns:
             list: _description_
         """
-        data = self.getfuturesinfo()
         out_list = []
-        for key in data.keys():
-            if key == 'symbols':
-                for each_data in data[key]:
-                    if each_data['marginAsset'] == 'USDT' and each_data['status'] == 'TRADING':
-                        # 目前怪怪的合約都拋棄不要（有數字的大概論都有特殊意義）
-                        clear_name = re.findall(
-                            '[A-Z]+USDT', each_data['symbol'])
-                        if clear_name:
-                            if each_data['symbol'] == clear_name[0]:
-                                if each_data['symbol'] not in out_list:
-                                    out_list.append(each_data['symbol'])
+        if symbol_type == 'FUTURES':
+            data = self.getfuturesinfo()
+            for each_data in data['symbols']:
+                if each_data['marginAsset'] == 'USDT' and each_data['status'] == 'TRADING':
+                    # 目前怪怪的合約都拋棄不要（有數字的大概論都有特殊意義）
+                    clear_name = re.findall(
+                        '[A-Z]+USDT', each_data['symbol'])
+                    if clear_name:
+                        if each_data['symbol'] == clear_name[0]:
+                            out_list.append(each_data['symbol'])
+        elif symbol_type == 'SPOT':
+            data = self.getExchangeInfo() 
+            i = 0
+            for each_data in data['symbols']:
+                if each_data['status'] == 'TRADING' and each_data['quoteAsset'] =="USDT":
+                    clear_name = re.search(r'^[A-Z]+USDT$', each_data['symbol'])
+                    if clear_name:                    
+                        if each_data['symbol'] == clear_name[0]:
+                            out_list.append(each_data['symbol'])
+
         return out_list
 
     @SetConnectClose('all_user')

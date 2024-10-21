@@ -20,12 +20,11 @@ def example_get_symboldata():
         DataProvider().Downloader(symbol_name=_each_symbol_name, save=True, freq=30)
 
 
-def example_get_all_symbol_name():
+def example_get_targetsymobls():
     """
         取得有效名稱
     """
-    all_symbol_name = DataProvider().Binanceapp.get_targetsymobls()
-    print(all_symbol_name)
+    print(DataProvider().get_both_type_targetsymbols())
 
 
 def example_get_target_symbol():
@@ -73,4 +72,4 @@ def example_simple_evaluate():
                                     Meta_path=r'EIIE\Meta\policy_EIIE.pt')
 
 
-example_reload_all_data(time_type='1m')
+example_get_targetsymobls()

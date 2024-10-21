@@ -23,6 +23,19 @@ class State:
         self.model_train = model_train
         self.default_slippage = default_slippage
 
+        self.build_fileds()
+
+    def build_fileds(self):
+        self.field_names = [
+            "open", "high", "low", "close", "volume", "volume2",
+            "quote_av", "quote_av2", "trades", "trades2",
+            "tb_base_av", "tb_base_av2", "tb_quote_av", "tb_quote_av2",
+            "open_c_change", "open_p_change",
+            "high_c_change", "high_p_change",
+            "low_c_change", "low_p_change",
+            "close_c_change", "close_p_change"
+        ]
+
     def reset(self, prices, offset):
         assert offset >= self.bars_count-1
         self.have_position = False
@@ -31,6 +44,10 @@ class State:
         self._offset = offset        
         self.game_steps = 0  # 這次遊戲進行了多久
         self.bar_dont_change_count = 0 # 計算K棒之間轉換過了多久
+
+        self.cost_sum = 0.0
+        self.closecash = 0.0
+        self.canusecash = 1.0
 
     def _cur_close(self):
         """
@@ -93,60 +110,74 @@ class State:
 
         return reward
 
-    def step(self, action):        
+    def step(self, action):
+        """
+            重新設計
+            最佳動作空間探索的獎勵函數
+
+            "找尋和之前所累積的獎勵之差距"
+
+        Args:
+            action (_type_): _description_
+        """
         assert isinstance(action, Actions)
+
         reward = 0.0
         done = False
         close = self._cur_close()
-        profit = 0.0
-        position_change_reward = self.count_postion_change_reward(action)  # 调用更新后的奖励函数
+        # 以平倉損益每局從新歸零
+        closecash_diff = 0.0
+        # 未平倉損益
+        opencash_diff = 0.0
+        # 手續費
+        cost = 0.0
 
-        # 判断当前是否持仓
+        # 第一根買的時候不計算未平倉損益
         if self.have_position:
-            # 還在考慮是否要吐給神經網絡
-            profit = (close - self.open_price) / self.open_price
+            opencash_diff = (close - self.open_price) / self.open_price
 
-        # 根据动作更新状态和计算奖励
         if action == Actions.Buy:
             if not self.have_position:
-                # 开仓买入
                 self.have_position = True
-                self.open_price = close * (1 + self.default_slippage)                
-                reward = -self.commission_perc  # 扣除交易成本
+                # 記錄開盤價
+                self.open_price = close * (1 + self.default_slippage)
+                cost = -self.commission_perc
+                reward += 0.001  # 可以考虑动态调整或基于条件的奖励
             else:
                 # 已持有仓位，重复买入（可能是错误行为）
                 reward = -0.01  # 给予小的惩罚，鼓励合理交易
+                
         elif action == Actions.Sell:
             if self.have_position:
-                # 平仓卖出
+                cost = -self.commission_perc
                 self.have_position = False
-                sell_price = close * (1 - self.default_slippage)
-                profit = (sell_price - self.open_price) / self.open_price                
-                reward = profit - self.commission_perc  # 盈利减去交易成本
+                # 計算出賣掉的資產變化率,並且累加起來
+                closecash_diff = (
+                    close * (1 - self.default_slippage) - self.open_price) / self.open_price
                 self.open_price = 0.0
+                opencash_diff = 0.0
+                reward += 0.001  # 可以考虑动态调整或基于条件的奖励
             else:
                 # 空仓卖出（可能是错误行为）
                 reward = -0.01  # 给予小的惩罚
-        else:
-            # 持仓或空仓时的持有动作
-            reward = 0.0  # 可根据需要加入持仓成本
+                
+        self.cost_sum += cost
+        self.closecash += closecash_diff
+        last_canusecash = self.canusecash
+        # 累積的概念為? 淨值 = 起始資金 + 手續費 +  已平倉損益 + 未平倉損益
+        self.canusecash = 1.0 + self.cost_sum + self.closecash + opencash_diff
+        reward += self.canusecash - last_canusecash
+        
+        # 新獎勵設計
+        # print("目前部位",self.have_position,"單次手續費:",cost,"單次已平倉損益:",closecash_diff,"單次未平倉損益:", opencash_diff)
+        # print("目前動作:",action,"總資金:",self.canusecash,"手續費用累積:",self.cost_sum,"累積已平倉損益:",self.closecash,"獎勵差:",reward)
+        # print('*'*120)
 
+        # 上一個時步的狀態 ================================
 
-        # 可选：惩罚持仓过久的行为
-        if self.have_position:
-            holding_penalty = -0.0001  # 每个时间步的小惩罚
-            reward += holding_penalty
-
-        # 添加仓位变动奖励
-        reward += position_change_reward
-
-        # 添加趋势奖励
-        reward += self.trend_reward(window_size=self.bars_count)
-
-
-        # 更新状态
         self._offset += 1
-        self.game_steps += 1
+        self.game_steps += 1  # 本次遊戲次數
+        # 判斷遊戲是否結束
         done |= self._offset >= self._prices.close.shape[0] - 1
         if self.game_steps == self.N_steps and self.model_train:
             done = True
@@ -161,33 +192,23 @@ class State_time_step(State):
     """
     @property
     def shape(self):
-        return (self.bars_count, 16)
+        return (self.bars_count, len(self.field_names) + 2 )
+
+
 
     def encode(self):
         res = np.zeros(shape=self.shape, dtype=np.float32)
 
         ofs = self.bars_count
         for bar_idx in range(self.bars_count):
-            res[bar_idx][0] = self._prices.high[self._offset - ofs + bar_idx]
-            res[bar_idx][1] = self._prices.low[self._offset - ofs + bar_idx]
-            res[bar_idx][2] = self._prices.close[self._offset - ofs + bar_idx]
-            res[bar_idx][3] = self._prices.volume[self._offset - ofs + bar_idx]
-            res[bar_idx][4] = self._prices.volume2[self._offset - ofs + bar_idx]
-            res[bar_idx][5] = self._prices.quote_av[self._offset - ofs + bar_idx]
-            res[bar_idx][6] = self._prices.quote_av2[self._offset - ofs + bar_idx]
-            res[bar_idx][7] = self._prices.trades[self._offset - ofs + bar_idx]
-            res[bar_idx][8] = self._prices.trades2[self._offset - ofs + bar_idx]
-            res[bar_idx][9] = self._prices.tb_base_av[self._offset - ofs + bar_idx]
-            res[bar_idx][10] = self._prices.tb_base_av2[self._offset - ofs + bar_idx]
-            res[bar_idx][11] = self._prices.tb_quote_av[self._offset - ofs + bar_idx]
-            res[bar_idx][12] = self._prices.tb_quote_av2[self._offset - ofs + bar_idx]
+            for idx, field in enumerate(self.field_names):  # 編碼所有字段
+                res[bar_idx][idx] = getattr(self._prices, field)[self._offset - ofs + bar_idx]
 
         if self.have_position:
-            res[:, 13] = 1.0
-            res[:, 14] = (self._cur_close() - self.open_price) / \
+            res[:, 22 ] = 1.0
+            res[:, 23] = (self._cur_close() - self.open_price) / \
                 self.open_price
-
-        res[:,15] = self.bar_dont_change_count
+            
         return res
 
 

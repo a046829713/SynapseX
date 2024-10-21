@@ -3,29 +3,35 @@ import collections
 import time
 import numpy as np
 
+
 class DataFeature():
     """
         I got the faile to change all data to the tensor version,
         it made all process to be slow.
-        
+
     """
+
     def __init__(self, formal: bool = False) -> None:
         self.formal = formal
         self.PricesObject = collections.namedtuple('Prices', field_names=[
             "open", "high", "low", "close", "volume", "volume2",
             "quote_av", "quote_av2", "trades", "trades2",
-            "tb_base_av", "tb_base_av2", "tb_quote_av", "tb_quote_av2"
+            "tb_base_av", "tb_base_av2", "tb_quote_av", "tb_quote_av2",
+            "open_c_change", "open_p_change",
+            "high_c_change", "high_p_change",
+            "low_c_change", "low_p_change",
+            "close_c_change", "close_p_change"
         ])
 
-    def get_train_net_work_data_by_pd(self, symbol:str, df: pd.DataFrame) -> dict:
+    def get_train_net_work_data_by_pd(self, symbol: str, df: pd.DataFrame) -> dict:
         """
             用來取得類神經網絡所需要的資料,正式交易的時候
         """
         out_dict = {}
         self.df = df
-        out_dict.update({symbol: self.load_relative()})        
+        out_dict.update({symbol: self.load_relative()})
         return out_dict
-    
+
     def get_train_net_work_data_by_path(self, symbols: list) -> dict:
         """
             用來取得類神經網絡所需要的資料
@@ -39,7 +45,7 @@ class DataFeature():
             # 使用 PyTorch Tensor 的方法
             out_dict.update({symbol: self.load_relative()})
         return out_dict
-    
+
     def calculate_previous_change(self, values):
         """
             Calculate relative data change based on the previous value.
@@ -55,7 +61,7 @@ class DataFeature():
         shift_data[0] = 0
         diff_data = values - shift_data
         return np.divide(diff_data, shift_data, out=np.zeros_like(diff_data), where=shift_data != 0)
-    
+
     def calculate_current_change(self, values):
         """
             Calculate relative data change based on the current value.
@@ -71,7 +77,7 @@ class DataFeature():
         shift_data[0] = 0
         diff_data = values - shift_data
         return np.divide(diff_data, values, out=np.zeros_like(diff_data), where=values != 0)
-    
+
     def load_relative(self):
         """
             CSV最後排序為:
@@ -104,6 +110,18 @@ class DataFeature():
         rl = (low - open) / open
         rc = (close - open) / open
 
+        open_c_change = self.calculate_current_change(open)
+        open_p_change = self.calculate_previous_change(open)
+
+        high_c_change = self.calculate_current_change(high)
+        high_p_change = self.calculate_previous_change(high)
+
+        low_c_change = self.calculate_current_change(low)
+        low_p_change = self.calculate_previous_change(low)
+
+        close_c_change = self.calculate_current_change(close)
+        close_p_change = self.calculate_previous_change(close)
+
         return self.PricesObject(
             open=open,
             high=rh,
@@ -118,5 +136,13 @@ class DataFeature():
             tb_base_av=tb_base_av,
             tb_base_av2=tb_base_av2,
             tb_quote_av=tb_quote_av,
-            tb_quote_av2=tb_quote_av2
+            tb_quote_av2=tb_quote_av2,
+            open_c_change=open_c_change,
+            open_p_change=open_p_change,
+            high_c_change=high_c_change,
+            high_p_change=high_p_change,
+            low_c_change=low_c_change,
+            low_p_change=low_p_change,
+            close_c_change=close_c_change,
+            close_p_change=close_p_change
         )

@@ -212,6 +212,15 @@ class DataProvider:
         data = self.SQL.get_db_data('select * from interval_record')
         return datetime.datetime.strptime(data[0][1], "%Y-%m-%d %H:%M:%S.%f")
 
+    def get_both_type_targetsymbols(self):
+        """
+            To take advantage of the price differences between the futures and spot markets,
+              the symbol must be listed in both markets.
+    
+        """
+        all_symbol_name_of_futures = self.Binanceapp.get_targetsymobls(symbol_type='FUTURES')
+        all_symbol_name_of_spot = self.Binanceapp.get_targetsymobls(symbol_type='SPOT')
+        return list(set(all_symbol_name_of_futures) & set(all_symbol_name_of_spot))
 
 class AsyncDataProvider():
     def __init__(self) -> None:
