@@ -80,7 +80,9 @@ class RL_prepare(ABC):
     
     def _prepare_env(self):
         if self.keyword == 'Transformer':
-            state = State_time_step(bars_count=self.BARS_COUNT,
+            state = State_time_step(
+                                    init_prices=self.data[np.random.choice(list(self.data.keys()))],
+                                    bars_count=self.BARS_COUNT,
                                     commission_perc=self.MODEL_DEFAULT_COMMISSION_PERC,
                                     model_train=True,
                                     default_slippage = self.DEFAULT_SLIPPAGE

@@ -2,6 +2,7 @@ import enum
 import time
 import gymnasium as gym
 import numpy as np
+import collections
 
 
 class Actions(enum.Enum):
@@ -11,7 +12,7 @@ class Actions(enum.Enum):
 
 
 class State:
-    def __init__(self, bars_count, commission_perc, model_train, default_slippage):
+    def __init__(self,init_prices:collections.namedtuple, bars_count, commission_perc, model_train, default_slippage):
         assert isinstance(bars_count, int)
         assert bars_count > 0
         assert isinstance(commission_perc, float)
@@ -23,18 +24,12 @@ class State:
         self.model_train = model_train
         self.default_slippage = default_slippage
 
-        self.build_fileds()
+        self.build_fileds(init_prices)
 
-    def build_fileds(self):
-        self.field_names = [
-            "open", "high", "low", "close", "volume", "volume2",
-            "quote_av", "quote_av2", "trades", "trades2",
-            "tb_base_av", "tb_base_av2", "tb_quote_av", "tb_quote_av2",
-            "open_c_change", "open_p_change",
-            "high_c_change", "high_p_change",
-            "low_c_change", "low_p_change",
-            "close_c_change", "close_p_change"
-        ]
+    def build_fileds(self,init_prices):
+        # "open"要記得拿掉
+        self.field_names =list(init_prices._fields)
+        self.field_names.remove("open")
 
     def reset(self, prices, offset):
         assert offset >= self.bars_count-1
@@ -194,8 +189,6 @@ class State_time_step(State):
     def shape(self):
         return (self.bars_count, len(self.field_names) + 2 )
 
-
-
     def encode(self):
         res = np.zeros(shape=self.shape, dtype=np.float32)
 
@@ -205,8 +198,8 @@ class State_time_step(State):
                 res[bar_idx][idx] = getattr(self._prices, field)[self._offset - ofs + bar_idx]
 
         if self.have_position:
-            res[:, 22 ] = 1.0
-            res[:, 23] = (self._cur_close() - self.open_price) / \
+            res[:, len(self.field_names) ] = 1.0
+            res[:, len(self.field_names) + 1 ] = (self._cur_close() - self.open_price) / \
                 self.open_price
             
         return res

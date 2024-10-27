@@ -1,4 +1,4 @@
-from DQN.lib.Backtest import Strategy, RL_evaluate, Backtest
+from Brain.DQN.lib.Backtest import Strategy, RL_evaluate, Backtest
 from utils.AppSetting import AppSetting
 import re
 
@@ -11,7 +11,8 @@ def creaet_strategy(model_path:str,symbol:str):
     info,feature,data = model_path.split('-')
     feature_len = re.findall('\d+',feature)[0]
     data_len = re.findall('\d+',data)[0]
-    strategytype,_,_ = info.split('\\')    
+    print(info)
+    _,strategytype,_,_ = info.split('\\')   
     strategy = Strategy(strategytype=strategytype,
                     symbol_name=symbol,
                     freq_time=int(data_len),
