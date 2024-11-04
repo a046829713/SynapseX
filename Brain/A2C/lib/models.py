@@ -1,11 +1,12 @@
 import torch
 from torch import nn
-from Common.transformer_tool import TransformerEncoderLayer, PositionalEncoding
+from Brain.Common.transformer_tool import TransformerEncoderLayer, PositionalEncoding
 from torch.nn import TransformerEncoder
 from torch import nn, Tensor
+import time
 
 
-class ActorCriticModel(torch.nn.Module):
+class TransformerModel(torch.nn.Module):
     def __init__(self,
                  d_model: int,
                  nhead: int,
@@ -13,10 +14,9 @@ class ActorCriticModel(torch.nn.Module):
                  nlayers: int,
                  n_actions: int,
                  hidden_size: int,
-                 seq_dim: int = 300,
-                 dropout: float = 0.5,
+                 dropout: float = 0.1,
                  batch_first=True,
-                 num_iterations=3):
+                 ) -> None:
         """
             原本EncoderLayer 是使用官方的，後面因為訓練上難以收斂
             故重新在製作一次屬於自己的TransformerEncoderLayer,並且加入chain of thought
@@ -36,10 +36,14 @@ class ActorCriticModel(torch.nn.Module):
             一開始在測試chain of thought 發現因為TransformerEncoderLayer 裡面一開始採用
             alpha = 0, 所以輸入和輸出會都一樣。
         """
-        super(ActorCriticModel, self).__init__()
+        super(TransformerModel, self).__init__()
 
-        # 決定迭代的次數
-        self.num_iterations = num_iterations
+        # 將資料映射
+        self.embedding = nn.Sequential(
+            nn.Linear(d_model + n_actions + 1, hidden_size),
+            nn.ReLU(),
+            nn.Linear(hidden_size, hidden_size)
+        )
 
         self.batch_first = batch_first
         self.pos_encoder = PositionalEncoding(hidden_size, dropout)
@@ -50,20 +54,13 @@ class ActorCriticModel(torch.nn.Module):
         self.transformer_encoder = TransformerEncoder(
             encoder_layers, nlayers, norm=nn.LayerNorm(hidden_size), enable_nested_tensor=False)
 
+        self.embed_ln = nn.LayerNorm(hidden_size)  # 層歸一化
+
+        # 產生各動作選擇的機率
         self.policy_head = nn.Linear(hidden_size, n_actions)
 
         # Critic 的 Value Head
         self.value_head = nn.Linear(hidden_size, 1)
-
-        # 將資料映射
-        self.embedding = nn.Sequential(
-            nn.Linear(d_model, hidden_size),
-            nn.ReLU(),
-            nn.Linear(hidden_size, hidden_size)
-        )
-
-        self.embed_ln = nn.LayerNorm(hidden_size)  # 層歸一化
-
         # 初始化權重
         self.apply(self._init_weights)
 
@@ -92,18 +89,81 @@ class ActorCriticModel(torch.nn.Module):
 
         src = self.embed_ln(src.transpose(0, 1))
 
-        # torch.Size([32, 300, 64])
-        for _ in range(self.num_iterations):
-            if self.batch_first:
-                src = self.transformer_encoder(src)
-            else:
-                src = self.transformer_encoder(src.transpose(0, 1))
+        if self.batch_first:
+            src = self.transformer_encoder(src)
+        else:
+            src = self.transformer_encoder(src.transpose(0, 1))
 
         x = src.mean(dim=1)
 
         policy_logits = self.policy_head(x)
-
         # Critic 输出
         state_value = self.value_head(x)
+
+        return policy_logits, state_value
+
+
+class ActorCriticModel(torch.nn.Module):
+    def __init__(self,
+                 d_model: int,
+                 nhead: int,
+                 d_hid: int,
+                 nlayers: int,
+                 n_actions: int,
+                 hidden_size: int,
+                 dropout: float = 0.1,
+                 batch_first=True,
+                 num_iterations=3):
+        """
+
+        """
+        super(ActorCriticModel, self).__init__()
+
+        self.n_actions = n_actions
+
+        # 決定迭代的次數
+        self.num_iterations = num_iterations
+
+        self.transformer = TransformerModel(d_model=d_model,
+                                            nhead=nhead,
+                                            d_hid=d_hid,
+                                            nlayers=nlayers,
+                                            n_actions=n_actions,
+                                            hidden_size=hidden_size,
+                                            dropout=dropout,
+                                            batch_first=batch_first)
+        self.batch_first = batch_first
+
+    def forward(self, src: Tensor) -> Tensor:
+        """
+            Arguments:
+                src: Tensor, shape ``[batch_size, seq_len, d_model]`` if batch_first is True,
+                    else ``[seq_len, batch_size, d_model]``
+
+            Returns:
+                policy_logits: Tensor of shape ``[batch_size, n_actions]``
+                state_value: Tensor of shape ``[batch_size, 1]``        
+        """
+        # torch.Size([2, 300, 16])
+        if self.batch_first:
+            batch_size, seq_len, _ = src.size()
+        else:
+            seq_len, batch_size, _ = src.size()
+
+        # 初始化 new_input，添加全零的动作和状态值信息
+        zeros_actions = torch.zeros(batch_size, seq_len, self.n_actions, device=src.device)
+        zeros_values = torch.zeros(batch_size, seq_len, 1, device=src.device)
+        new_input = torch.cat((src, zeros_actions, zeros_values), dim=2)
+
+
+        for _ in range(self.num_iterations):
+            policy_logits, state_value = self.transformer(new_input)
+            # 将 policy_logits 和 state_value 扩展到序列长度
+            policy_logits_expanded = policy_logits.unsqueeze(1).expand(-1, seq_len, -1)
+
+            state_value_expanded = state_value.unsqueeze(1).expand(-1, seq_len, -1)
+            # 更新 new_input
+            new_input = torch.cat((src, policy_logits_expanded, state_value_expanded), dim=2)
+            print(f"第{_}次:",policy_logits,state_value)
 
         return policy_logits, state_value
