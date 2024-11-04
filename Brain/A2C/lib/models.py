@@ -164,6 +164,6 @@ class ActorCriticModel(torch.nn.Module):
             state_value_expanded = state_value.unsqueeze(1).expand(-1, seq_len, -1)
             # 更新 new_input
             new_input = torch.cat((src, policy_logits_expanded, state_value_expanded), dim=2)
-            print(f"第{_}次:",policy_logits,state_value)
+            
 
         return policy_logits, state_value
