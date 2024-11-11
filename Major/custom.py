@@ -474,9 +474,10 @@ class Binance_server(object):
         for i in current_size.keys():
             # 獲取 BTCUSDT 合約的當前部位信息
             position = client.futures_position_information(symbol=i)
-            # 取得目前槓桿倍數
-            leverage = int(position[0]['leverage'])
-            leverage_map.update({i: leverage})
+            if float(position[0]['positionAmt'])!=0:
+                # 取得目前槓桿倍數
+                leverage = int(position[0]['leverage'])
+                leverage_map.update({i: leverage})
 
         for each_symbol, ready_to_order_size in order_finally.items():
             if leverage_map.get(each_symbol, None) is None:
@@ -576,6 +577,7 @@ class Binance_server(object):
             order_times, max_qty = self._limit_order_times_qty(
                 exchange_info_data[symbol], order_quantity)
 
+            print("目前商品:",symbol,"下單次數:",order_times,"最大量:",max_qty)
             for _ in range(max([1, int(order_times)])):
                 if int(order_times) == 0:
                     real_order = order_quantity

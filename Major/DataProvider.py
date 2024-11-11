@@ -84,6 +84,7 @@ class DataProvider:
 
         """
         for symbol_name in self.Binanceapp.get_targetsymobls(symbol_type=symbol_type):
+            if symbol_name not in ['MKRUSDT', 'BSVUSDT', 'QNTUSDT', 'BTCDOMUSDT', 'SOLUSDT', 'SSVUSDT', 'ORDIUSDT', 'EGLDUSDT', 'GMXUSDT', 'BCHUSDT', 'ZECUSDT', 'DASHUSDT', 'BTCUSDT', 'BNBUSDT', 'AAVEUSDT', 'XMRUSDT', 'AVAXUSDT', 'ETCUSDT', 'ILVUSDT', 'LTCUSDT', 'DEFIUSDT', 'INJUSDT', 'TRBUSDT', 'ETHUSDT', 'COMPUSDT', 'YFIUSDT']:continue
             try:
                 original_df, eachCatchDf = self.reload_data(
                     symbol_name, time_type=time_type, reload_type="History", symbol_type=symbol_type)

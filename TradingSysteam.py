@@ -182,7 +182,7 @@ class AsyncTrading_system(Trading_system):
         super().__init__()
 
         self.checkDailydata()  # 檢查日線資料
-        self.reload_all_futures_data() # 回補所有分鐘資料
+        # self.reload_all_futures_data() # 回補所有分鐘資料
         self.process_target_symbol()  # 取得要交易的標的
 
         # 將標得注入引擎 #這邊可能需要獲取更多資料

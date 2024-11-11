@@ -3,7 +3,21 @@ from Major.Datatransformer import Datatransformer
 # from EIIE.lib import Train_neural_networks
 import matplotlib.pyplot as plt
 from pathlib import Path
+
+from binance.client import Client
+from Major.UserManager import UserManager
+import json
+
 # from EIIE.lib.simple_evaluate import evaluate_train_test_performance
+def get_futures_position_information():
+    account, passwd = UserManager.GetAccount_Passwd('author')
+    client = Client(account, passwd)
+    data = client.futures_position_information(symbol = "BTCUSDT")
+    print(float(data[0]['positionAmt'])!=0)
+    # for i in data:
+    #     print(i['symbol'],i['positionAmt'])
+    #     print('*'*120)
+    
 
 
 def example_get_symboldata():
@@ -72,4 +86,4 @@ def example_simple_evaluate():
                                     Meta_path=r'EIIE\Meta\policy_EIIE.pt')
 
 
-example_reload_all_data(time_type='1m')
+get_futures_position_information()
