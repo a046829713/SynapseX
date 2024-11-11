@@ -6,6 +6,9 @@ from time import time
 
 LOG_DIR = "LogRecord"
     
+# 檢查日誌目錄是否存在，若不存在則創建
+if not os.path.exists(LOG_DIR):
+    os.makedirs(LOG_DIR)
 
 today = datetime.date.today().strftime('%Y%m%d')
 log_file = os.path.join(LOG_DIR, f"{today}.log")
