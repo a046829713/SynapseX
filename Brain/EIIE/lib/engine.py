@@ -41,7 +41,9 @@ class EngineBase():
                 _each_key_value[1] = 0.25 if this_percent > 0.25 else this_percent
             new_out_put.append(tuple(_each_key_value))
 
+
         self.last_order_info = new_out_put
+
 
     def _performance(self, environment: PortfolioOptimizationEnv):
         """
@@ -80,12 +82,12 @@ class EngineBase():
         """
         last_df = finally_df.groupby('tic').last()
         out_map = {}
+
         for key, value in balance_balance_map.items():
             for each_data in self.last_order_info[1:]:
                 symbol = each_data[0]
                 weight = each_data[1]
-                shares = value * weight * leverage / \
-                    last_df[last_df.index == symbol]['close'].iloc[0]
+                shares = value * weight * leverage /  last_df[last_df.index == symbol]['close'].iloc[0]
                 if key in out_map:
                     out_map[key].update({symbol: [1, shares]})
                 else:

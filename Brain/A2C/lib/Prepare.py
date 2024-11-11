@@ -2,13 +2,13 @@ import os
 import numpy as np
 import torch
 import torch.optim as optim
-from Common.DataFeature import DataFeature
+from Brain.Common.DataFeature import DataFeature
 from datetime import datetime
 from tensorboardX import SummaryWriter
 import time
 from abc import ABC, abstractmethod
-from A2C.lib.environment import Env, State_time_step, State2D
-from A2C.lib.models import ActorCriticModel
+from Brain.A2C.lib.environment import Env, State_time_step, State2D
+from Brain.A2C.lib.models import ActorCriticModel
 import copy 
 
 def show_setting(title: str, content: str):
@@ -38,14 +38,19 @@ class RL_prepare(ABC):
 
     def _prepare_symbols(self):
         # symbols = ['PEOPLEUSDT','BTCUSDT', 'ENSUSDT', 'LPTUSDT', 'GMXUSDT', 'TRBUSDT', 'ARUSDT', 'XMRUSDT', 'ETHUSDT', 'AAVEUSDT', 'ZECUSDT', 'SOLUSDT', 'DEFIUSDT', 'ETCUSDT', 'LTCUSDT', 'BCHUSDT', 'ORDIUSDT', 'BNBUSDT', 'AVAXUSDT', 'MKRUSDT', 'BTCDOMUSDT']
-        symbols = ['TRBUSDT']
+        symbols = ['TRBUSDT','BTCUSDT']
         self.symbols = list(set(symbols))
         show_setting("SYMBOLS", self.symbols)
 
     def _prepare_envs(self):
         self.train_envs = []
         if self.keyword == 'Transformer':
-            state = State_time_step(bars_count=self.BARS_COUNT,
+            # self.data[np.random.choice(list(self.data.keys()))]
+            data = DataFeature().get_train_net_work_data_by_path([self.symbols[0]])
+
+            state = State_time_step(
+                                    field_names=data[list(data.keys())[0]]._fields,
+                                    bars_count=self.BARS_COUNT,
                                     commission_perc=self.MODEL_DEFAULT_COMMISSION_PERC,
                                     model_train=True,
                                     default_slippage=self.DEFAULT_SLIPPAGE
@@ -58,7 +63,7 @@ class RL_prepare(ABC):
                             default_slippage=self.DEFAULT_SLIPPAGE
                             )
 
-        print("There is state:", state)
+        show_setting("ENVIRONMENT-STATE", state)
 
 
         for symbol in self.symbols:
@@ -66,8 +71,6 @@ class RL_prepare(ABC):
 
             # 製作環境
             self.train_envs.append(Env(prices=data, state=state, random_ofs_on_reset=True))
-
-        print(self.train_envs)
 
     def _prepare_writer(self):
         self.writer = SummaryWriter(
@@ -83,12 +86,12 @@ class RL_prepare(ABC):
         self.LEARNING_RATE = 0.0001  # optim 的學習率
         self.VALUE_LOSS_COEF = 0.5  # 价值损失系数
         self.ENTROPY_COEF = 0.01  # 熵损失系数
+        self.SAVES_PATH = "saves"  # 儲存的路徑
 
         # self.REWARD_STEPS = 2
         # self.REPLAY_SIZE = 100000
         # self.REPLAY_INITIAL = 10000
         # self.EPSILON_START = 1.0  # 起始機率(一開始都隨機運行)
-        # self.SAVES_PATH = "saves"  # 儲存的路徑
         # self.EPSILON_STOP = 0.1
         # self.TARGET_NET_SYNC = 1000
         # self.CHECKPOINT_EVERY_STEP = 20000
@@ -113,7 +116,6 @@ class RL_prepare(ABC):
             nlayers=2,
             n_actions=self.train_envs[0].action_space.n,
             hidden_size=64,
-            seq_dim=self.BARS_COUNT,
             dropout=0.1,
             batch_first=True,
             num_iterations=3

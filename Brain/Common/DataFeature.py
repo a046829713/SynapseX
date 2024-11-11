@@ -13,14 +13,19 @@ class DataFeature():
 
     def __init__(self, formal: bool = False) -> None:
         self.formal = formal
+        # self.PricesObject = collections.namedtuple('Prices', field_names=[
+        #     "open", "high", "low", "close", "volume", "volume2",
+        #     "quote_av", "quote_av2", "trades", "trades2",
+        #     "tb_base_av", "tb_base_av2", "tb_quote_av", "tb_quote_av2",
+        #     "open_c_change", "open_p_change",
+        #     "high_c_change", "high_p_change",
+        #     "low_c_change", "low_p_change",
+        #     "close_c_change", "close_p_change"
+        # ])
         self.PricesObject = collections.namedtuple('Prices', field_names=[
             "open", "high", "low", "close", "volume", "volume2",
             "quote_av", "quote_av2", "trades", "trades2",
-            "tb_base_av", "tb_base_av2", "tb_quote_av", "tb_quote_av2",
-            "open_c_change", "open_p_change",
-            "high_c_change", "high_p_change",
-            "low_c_change", "low_p_change",
-            "close_c_change", "close_p_change"
+            "tb_base_av", "tb_base_av2", "tb_quote_av", "tb_quote_av2"
         ])
 
     def get_train_net_work_data_by_pd(self, symbol: str, df: pd.DataFrame) -> dict:
@@ -110,17 +115,17 @@ class DataFeature():
         rl = (low - open) / open
         rc = (close - open) / open
 
-        open_c_change = self.calculate_current_change(open)
-        open_p_change = self.calculate_previous_change(open)
+        # open_c_change = self.calculate_current_change(open)
+        # open_p_change = self.calculate_previous_change(open)
 
-        high_c_change = self.calculate_current_change(high)
-        high_p_change = self.calculate_previous_change(high)
+        # high_c_change = self.calculate_current_change(high)
+        # high_p_change = self.calculate_previous_change(high)
 
-        low_c_change = self.calculate_current_change(low)
-        low_p_change = self.calculate_previous_change(low)
+        # low_c_change = self.calculate_current_change(low)
+        # low_p_change = self.calculate_previous_change(low)
 
-        close_c_change = self.calculate_current_change(close)
-        close_p_change = self.calculate_previous_change(close)
+        # close_c_change = self.calculate_current_change(close)
+        # close_p_change = self.calculate_previous_change(close)
 
         return self.PricesObject(
             open=open,
@@ -137,12 +142,12 @@ class DataFeature():
             tb_base_av2=tb_base_av2,
             tb_quote_av=tb_quote_av,
             tb_quote_av2=tb_quote_av2,
-            open_c_change=open_c_change,
-            open_p_change=open_p_change,
-            high_c_change=high_c_change,
-            high_p_change=high_p_change,
-            low_c_change=low_c_change,
-            low_p_change=low_p_change,
-            close_c_change=close_c_change,
-            close_p_change=close_p_change
+            # open_c_change=open_c_change,
+            # open_p_change=open_p_change,
+            # high_c_change=high_c_change,
+            # high_p_change=high_p_change,
+            # low_c_change=low_c_change,
+            # low_p_change=low_p_change,
+            # close_c_change=close_c_change,
+            # close_p_change=close_p_change
         )

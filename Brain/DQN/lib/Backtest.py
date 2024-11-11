@@ -80,9 +80,10 @@ class RL_evaluate():
 
         data = DataFeature().get_train_net_work_data_by_pd(symbol=strategy.symbol_name,
                                                            df=strategy.df)
-
         # 準備神經網絡的狀態
-        state = State_time_step(bars_count=self.BARS_COUNT,
+        state = State_time_step(
+            data[list(data.keys())[0]],
+            bars_count=self.BARS_COUNT,
                                 commission_perc=self.MODEL_DEFAULT_COMMISSION_PERC,
                                 model_train=False,
                                 default_slippage = self.DEFAULT_SLIPPAGE

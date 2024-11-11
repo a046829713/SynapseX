@@ -204,7 +204,17 @@ class Datatransformer:
         lagPrice = price.shift(periond)
         momen = price / lagPrice - 1
         return momen
+    
+    def get_newthink_symbol(self,all_symbols):
+        for each_data in all_symbols:
+            symbolname = each_data[0]
+            data = each_data[1]
 
+            print(symbolname)
+            print(data)
+            print('*'*120)
+
+        return []
     def get_mtm_filter_symbol(self, all_symbols):
         """
             將過濾完的標的(can trade symobl)輸出

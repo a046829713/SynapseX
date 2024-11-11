@@ -26,7 +26,6 @@ from .UserManager import UserManager
 from Infrastructure.AlertMsg import LINE_Alert
 
 
-
 def SetConnectClose(custom_user):
     """
         如果使用者是所有人通常都會從外部進來,作者就從資料庫拿取就好    
@@ -72,11 +71,13 @@ def SetConnectClose(custom_user):
         return wrapper
     return actual_decorator
 
+
 def change_ts_to_str(time_stamp: int):
     """
         將時間戳 轉換成字串
     """
     return str(datetime.fromtimestamp(time_stamp, tz=timezone.utc).replace(tzinfo=None))
+
 
 class BinanceData(object):
     """
@@ -86,8 +87,6 @@ class BinanceData(object):
     binsizes = {"1m": 1, "5m": 5, '15m': 15, '30m': 30,
                 "1h": 60, '2h': 120, "4h": 240, "1d": 1440}
     batch_size = 750
-    
-
 
     @classmethod
     def historicalklines(cls, symbol, interval, start_str=None, end_str=None, limit=1000,
@@ -238,12 +237,12 @@ class BinanceData(object):
                 "17928899.62484339" // 请忽略该参数
             ]
         ]
-        
+
         Returns:
             pd.DataFrame: OHLCV data for all
-            
-            
-            
+
+
+
         """
         assert symbol_type is not None, "ERROR symbol type can't be None"
 
@@ -276,7 +275,11 @@ class BinanceData(object):
         data['Datetime'] = pd.to_datetime(data['Datetime'], unit='ms')
 
         if len(original_df) > 0:
-            original_df['Datetime'] = pd.to_datetime(original_df['Datetime'])
+            original_df['Datetime'] = original_df['Datetime'].apply(
+                lambda x: pd.to_datetime(x, format="%Y-%m-%d %H:%M:%S")
+                if " " in str(x) else pd.to_datetime(x, format="%Y-%m-%d")
+            )
+
             new_df = pd.concat([original_df, data])
         else:
             new_df = data.copy(deep=True)
@@ -312,7 +315,7 @@ class Binance_server(object):
             _type_: _description_
         """
         return client.futures_exchange_info()
-    
+
     @SetConnectClose("author")
     def getExchangeInfo(self, client: Client) -> dict:
         """ 回傳交易所的合約
@@ -334,9 +337,8 @@ class Binance_server(object):
             out_dict.update({symbol['symbol']: symbol['filters'][2]['minQty']})
 
         return out_dict
-    
-    
-    def get_targetsymobls(self,symbol_type:str) -> list:
+
+    def get_targetsymobls(self, symbol_type: str) -> list:
         """
             to call api get futures symbol and clean data
 
@@ -356,12 +358,13 @@ class Binance_server(object):
                         if each_data['symbol'] == clear_name[0]:
                             out_list.append(each_data['symbol'])
         elif symbol_type == 'SPOT':
-            data = self.getExchangeInfo() 
+            data = self.getExchangeInfo()
             i = 0
             for each_data in data['symbols']:
-                if each_data['status'] == 'TRADING' and each_data['quoteAsset'] =="USDT":
-                    clear_name = re.search(r'^[A-Z]+USDT$', each_data['symbol'])
-                    if clear_name:                    
+                if each_data['status'] == 'TRADING' and each_data['quoteAsset'] == "USDT":
+                    clear_name = re.search(
+                        r'^[A-Z]+USDT$', each_data['symbol'])
+                    if clear_name:
                         if each_data['symbol'] == clear_name[0]:
                             out_list.append(each_data['symbol'])
 

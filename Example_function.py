@@ -27,7 +27,7 @@ def example_get_targetsymobls():
     print(DataProvider().get_both_type_targetsymbols())
 
 
-def example_get_target_symbol():
+def example_get_target_symbol(filter_type:str):
     """
         introduction:
             this function is for filter 
@@ -35,16 +35,16 @@ def example_get_target_symbol():
     all_symbols = DataProvider().get_symbols_history_data(
         symbol_type='FUTURES', time_type='1d')
 
-    example = Datatransformer().get_volume_top_filter_symobl(all_symbols, max_symbols=11)
+    if filter_type =='MTM':
+        example = Datatransformer().get_mtm_filter_symbol(all_symbols)
+    elif filter_type == 'VOLUME':
+        example = Datatransformer().get_volume_top_filter_symobl(all_symbols, max_symbols=11)
+    elif filter_type == 'NEW':
+        example = Datatransformer().get_newthink_symbol(all_symbols)
+    else:
+        raise ValueError("please, this filter_type undefine")
     print(example)
-
-
-def example_get_MTM_target_symbol():
-    all_symbols = DataProvider().get_symbols_history_data(
-        symbol_type='FUTURES', time_type='1d')
-
-    example = Datatransformer().get_mtm_filter_symbol(all_symbols)
-    print(example)
+    print('*'*120)
 
 
 def example_reload_all_data(time_type: str):
@@ -72,4 +72,4 @@ def example_simple_evaluate():
                                     Meta_path=r'EIIE\Meta\policy_EIIE.pt')
 
 
-example_get_targetsymobls()
+example_reload_all_data(time_type='1m')

@@ -2,6 +2,7 @@ import enum
 import time
 import gymnasium as gym
 import numpy as np
+import collections
 
 
 class Actions(enum.Enum):
@@ -11,7 +12,7 @@ class Actions(enum.Enum):
 
 
 class State:
-    def __init__(self, bars_count, commission_perc, model_train, default_slippage):
+    def __init__(self, field_names: list, bars_count, commission_perc, model_train, default_slippage):
         assert isinstance(bars_count, int)
         assert bars_count > 0
         assert isinstance(commission_perc, float)
@@ -19,9 +20,16 @@ class State:
 
         self.bars_count = bars_count
         self.commission_perc = commission_perc
-        self.N_steps = 2000  # 這遊戲目前使用多少步學習
+        self.N_steps = 1000  # 這遊戲目前使用多少步學習
         self.model_train = model_train
         self.default_slippage = default_slippage
+
+        self.build_fileds(field_names)
+
+    def build_fileds(self, field_names: list):
+        # "open"要記得拿掉
+        self.field_names = list(field_names)
+        self.field_names.remove("open")
 
     def reset(self, prices, offset):
         assert offset >= self.bars_count-1
@@ -29,14 +37,12 @@ class State:
         self.open_price = 0.0
         self._prices = prices
         self._offset = offset
+        self.game_steps = 0  # 這次遊戲進行了多久
+        self.bar_dont_change_count = 0  # 計算K棒之間轉換過了多久
+
         self.cost_sum = 0.0
         self.closecash = 0.0
         self.canusecash = 1.0
-        self.game_steps = 0  # 這次遊戲進行了多久
-
-        # 用來記錄各個時間的
-        self.diff_percent = 0.0
-        self.bar_dont_change_count = 0
 
     def _cur_close(self):
         """
@@ -52,7 +58,7 @@ class State:
         # 更新 self.bar_dont_change_count
         if ((action == Actions.Buy and self.have_position) or
             (action == Actions.Sell and not self.have_position) or
-            (action == Actions.Close)):
+                (action == Actions.Close)):
             self.bar_dont_change_count += 1
         else:
             self.bar_dont_change_count = 0
@@ -65,13 +71,44 @@ class State:
             reward = 0
         else:
             if self.bar_dont_change_count <= half_steps:
-                reward = (half_steps - self.bar_dont_change_count) / half_steps * max_reward
+                reward = (half_steps - self.bar_dont_change_count) / \
+                    half_steps * max_reward
             else:
-                reward = (self.bar_dont_change_count - half_steps) / half_steps * max_penalty
+                reward = (self.bar_dont_change_count - half_steps) / \
+                    half_steps * max_penalty
 
         # print("改變前部位獎勵:",reward)
         return reward
-    
+
+    def trend_reward(self, window_size: int):
+        if self._offset >= window_size:
+            open_prices = self._prices.open[self._offset -
+                                            window_size:self._offset]
+            rel_close = self._prices.close[self._offset -
+                                           window_size:self._offset]
+            original_prices = open_prices * (1.0 + rel_close)
+            # 使用线性回归斜率作为趋势
+            x = np.arange(window_size)
+            y = original_prices
+            slope, _ = np.polyfit(x, y, 1)
+            trend = slope
+        else:
+            trend = 0.0
+
+        reward = 0.0
+        threshold = 0.0  # 趋势判断的阈值
+        base_reward = 0.0005
+        base_penalty = 0.0005
+
+        if trend > threshold and self.have_position:
+            reward += base_reward * trend  # 奖励与趋势强度相关
+        elif trend < -threshold and not self.have_position:
+            reward += base_reward * (-trend)
+        else:
+            reward -= base_penalty
+
+        return reward
+
     def step(self, action):
         """
             重新設計
@@ -84,10 +121,7 @@ class State:
         """
         assert isinstance(action, Actions)
 
-        reward = 0.0        
-        profit_reward =0.0 # 獲利獎勵
-        position_change_reward = self.count_postion_change_reward(action)  # 调用更新后的奖励函数
-
+        reward = 0.0
         done = False
         close = self._cur_close()
         # 以平倉損益每局從新歸零
@@ -101,59 +135,42 @@ class State:
         if self.have_position:
             opencash_diff = (close - self.open_price) / self.open_price
 
-        if action == Actions.Buy and not self.have_position:
-            self.have_position = True
-            # 記錄開盤價
-            self.open_price = close * (1 + self.default_slippage)
-            cost = -self.commission_perc
+        if action == Actions.Buy:
+            if not self.have_position:
+                self.have_position = True
+                # 記錄開盤價
+                self.open_price = close * (1 + self.default_slippage)
+                cost = -self.commission_perc
+                reward += 0.001  # 可以考虑动态调整或基于条件的奖励
+            else:
+                # 已持有仓位，重复买入（可能是错误行为）
+                reward = -0.01  # 给予小的惩罚，鼓励合理交易
 
-        elif action == Actions.Sell and self.have_position:
-            cost = -self.commission_perc
-            self.have_position = False
-            # 計算出賣掉的資產變化率,並且累加起來
-            closecash_diff = (
-                close * (1 - self.default_slippage) - self.open_price) / self.open_price
-            self.open_price = 0.0
-            opencash_diff = 0.0
+        elif action == Actions.Sell:
+            if self.have_position:
+                cost = -self.commission_perc
+                self.have_position = False
+                # 計算出賣掉的資產變化率,並且累加起來
+                closecash_diff = (
+                    close * (1 - self.default_slippage) - self.open_price) / self.open_price
+                self.open_price = 0.0
+                opencash_diff = 0.0
+                reward += 0.001  # 可以考虑动态调整或基于条件的奖励
+            else:
+                # 空仓卖出（可能是错误行为）
+                reward = -0.01  # 给予小的惩罚
 
-        # 原始獎勵設計
-        # reward += cost + closecash_diff + opencash_diff
         self.cost_sum += cost
         self.closecash += closecash_diff
         last_canusecash = self.canusecash
         # 累積的概念為? 淨值 = 起始資金 + 手續費 +  已平倉損益 + 未平倉損益
         self.canusecash = 1.0 + self.cost_sum + self.closecash + opencash_diff
-        profit_reward += self.canusecash - last_canusecash
+        reward += self.canusecash - last_canusecash
 
-
-        # 未平倉價格距離百分比
-        self.diff_percent = 0.0 if self.open_price == 0.0 else (
-            self._cur_close() - self.open_price) / self.open_price
-
-
-        # 合并奖励
-        reward = 0.9*profit_reward + 0.1*position_change_reward
-        # print("總獎勵:",reward,"獲利獎勵:",norm_profit_reward,"部位改變獎勵:",norm_position_reward)
+        # 新獎勵設計
+        # print("目前部位",self.have_position,"單次手續費:",cost,"單次已平倉損益:",closecash_diff,"單次未平倉損益:", opencash_diff)
+        # print("目前動作:",action,"總資金:",self.canusecash,"手續費用累積:",self.cost_sum,"累積已平倉損益:",self.closecash,"獎勵差:",reward)
         # print('*'*120)
-
-        # # 防止过度交易，增加换手率惩罚（可选）
-        # if (action == Actions.Buy and previous_position) or (action == Actions.Sell and not previous_position):
-        #     reward -= 0.005  # 给予惩罚，防止重复买入或卖出
-
-        # # 根据市场趋势调整奖励（可选）
-        # window_size = 5  # 移动平均线窗口大小
-        # if self._offset >= window_size:
-        #     recent_prices = self._prices.close[self._offset - window_size:self._offset]
-        #     trend = np.mean(recent_prices[1:]) - np.mean(recent_prices[:-1])
-        # else:
-        #     trend = 0
-
-        # if trend > 0 and not self.have_position:
-        #     # 市场上涨但未持仓，给予惩罚
-        #     reward -= 0.005
-        # elif trend < 0 and self.have_position:
-        #     # 市场下跌但持仓，给予惩罚
-        #     reward -= 0.005
 
         # 上一個時步的狀態 ================================
 
@@ -164,7 +181,7 @@ class State:
         if self.game_steps == self.N_steps and self.model_train:
             done = True
 
-        return reward, done,
+        return reward, done
 
 
 class State_time_step(State):
@@ -173,33 +190,21 @@ class State_time_step(State):
     """
     @property
     def shape(self):
-        return (self.bars_count, 16)
+        return (self.bars_count, len(self.field_names) + 2)
 
     def encode(self):
         res = np.zeros(shape=self.shape, dtype=np.float32)
 
         ofs = self.bars_count
         for bar_idx in range(self.bars_count):
-            res[bar_idx][0] = self._prices.high[self._offset - ofs + bar_idx]
-            res[bar_idx][1] = self._prices.low[self._offset - ofs + bar_idx]
-            res[bar_idx][2] = self._prices.close[self._offset - ofs + bar_idx]
-            res[bar_idx][3] = self._prices.volume[self._offset - ofs + bar_idx]
-            res[bar_idx][4] = self._prices.volume2[self._offset - ofs + bar_idx]
-            res[bar_idx][5] = self._prices.quote_av[self._offset - ofs + bar_idx]
-            res[bar_idx][6] = self._prices.quote_av2[self._offset - ofs + bar_idx]
-            res[bar_idx][7] = self._prices.trades[self._offset - ofs + bar_idx]
-            res[bar_idx][8] = self._prices.trades2[self._offset - ofs + bar_idx]
-            res[bar_idx][9] = self._prices.tb_base_av[self._offset - ofs + bar_idx]
-            res[bar_idx][10] = self._prices.tb_base_av2[self._offset - ofs + bar_idx]
-            res[bar_idx][11] = self._prices.tb_quote_av[self._offset - ofs + bar_idx]
-            res[bar_idx][12] = self._prices.tb_quote_av2[self._offset - ofs + bar_idx]
+            for idx, field in enumerate(self.field_names):  # 編碼所有字段
+                res[bar_idx][idx] = getattr(self._prices, field)[
+                    self._offset - ofs + bar_idx]
 
         if self.have_position:
-            res[:, 13] = 1.0
-            res[:, 14] = (self._cur_close() - self.open_price) / \
+            res[:, len(self.field_names)] = 1.0
+            res[:, len(self.field_names) + 1] = (self._cur_close() - self.open_price) / \
                 self.open_price
-        
-        res[:, 15] = self.bar_dont_change_count
 
         return res
 
@@ -282,12 +287,13 @@ class Env(gym.Env):
         action = Actions(action_idx)
         reward, done = self._state.step(action)  # 這邊會更新步數
         obs = self._state.encode()  # 呼叫這裡的時候就會取得新的狀態
+
         info = {
             "instrument": self._instrument,
             "offset": self._state._offset,
             "postion": float(self._state.have_position),
-            "diff_percent": self._state.diff_percent
         }
+
         return obs, reward, done, info
 
     def render(self, mode='human', close=False):

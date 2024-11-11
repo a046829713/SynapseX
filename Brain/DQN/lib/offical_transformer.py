@@ -118,11 +118,11 @@ class TransformerDuelingModel(nn.Module):
         x = x.view(x.size(0), -1)
 
 
-        value = self.fc_val(x)
         # 狀態值和優勢值
+        value = self.fc_val(x)
         advantage = self.fc_adv(x)
 
-        # 計算最終的Q值
         q_values = value + (advantage - advantage.mean(dim=1, keepdim=True))
+        # 計算最終的Q值
         
         return q_values

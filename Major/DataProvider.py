@@ -39,7 +39,7 @@ class DataProvider:
             # 當實時交易的時候減少 讀取數量
             if reload_type == 'History':
                 SQL_Q = f"""SELECT * FROM ( SELECT * FROM `{
-                    table_name}` ORDER BY Datetime DESC LIMIT 20 ) t ORDER BY Datetime ASC;"""
+                    table_name}` ORDER BY Datetime DESC LIMIT 20 ) t ORDER BY Datetime ASC;"""                
                 df = self.SQL.read_Dateframe(SQL_Q)
 
             elif reload_type == 'Online':
@@ -83,7 +83,7 @@ class DataProvider:
                     if future can try to fix this bug 
 
         """
-        for symbol_name in self.Binanceapp.get_targetsymobls():
+        for symbol_name in self.Binanceapp.get_targetsymobls(symbol_type=symbol_type):
             try:
                 original_df, eachCatchDf = self.reload_data(
                     symbol_name, time_type=time_type, reload_type="History", symbol_type=symbol_type)
@@ -96,8 +96,7 @@ class DataProvider:
                     
                     self.save_data(symbol_name, eachCatchDf,
                                    symbol_type, time_type, exists="append")
-                    
-                    
+                            
             except:
                 debug.print_info()
                 debug.record_msg(error_msg=f"symbol = {symbol_name}", log_level=logging.error)
@@ -134,7 +133,7 @@ class DataProvider:
                 ]
         """
         out_list = []
-        for symbol_name in self.Binanceapp.get_targetsymobls():
+        for symbol_name in self.Binanceapp.get_targetsymobls(symbol_type=symbol_type):
             tb_symbol_name = self.datatransformer.generate_table_name(
                 symbol_name, symbol_type, time_type, iflower)
             each_df = self.SQL.read_Dateframe(tb_symbol_name)

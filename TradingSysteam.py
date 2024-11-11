@@ -41,7 +41,7 @@ class Trading_system():
         用來創建回測系統，並且將DQN判斷是否送出訂單
 
         """
-        meta_path = os.path.join('Brain','EIIE', 'Meta', 'policy_EIIE.pt')
+        meta_path = os.path.join('Brain', 'EIIE', 'Meta', 'policy_EIIE.pt')
         self.engine = EngineBase(Meta_path=meta_path)
         self.DQN_engin = DQN_EngineBase(self.strategy_keyword)
 
@@ -98,7 +98,8 @@ class Trading_system():
 
         else:
             # 判斷幣安裡面所有可交易的標的
-            allsymobl = self.dataprovider.Binanceapp.get_targetsymobls()
+            allsymobl = self.dataprovider.Binanceapp.get_targetsymobls(
+                symbol_type='FUTURES')
             all_tables = self.dataprovider.SQL.read_Dateframe(
                 """show tables""")
             all_tables = [
@@ -108,7 +109,6 @@ class Trading_system():
             if list(filter(lambda x: False if x.lower() + "-f-d" in all_tables else True, allsymobl)):
                 self.dataprovider.reload_all_data(
                     time_type='1d', symbol_type='FUTURES')
-
 
     def get_target_symbol(self):
         """ 
@@ -196,11 +196,10 @@ class AsyncTrading_system(Trading_system):
         if self.strategy_keyword == 'ONE_TO_MANY':
             # 取得要交易的標的
             market_symobl = list(map(lambda x: x[0], self.get_target_symbol()))
-
             # 取得binance實際擁有標的,合併 (因為原本有部位的也要持續追蹤)
             self.targetsymbols = self.datatransformer.target_symobl(
                 market_symobl, self.dataprovider.Binanceapp.getfutures_account_name())
-            
+
         elif self.strategy_keyword == 'ONE_TO_ONE':
             old_symbol = self.dataprovider.Binanceapp.getfutures_account_name()  # 第一次運行會是空的
             # 合併舊的商品 因為這樣更新的商品的時候可以把庫存清掉
@@ -241,37 +240,78 @@ class AsyncTrading_system(Trading_system):
                     new_last_status[user].pop(symbol)
 
         return new_last_status
-    
-    def generate_order_map(self) -> dict:        
+
+    # def _generate_order_map(self) -> dict:
+    #     # # DQN 準備策略
+    #     self.DQN_engin.strategy_prepare(self.targetsymbols)
+
+    #     # 準備將資料塞入神經網絡或是策略裡面
+    #     finally_df = self.dataprovider.get_trade_data(
+    #         self.targetsymbols, self.symbol_map, freq=self.engine_setting['FREQ_TIME'])
+
+    #     # 在底層(oderbacktest會將最後一個拋棄)
+    #     if_order_map = self.DQN_engin.get_if_order_map(finally_df)
+
+    #     finally_df = self.dataprovider.datatransformer.filter_last_time_series(
+    #         finally_df)
+
+    #     self.engine.work(finally_df)
+
+    #     # 取得所有戶頭的平衡資金才有辦法去運算口數
+    #     balance_balance_map = self.check_money_level()
+
+    #     last_status = self.engine.get_order(
+    #         finally_df, balance_balance_map, leverage=self.engine_setting['LEVERAGE'])
+
+    #     last_status = self._filter_if_not_trade(last_status, if_order_map)
+
+    #     self.printfunc('目前交易狀態,校正之後', last_status)
+
+    #     return last_status
+
+    def postionLeverage(self, finally_df: pd.DataFrame, if_order_map: dict, balance_balance_map: dict, leverage: float):
+        """
+            Args:
+            if_order_map:dict:
+                {'BTCUSDT': 0.0}
+
+            balance_balance_map (dict): 
+                {'09XXXXXXXX': 0.0,'09XXXXXXXX': 0.0, '09XXXXXXXX': 7916.93242276}
+        """
+        last_df = finally_df.groupby('tic').last()
+        count_symbols = sum(list(if_order_map.values()))
+        weight = 0.25 if count_symbols <= 4 else 1 / count_symbols
+        out_map = {user:{} for user in balance_balance_map}
+        
+        for key, value in balance_balance_map.items():
+            for symbol, if_order in if_order_map.items():
+                if if_order:
+                    shares = value * weight * leverage / \
+                        last_df[last_df.index == symbol]['close'].iloc[0]
+                    
+                    out_map[key].update({symbol: [1, shares]})
+
+        return out_map
+
+    def generate_order_map(self) -> dict:
         # # DQN 準備策略
         self.DQN_engin.strategy_prepare(self.targetsymbols)
 
         # 準備將資料塞入神經網絡或是策略裡面
         finally_df = self.dataprovider.get_trade_data(
             self.targetsymbols, self.symbol_map, freq=self.engine_setting['FREQ_TIME'])
-        
-        print(finally_df)
+
         # 在底層(oderbacktest會將最後一個拋棄)
         if_order_map = self.DQN_engin.get_if_order_map(finally_df)
 
-        finally_df = self.dataprovider.datatransformer.filter_last_time_series(
-            finally_df)
-
-        self.engine.work(finally_df)
-
         # 取得所有戶頭的平衡資金才有辦法去運算口數
-        balance_balance_map = self.check_money_level()
+        balance_map = self.check_money_level()
 
-        last_status = self.engine.get_order(
-            finally_df, balance_balance_map, leverage=self.engine_setting['LEVERAGE'])
-
-        last_status = self._filter_if_not_trade(
-            last_status, if_order_map)
+        last_status = self.postionLeverage(finally_df, if_order_map, balance_map,leverage=self.engine_setting['LEVERAGE'])
 
         self.printfunc('目前交易狀態,校正之後', last_status)
-        
         return last_status
-    
+
     async def main(self):
         self.printfunc("Crypto_trading 正式交易啟動")
         LINE_Alert().send_author("Crypto_trading 正式交易啟動")
@@ -305,7 +345,7 @@ class AsyncTrading_system(Trading_system):
                         self.get_catch(name, eachCatchDf)
 
                     self.printfunc("開始進入回測")
-                    
+
                     last_status = self.generate_order_map()
 
                     current_size = self.dataprovider.Binanceapp.getfutures_account_positions()
