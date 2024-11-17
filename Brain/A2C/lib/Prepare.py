@@ -45,6 +45,7 @@ class RL_prepare(ABC):
     def _prepare_envs(self):
         self.train_envs = []
         if self.keyword == 'Transformer':
+            print("目前商品:",[self.symbols[0]])
             # self.data[np.random.choice(list(self.data.keys()))]
             data = DataFeature().get_train_net_work_data_by_path([self.symbols[0]])
 
@@ -67,6 +68,7 @@ class RL_prepare(ABC):
 
 
         for symbol in self.symbols:
+            
             data = DataFeature().get_train_net_work_data_by_path([symbol])
 
             # 製作環境
@@ -88,13 +90,13 @@ class RL_prepare(ABC):
         self.ENTROPY_COEF = 0.01  # 熵损失系数
         self.SAVES_PATH = "saves"  # 儲存的路徑
 
+        self.CHECKPOINT_EVERY_STEP = 10000
         # self.REWARD_STEPS = 2
         # self.REPLAY_SIZE = 100000
         # self.REPLAY_INITIAL = 10000
         # self.EPSILON_START = 1.0  # 起始機率(一開始都隨機運行)
         # self.EPSILON_STOP = 0.1
         # self.TARGET_NET_SYNC = 1000
-        # self.CHECKPOINT_EVERY_STEP = 20000
         # self.VALIDATION_EVERY_STEP = 100000
         # self.WRITER_EVERY_STEP = 100
         # self.EPSILON_STEPS = 1000000 * len(self.symbols)

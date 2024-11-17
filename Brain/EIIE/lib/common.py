@@ -26,6 +26,9 @@ class PVM:
     def reset(self):
         self.memory = [np.array(
             [1] + [0] * self.portfolio_size, dtype=np.float32)] * (self.capacity + 1)
+        
+        print(self.memory)
+        time.sleep(100)
         self.index = 0  # initial index to retrieve data
 
     def retrieve(self):

@@ -79,6 +79,7 @@ class TransformerModel(torch.nn.Module):
             output Tensor of shape ``[batch_size, num_actions]``
 
         """
+        print("Transformer進入")
         src = self.embedding(src)
 
         # src = torch.Size([1, 300, 6])
@@ -90,16 +91,20 @@ class TransformerModel(torch.nn.Module):
         src = self.embed_ln(src.transpose(0, 1))
 
         if self.batch_first:
+            print("Transformer進入1")
+            print(src.size())
             src = self.transformer_encoder(src)
         else:
             src = self.transformer_encoder(src.transpose(0, 1))
 
+        print("Transformer進入2")
         x = src.mean(dim=1)
 
         policy_logits = self.policy_head(x)
         # Critic 输出
         state_value = self.value_head(x)
 
+        print("Transformer 輸出")
         return policy_logits, state_value
 
 
@@ -144,6 +149,7 @@ class ActorCriticModel(torch.nn.Module):
                 policy_logits: Tensor of shape ``[batch_size, n_actions]``
                 state_value: Tensor of shape ``[batch_size, 1]``        
         """
+        print("測試進入1")
         # torch.Size([2, 300, 16])
         if self.batch_first:
             batch_size, seq_len, _ = src.size()
@@ -155,6 +161,7 @@ class ActorCriticModel(torch.nn.Module):
         zeros_values = torch.zeros(batch_size, seq_len, 1, device=src.device)
         new_input = torch.cat((src, zeros_actions, zeros_values), dim=2)
 
+        print(new_input.size())
 
         for _ in range(self.num_iterations):
             policy_logits, state_value = self.transformer(new_input)

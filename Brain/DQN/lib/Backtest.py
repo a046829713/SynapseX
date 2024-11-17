@@ -105,7 +105,7 @@ class RL_evaluate():
                 d_model=engine_info['input_size'],
                 nhead=4,
                 d_hid=2048,
-                nlayers=12,
+                nlayers=4,
                 num_actions=self.evaluate_env.action_space.n,  # 假设有5种可能的动作
                 hidden_size=64, # 使用隐藏层
                 seq_dim=self.BARS_COUNT,

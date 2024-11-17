@@ -201,6 +201,8 @@ class TransformerEncoderLayer(nn.Module):
             if not why_not_sparsity_fast_path:
                 merged_mask, mask_type = self.self_attn.merge_masks(
                     src_mask, src_key_padding_mask, src)
+                
+                
                 return torch._transformer_encoder_layer_fwd(
                     src,
                     self.self_attn.embed_dim,

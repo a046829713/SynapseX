@@ -4,121 +4,107 @@ from torch.distributions import Categorical
 from Brain.A2C.lib.Prepare import RL_prepare
 import time
 import os
+from Brain.Common.PytorchModelTool import ModelTool
 
 class Runner(RL_prepare):
     def __init__(self):
         super().__init__()
         self.num_envs = len(self.train_envs)
+        self.model_tool = ModelTool()
         self.train()
 
-    def train(self, num_episodes=1000):
-        for episode in range(num_episodes):
-            # 重置环境并获取初始状态
-            obs = [env.reset() for env in self.train_envs]
-            done = [False] * self.num_envs
-            episode_rewards = [0] * self.num_envs
+    def train(self):        
+        # 重置環境並獲取初始狀態
+        obs = [env.reset() for env in self.train_envs]
+        done = [False] * self.num_envs
+        episode_rewards = [0] * self.num_envs
+        step = 0  # 計數器，用於軟更新
+        while True:
+            step += 1
+            # 將觀測值轉換為張量
+            obs_tensor = torch.stack([torch.tensor(o, dtype=torch.float32) for o in obs]).to(self.device)
+            # 獲取動作概率和狀態值
+            action_probs, state_values = self.model(obs_tensor)
+            
+            # 采樣動作並計算對數概率
+            dist = Categorical(logits=action_probs)
+            actions = dist.sample()
+            log_probs = dist.log_prob(actions)
+            entropy = dist.entropy()
 
-            # 存储每个时间步的数据
-            log_probs_list = []
-            values_list = []
-            rewards_list = []
-            entropies_list = []
-            masks = []
-            next_obs = obs  # 初始化next_obs
-
-            while not all(done):
-                # 将观测值转换为张量
-                obs_tensor = torch.stack([torch.tensor(o, dtype=torch.float32) for o in obs]).to(self.device)
+            # 與環境交互
+            next_obs = []
+            rewards = []
+            dones = []
+            for i, env in enumerate(self.train_envs):
+                if done[i]:
+                    obs_i = env.reset()
+                    episode_rewards[i] = 0  # 重置该环境的累积奖励
+                    done[i] = False  # 重置 done 标志
+                    next_obs.append(obs_i)
+                    rewards.append(0.0)  # 重置时的奖励为0
+                    dones.append(False)  # 重置后的环境未完成
+                else:                    
+                    obs_i, reward_i, done_i, info = env.step(actions[i].item())
+                    next_obs.append(obs_i)
+                    rewards.append(reward_i)
+                    episode_rewards[i] += reward_i
+                    done[i] = done_i
+                    dones.append(done_i)
                 
-                # 获取动作概率和状态值
-                action_probs, state_values = self.model(obs_tensor)
-                # 采样动作并计算对数概率
-                dist = Categorical(logits=action_probs)
-                actions = dist.sample()
-                log_probs = dist.log_prob(actions)
-                entropy = dist.entropy()
-                print(actions)
 
-                # 与环境交互
-                next_obs = []
-                rewards = []
-                for i, env in enumerate(self.train_envs):
-                    if not done[i]:
-                        obs_i, reward_i, done_i, _ = env.step(actions[i].item())
-                        next_obs.append(obs_i)
-                        rewards.append(reward_i)
-                        episode_rewards[i] += reward_i
-                        done[i] = done_i
-                    else:
-                        next_obs.append(obs[i])
-                        rewards.append(0.0)
+            # 將獎勵和遮罩轉換為張量
+            rewards_tensor = torch.tensor(rewards, dtype=torch.float32).to(self.device)
+            mask = torch.tensor([0.0 if d else 1.0 for d in dones], dtype=torch.float32).to(self.device)
 
-                # 存储数据
-                log_probs_list.append(log_probs)
+            # 使用目標網絡計算下一狀態的價值
+            next_obs_tensor = torch.stack([torch.tensor(o, dtype=torch.float32) for o in next_obs]).to(self.device)
 
-                values_list.append(state_values.squeeze())
-                rewards_tensor = torch.tensor(rewards, dtype=torch.float32).to(self.device)
-                rewards_list.append(rewards_tensor)
-                entropies_list.append(entropy)
-                print(done)
-                time.sleep(100)
-                mask = torch.tensor([0.0 if d else 1.0 for d in done], dtype=torch.float32).to(self.device)
-                masks.append(mask)
+            with torch.no_grad():
+                _, next_state_values = self.target_model(next_obs_tensor)            
+                next_state_values = next_state_values.squeeze()
 
-                # 准备下一个时间步
-                obs = next_obs
+            # 計算目標和優勢
+            targets = rewards_tensor + self.GAMMA * next_state_values * mask
 
-            # 计算累计回报和优势
-            returns = self._compute_returns(rewards_list, masks, obs)
-            log_probs_tensor = torch.stack(log_probs_list)
-            values_tensor = torch.stack(values_list)
-            advantages = returns - values_tensor
+            advantages = targets - state_values.squeeze()
 
-            # 计算损失
-            policy_loss = - (log_probs_tensor * advantages.detach()).mean()
-            value_loss = F.mse_loss(values_tensor, returns)
-            entropy_loss = - torch.stack(entropies_list).mean()
+            # 計算損失
+            policy_loss = - (log_probs * advantages.detach()).mean()
+            value_loss = F.mse_loss(state_values.squeeze(), targets.detach())
+            entropy_loss = - entropy.mean()
             total_loss = policy_loss + self.VALUE_LOSS_COEF * value_loss + self.ENTROPY_COEF * entropy_loss
 
-            # 反向传播
+            # 反向傳播和優化
             self.optimizer.zero_grad()
             total_loss.backward()
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=0.5)
             self.optimizer.step()
 
-            # 更新目标网络
-            self.soft_update()
+            # 每10個步驟進行一次軟更新
+            if step % 10 == 0:
+                self.soft_update()
 
-            # 记录日志
+            # 準備下一個時間步
+            obs = next_obs
+
+            # 記錄日誌
             avg_reward = sum(episode_rewards) / self.num_envs
-            self.writer.add_scalar('Average Reward', avg_reward, episode)
-            print(f"Episode {episode} - Average Reward: {avg_reward}")
-        
-        self.save_checkpoint({
-            'model_state_dict': self.model.state_dict(),
+            self.writer.add_scalar('Average Reward', avg_reward)
+            print(f"Average Reward: {avg_reward}")
             
-        }, os.path.join(self.SAVES_PATH, f"checkpoint.pt"))
 
-    def save_checkpoint(self, state, filename):
-        # 保存檢查點的函數
-        torch.save(state, filename)
+            if step % self.CHECKPOINT_EVERY_STEP == 0:
+                # 保存檢查點
+                self.model_tool.save_checkpoint({
+                    'model_state_dict': self.model.state_dict(),
+                    'optimizer_state_dict': self.optimizer.state_dict(),
+                }, os.path.join(self.SAVES_PATH, f"checkpoint.pt"))
+
+
     
-    def _compute_returns(self, rewards_list, masks, next_obs):
-        returns = []
-        with torch.no_grad():
-            # 获取目标网络对下一个状态的价值估计
-            next_obs_tensor = torch.stack([torch.tensor(o, dtype=torch.float32) for o in next_obs]).to(self.DEVICE)
-            _, next_state_values = self.target_model(next_obs_tensor)
-            R = next_state_values.squeeze()
-        for step in reversed(range(len(rewards_list))):
-            R = rewards_list[step] + self.GAMMA * R * masks[step]
-            returns.insert(0, R)
-        returns = torch.stack(returns)
-        return returns.detach()
-
     def soft_update(self, tau=0.005):
         for target_param, param in zip(self.target_model.parameters(), self.model.parameters()):
-            target_param.ˋ.copy_(tau * param.data + (1.0 - tau) * target_param.data)
-
+            target_param.data.copy_(tau * param.data + (1.0 - tau) * target_param.data)
 
 Runner()

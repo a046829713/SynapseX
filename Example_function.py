@@ -86,4 +86,4 @@ def example_simple_evaluate():
                                     Meta_path=r'EIIE\Meta\policy_EIIE.pt')
 
 
-get_futures_position_information()
+example_reload_all_data(time_type='1m')

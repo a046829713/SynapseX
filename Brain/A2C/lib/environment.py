@@ -303,7 +303,9 @@ class Env(gym.Env):
         pass
 
     def engine_info(self):
+        info ={}
+
         if self._state.__class__ == State_time_step:
-            return {
-                "input_size": self._state.shape[1],
-            }
+            info.update({"input_size": self._state.shape[1]})
+        
+        return info

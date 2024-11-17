@@ -1,7 +1,7 @@
 import torch
-from EIIE.lib.environment import PortfolioOptimizationEnv
+from Brain.EIIE.lib.environment import PortfolioOptimizationEnv
 import pandas as pd
-from EIIE.lib.common import PG
+from Brain.EIIE.lib.common import PG
 
 import logging
 logging.getLogger('matplotlib.font_manager').disabled = True
