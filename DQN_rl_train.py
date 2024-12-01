@@ -215,7 +215,6 @@ class RL_Train(RL_prepare):
                 loss_v = common.calc_loss(
                     batch, self.net, self.tgt_net.target_model, self.GAMMA ** self.REWARD_STEPS, device=self.device)
                 
-                print("損失狀態:",loss_v)
                 
                 if self.step_idx % self.WRITER_EVERY_STEP == 0:
                     self.writer.add_scalar(
