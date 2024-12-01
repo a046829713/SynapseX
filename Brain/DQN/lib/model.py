@@ -131,6 +131,4 @@ class TransformerDuelingModel(nn.Module):
         q_values = value + (advantage - advantage.mean(dim=1, keepdim=True))
         # 計算最終的Q值
 
-
-        print(q_values)
         return q_values
