@@ -1,25 +1,36 @@
 import pandas as pd
 import collections
-import numpy as np
-from sklearn.preprocessing import MinMaxScaler
 import time
+import numpy as np
+
 
 class DataFeature():
     """
-    Data preprocessing class for calculating logarithmic rate of change and performing Min-Max normalization.
+        I got the faile to change all data to the tensor version,
+        it made all process to be slow.
+
     """
 
     def __init__(self, formal: bool = False) -> None:
         self.formal = formal
         self.PricesObject = collections.namedtuple('Prices', field_names=[
-            "log_open", "log_high", "log_low", "log_close",
-            "open", "high", "low", "close", "volume",
-            "quote_av", "trades", "tb_base_av", "tb_quote_av"
+            "open", "high", "low", "close", "volume", "volume2",
+            "quote_av", "quote_av2", "trades", "trades2",
+            "tb_base_av", "tb_base_av2", "tb_quote_av", "tb_quote_av2",
+            "open_c_change", "open_p_change",
+            "high_c_change", "high_p_change",
+            "low_c_change", "low_p_change",
+            "close_c_change", "close_p_change"
         ])
+        # self.PricesObject = collections.namedtuple('Prices', field_names=[
+        #     "open", "high", "low", "close", "volume", "volume2",
+        #     "quote_av", "quote_av2", "trades", "trades2",
+        #     "tb_base_av", "tb_base_av2", "tb_quote_av", "tb_quote_av2"
+        # ])
 
     def get_train_net_work_data_by_pd(self, symbol: str, df: pd.DataFrame) -> dict:
         """
-        Retrieve data required for neural network training, suitable for formal trading scenarios.
+            用來取得類神經網絡所需要的資料,正式交易的時候
         """
         out_dict = {}
         self.df = df
@@ -28,109 +39,164 @@ class DataFeature():
 
     def get_train_net_work_data_by_path(self, symbols: list) -> dict:
         """
-        Retrieve data required for neural network training, suitable when reading data from files.
+            用來取得類神經網絡所需要的資料
         """
         out_dict = {}
         for symbol in symbols:
-            df = pd.read_csv(f'Brain/simulation/data/{symbol}-F-30-Min.csv')
+            df = pd.read_csv(
+                f'Brain/simulation/data/{symbol}-F-30-Min.csv')
             df.set_index('Datetime', inplace=True)
             self.df = df
+            # 使用 PyTorch Tensor 的方法
             out_dict.update({symbol: self.load_relative()})
         return out_dict
 
-    def calculate_log_return(self, values, epsilon=1e-10):
+    def calculate_previous_change(self, values):
         """
-        Calculate the logarithmic rate of change with zero handling.
+            Calculate relative data change based on the previous value.
+            This method calculates the difference between the current value and 
+            the previous value, then divides by the previous value.
 
-        Returns:
-            A numpy array representing the logarithmic rate of change.
+            Returns:
+                A numpy array representing the relative change in percentage.
+                This approach emphasizes how much the current value has changed 
+                compared to the previous step, relative to the previous value.
         """
         shift_data = np.roll(values, shift=1, axis=0)
-        # Handle the first element to avoid division by zero or log errors
-        shift_data[0] = shift_data[1] if len(shift_data) > 1 else shift_data[0]
+        shift_data[0] = 0
+        diff_data = values - shift_data
+        return np.divide(diff_data, shift_data, out=np.zeros_like(diff_data), where=shift_data != 0)
 
-        # Replace zeros in `values` and `shift_data` with a small epsilon value
-        values = np.where(values == 0, epsilon, values)
-        shift_data = np.where(shift_data == 0, epsilon, shift_data)
+    def calculate_current_change(self, values):
+        """
+            Calculate relative data change based on the current value.
+            This method calculates the difference between the current value and 
+            the previous value, then divides by the current value.
 
-        # Calculate the logarithmic rate of change
-        log_return = np.log(np.divide(values, shift_data))
+            Returns:
+                A numpy array representing the relative change in percentage.
+                This approach emphasizes how much the current value has changed 
+                compared to the previous step, relative to the current value.
+        """
+        shift_data = np.roll(values, shift=1, axis=0)
+        shift_data[0] = 0
+        diff_data = values - shift_data
+        return np.divide(diff_data, values, out=np.zeros_like(diff_data), where=values != 0)
 
-        return log_return
-    
     def load_relative(self):
         """
-        Load data, calculate the logarithmic rate of change, and perform Min-Max normalization.
+            CSV最後排序為:
+
+            Open, High, Low, Close, Volume, quote_av, trades, tb_base_av, tb_quote_av
         """
         np_data = np.array(self.df.values, dtype=np.float32)
-        
-        # Extract raw data
+
         open = np_data[:, 0]
         high = np_data[:, 1]
         low = np_data[:, 2]
         close = np_data[:, 3]
-        volume = np_data[:, 4]
-        quote_av = np_data[:, 5]
-        trades = np_data[:, 6]
-        tb_base_av = np_data[:, 7]
-        tb_quote_av = np_data[:, 8]
 
-        # Calculate the logarithmic rate of change
-        log_return_open = self.calculate_log_return(open)
-        print(open.shape)
-        log_return_high = self.calculate_log_return(high)
-        log_return_low = self.calculate_log_return(low)
-        log_return_close = self.calculate_log_return(close)
-        log_return_volume = self.calculate_log_return(volume)
-        log_return_quote_av = self.calculate_log_return(quote_av)
-        log_return_trades = self.calculate_log_return(trades)
-        log_return_tb_base_av = self.calculate_log_return(tb_base_av)
-        log_return_tb_quote_av = self.calculate_log_return(tb_quote_av)
+        volume = self.calculate_current_change(np_data[:, 4])
+        volume2 = self.calculate_previous_change(np_data[:, 4])
 
-        # Combine all logarithmic rate of change data for normalization
-        log_return_data = np.vstack((
-            log_return_open,
-            log_return_high,
-            log_return_low,
-            log_return_close,
-            log_return_volume,
-            log_return_quote_av,
-            log_return_trades,
-            log_return_tb_base_av,
-            log_return_tb_quote_av
-        )).T  # Transpose to match the sample count
+        quote_av = self.calculate_current_change(np_data[:, 5])
+        quote_av2 = self.calculate_previous_change(np_data[:, 5])
 
+        trades = self.calculate_current_change(np_data[:, 6])
+        trades2 = self.calculate_previous_change(np_data[:, 6])
 
-        # Handle potential NaN or Inf values
-        log_return_data = np.nan_to_num(log_return_data, nan=0.0, posinf=0.0, neginf=0.0)
+        tb_base_av = self.calculate_current_change(np_data[:, 7])
+        tb_base_av2 = self.calculate_previous_change(np_data[:, 7])
 
-        # Apply Min-Max normalization
-        scaler = MinMaxScaler(feature_range=(0, 1))
-        normalized_data = scaler.fit_transform(log_return_data)
-        # Split the normalized data back into individual variables
-        log_return_open = normalized_data[:, 0]
-        log_return_high = normalized_data[:, 1]
-        log_return_low = normalized_data[:, 2]
-        log_return_close = normalized_data[:, 3]
-        log_return_volume = normalized_data[:, 4]
-        log_return_quote_av = normalized_data[:, 5]
-        log_return_trades = normalized_data[:, 6]
-        log_return_tb_base_av = normalized_data[:, 7]
-        log_return_tb_quote_av = normalized_data[:, 8]
+        tb_quote_av = self.calculate_current_change(np_data[:, 8])
+        tb_quote_av2 = self.calculate_previous_change(np_data[:, 8])
 
-        # Construct the namedtuple for the return value
+        rh = (high - open) / open
+        rl = (low - open) / open
+        rc = (close - open) / open
+
+        open_c_change = self.calculate_current_change(open)
+        open_p_change = self.calculate_previous_change(open)
+
+        high_c_change = self.calculate_current_change(high)
+        high_p_change = self.calculate_previous_change(high)
+
+        low_c_change = self.calculate_current_change(low)
+        low_p_change = self.calculate_previous_change(low)
+
+        close_c_change = self.calculate_current_change(close)
+        close_p_change = self.calculate_previous_change(close)
+
         return self.PricesObject(
-            open = open,
-            high = high,
-            low = low,
-            close = close,
-            log_open=log_return_open,
-            log_high=log_return_high,
-            log_low=log_return_low,
-            log_close=log_return_close,
-            volume=log_return_volume,
-            quote_av=log_return_quote_av,
-            trades=log_return_trades,
-            tb_base_av=log_return_tb_base_av,
-            tb_quote_av=log_return_tb_quote_av
+            open=open,
+            high=rh,
+            low=rl,
+            close=rc,
+            volume=volume,
+            volume2=volume2,
+            quote_av=quote_av,
+            quote_av2=quote_av2,
+            trades=trades,
+            trades2=trades2,
+            tb_base_av=tb_base_av,
+            tb_base_av2=tb_base_av2,
+            tb_quote_av=tb_quote_av,
+            tb_quote_av2=tb_quote_av2,
+            open_c_change=open_c_change,
+            open_p_change=open_p_change,
+            high_c_change=high_c_change,
+            high_p_change=high_p_change,
+            low_c_change=low_c_change,
+            low_p_change=low_p_change,
+            close_c_change=close_c_change,
+            close_p_change=close_p_change
+        )
+
+
+class OriginalDataFrature():
+    def __init__(self, formal: bool = False) -> None:
+        self.formal = formal
+        self.PricesObject = collections.namedtuple('Prices', field_names=[
+            'open', 'high', 'low', 'close', 'volume', 'quote_av', 'trades', 'tb_base_av', 'tb_quote_av'
+        ])
+
+    def cleanData(self, df: pd.DataFrame) -> pd.DataFrame:
+        df = df.replace([np.inf, -np.inf], np.nan)  # 将 Inf 替换为 NaN
+        df = df.ffill(axis=0)
+        df = df.bfill(axis=0)
+        return df
+
+    def get_train_net_work_data_by_path(self, symbols: list) -> dict:
+        """
+            用來取得類神經網絡所需要的資料
+        """
+        out_dict = {}
+        for symbol in symbols:
+            df = pd.read_csv(
+                f'Brain/simulation/data/{symbol}-F-30-Min.csv')
+            df.set_index('Datetime', inplace=True)
+            self.df = self.cleanData(df)
+            # 使用 PyTorch Tensor 的方法
+            out_dict.update({symbol: self.load_relative()})
+
+        return out_dict
+
+    def load_relative(self):
+        """
+            CSV最後排序為:
+
+            Open, High, Low, Close, Volume, quote_av, trades, tb_base_av, tb_quote_av
+        """
+        np_data = np.array(self.df.values, dtype=np.float32)
+
+        return self.PricesObject(
+            open=np_data[:, 0],
+            high=np_data[:, 1],
+            low=np_data[:, 2],
+            close=np_data[:, 3],
+            volume=np_data[:, 4],
+            quote_av=np_data[:, 5],
+            trades=np_data[:, 6],
+            tb_base_av=np_data[:, 7],
+            tb_quote_av=np_data[:, 8],
         )

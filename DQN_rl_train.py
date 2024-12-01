@@ -1,15 +1,15 @@
 from Brain.DQN.lib import environment, common
-from Brain.DQN.lib.environment import State2D, State_time_step
+from Brain.DQN.lib.environment import State_time_step
 import os
 import numpy as np
 import torch
 import torch.optim as optim
 from Brain.DQN import ptan
-from Brain.Common.DataFeature import DataFeature
+from Brain.Common.DataFeature import OriginalDataFrature
 from datetime import datetime
 from tensorboardX import SummaryWriter
 import time
-from Brain.DQN.lib import offical_transformer
+from Brain.DQN.lib import model
 from abc import ABC, abstractmethod
 from Brain.DQN.lib.EfficientnetV2 import EfficientnetV2SmallDuelingModel
 from abc import ABC
@@ -26,6 +26,7 @@ class RL_prepare(ABC):
         self._prepare_model()
         self._prepare_targer_net()
         self._prepare_agent()
+        self._prepare_optimizer()
     
     def _prepare_keyword(self):
         self.keyword = 'Transformer'        
@@ -46,7 +47,7 @@ class RL_prepare(ABC):
         print("There are symobls:", self.symbols)
 
     def _prepare_data(self):
-        self.data = DataFeature().get_train_net_work_data_by_path(self.symbols)
+        self.data = OriginalDataFrature().get_train_net_work_data_by_path(self.symbols)
 
     def _prepare_writer(self):
         self.writer = SummaryWriter(
@@ -90,11 +91,7 @@ class RL_prepare(ABC):
             
 
         elif self.keyword == 'EfficientNetV2':
-            state = State2D(bars_count=self.BARS_COUNT,
-                                    commission_perc=self.MODEL_DEFAULT_COMMISSION_PERC,
-                                    model_train=True,
-                                    default_slippage = self.DEFAULT_SLIPPAGE
-                                    )
+            state = ''
 
         print("There is state:",state)    
         
@@ -107,7 +104,7 @@ class RL_prepare(ABC):
 
 
         if self.keyword == 'Transformer':
-            self.net = offical_transformer.TransformerDuelingModel(
+            self.net = model.TransformerDuelingModel(
                 d_model=engine_info['input_size'],
                 nhead=4,
                 d_hid=2048,
@@ -135,6 +132,27 @@ class RL_prepare(ABC):
         self.agent = ptan.agent.DQNAgent(
             self.net, self.selector, device=self.device)
 
+    def _prepare_optimizer(self):
+        # 定義特殊層的學習率
+        param_groups = [
+            {'params': self.net.dean.mean_layer.parameters(), 'lr': 0.0001 * self.net.dean.mean_lr},
+            {'params': self.net.dean.scaling_layer.parameters(), 'lr': 0.0001 * self.net.dean.scale_lr},
+            {'params': self.net.dean.gating_layer.parameters(), 'lr': 0.0001 * self.net.dean.gate_lr},
+        ]
+
+        # 其餘參數使用默認學習率，直接加入 param_groups
+        for name, param in self.net.named_parameters():
+            if (
+                "dean.mean_layer" not in name
+                and "dean.scaling_layer" not in name
+                and "dean.gating_layer" not in name
+            ):
+                param_groups.append({'params': param, 'lr': self.LEARNING_RATE})
+
+        # 初始化優化器
+        self.optimizer = optim.Adam(param_groups)
+
+
 class RL_Train(RL_prepare):
     def __init__(self) -> None:
         super().__init__()
@@ -145,9 +163,6 @@ class RL_Train(RL_prepare):
 
         self.buffer = ptan.experience.ExperienceReplayBuffer(
             self.exp_source, self.REPLAY_SIZE)
-
-        self.optimizer = optim.Adam(
-            self.net.parameters(), lr=self.LEARNING_RATE)
 
         self.load_pre_train_model_state()
         self.train()
@@ -200,6 +215,7 @@ class RL_Train(RL_prepare):
                 loss_v = common.calc_loss(
                     batch, self.net, self.tgt_net.target_model, self.GAMMA ** self.REWARD_STEPS, device=self.device)
                 
+                print("損失狀態:",loss_v)
                 
                 if self.step_idx % self.WRITER_EVERY_STEP == 0:
                     self.writer.add_scalar(

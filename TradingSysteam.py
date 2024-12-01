@@ -241,33 +241,33 @@ class AsyncTrading_system(Trading_system):
 
         return new_last_status
 
-    # def _generate_order_map(self) -> dict:
-    #     # # DQN 準備策略
-    #     self.DQN_engin.strategy_prepare(self.targetsymbols)
+    def _generate_order_map(self) -> dict:
+        # # DQN 準備策略
+        self.DQN_engin.strategy_prepare(self.targetsymbols)
 
-    #     # 準備將資料塞入神經網絡或是策略裡面
-    #     finally_df = self.dataprovider.get_trade_data(
-    #         self.targetsymbols, self.symbol_map, freq=self.engine_setting['FREQ_TIME'])
+        # 準備將資料塞入神經網絡或是策略裡面
+        finally_df = self.dataprovider.get_trade_data(
+            self.targetsymbols, self.symbol_map, freq=self.engine_setting['FREQ_TIME'])
 
-    #     # 在底層(oderbacktest會將最後一個拋棄)
-    #     if_order_map = self.DQN_engin.get_if_order_map(finally_df)
+        # 在底層(oderbacktest會將最後一個拋棄)
+        if_order_map = self.DQN_engin.get_if_order_map(finally_df)
 
-    #     finally_df = self.dataprovider.datatransformer.filter_last_time_series(
-    #         finally_df)
+        finally_df = self.dataprovider.datatransformer.filter_last_time_series(
+            finally_df)
 
-    #     self.engine.work(finally_df)
+        self.engine.work(finally_df)
 
-    #     # 取得所有戶頭的平衡資金才有辦法去運算口數
-    #     balance_balance_map = self.check_money_level()
+        # 取得所有戶頭的平衡資金才有辦法去運算口數
+        balance_balance_map = self.check_money_level()
 
-    #     last_status = self.engine.get_order(
-    #         finally_df, balance_balance_map, leverage=self.engine_setting['LEVERAGE'])
+        last_status = self.engine.get_order(
+            finally_df, balance_balance_map, leverage=self.engine_setting['LEVERAGE'])
 
-    #     last_status = self._filter_if_not_trade(last_status, if_order_map)
+        last_status = self._filter_if_not_trade(last_status, if_order_map)
 
-    #     self.printfunc('目前交易狀態,校正之後', last_status)
+        self.printfunc('目前交易狀態,校正之後', last_status)
 
-    #     return last_status
+        return last_status
 
     def postionLeverage(self, finally_df: pd.DataFrame, if_order_map: dict, balance_balance_map: dict, leverage: float):
         """
@@ -293,24 +293,24 @@ class AsyncTrading_system(Trading_system):
 
         return out_map
 
-    def generate_order_map(self) -> dict:
-        # # DQN 準備策略
-        self.DQN_engin.strategy_prepare(self.targetsymbols)
+    # def generate_order_map(self) -> dict:
+    #     # # DQN 準備策略
+    #     self.DQN_engin.strategy_prepare(self.targetsymbols)
 
-        # 準備將資料塞入神經網絡或是策略裡面
-        finally_df = self.dataprovider.get_trade_data(
-            self.targetsymbols, self.symbol_map, freq=self.engine_setting['FREQ_TIME'])
+    #     # 準備將資料塞入神經網絡或是策略裡面
+    #     finally_df = self.dataprovider.get_trade_data(
+    #         self.targetsymbols, self.symbol_map, freq=self.engine_setting['FREQ_TIME'])
 
-        # 在底層(oderbacktest會將最後一個拋棄)
-        if_order_map = self.DQN_engin.get_if_order_map(finally_df)
+    #     # 在底層(oderbacktest會將最後一個拋棄)
+    #     if_order_map = self.DQN_engin.get_if_order_map(finally_df)
 
-        # 取得所有戶頭的平衡資金才有辦法去運算口數
-        balance_map = self.check_money_level()
+    #     # 取得所有戶頭的平衡資金才有辦法去運算口數
+    #     balance_map = self.check_money_level()
 
-        last_status = self.postionLeverage(finally_df, if_order_map, balance_map,leverage=self.engine_setting['LEVERAGE'])
+    #     last_status = self.postionLeverage(finally_df, if_order_map, balance_map,leverage=self.engine_setting['LEVERAGE'])
 
-        self.printfunc('目前交易狀態,校正之後', last_status)
-        return last_status
+    #     self.printfunc('目前交易狀態,校正之後', last_status)
+    #     return last_status
 
     async def main(self):
         self.printfunc("Crypto_trading 正式交易啟動")
