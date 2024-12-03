@@ -1,0 +1,64 @@
+2024-12-03 16:55 ERROR Traceback (most recent call last):
+  File "c:\Users\a046829713\Desktop\program\RLTrading\SynapseX\Database\SQL_operate.py", line 13, in get_db_data
+    self.userconn = router.Router().mysql_conn
+  File "c:\Users\a046829713\Desktop\program\RLTrading\SynapseX\Database\router.py", line 13, in __init__
+    self._mysql_conn = self.get_mysql_conn()
+  File "c:\Users\a046829713\Desktop\program\RLTrading\SynapseX\Database\router.py", line 27, in get_mysql_conn
+    engine = create_engine(self.address + '/crypto_data')
+  File "<string>", line 2, in create_engine
+  File "C:\Users\a046829713\Desktop\program\RLTrading\lib\site-packages\sqlalchemy\util\deprecations.py", line 281, in warned
+    return fn(*args, **kwargs)  # type: ignore[no-any-return]
+  File "C:\Users\a046829713\Desktop\program\RLTrading\lib\site-packages\sqlalchemy\engine\create.py", line 599, in create_engine
+    dbapi = dbapi_meth(**dbapi_args)
+  File "C:\Users\a046829713\Desktop\program\RLTrading\lib\site-packages\sqlalchemy\dialects\mysql\pymysql.py", line 75, in import_dbapi
+    return __import__("pymysql")
+ModuleNotFoundError: No module named 'pymysql'
+
+2024-12-03 16:56 ERROR Traceback (most recent call last):
+  File "c:\Users\a046829713\Desktop\program\RLTrading\SynapseX\Database\SQL_operate.py", line 13, in get_db_data
+    self.userconn = router.Router().mysql_conn
+  File "c:\Users\a046829713\Desktop\program\RLTrading\SynapseX\Database\router.py", line 13, in __init__
+    self._mysql_conn = self.get_mysql_conn()
+  File "c:\Users\a046829713\Desktop\program\RLTrading\SynapseX\Database\router.py", line 27, in get_mysql_conn
+    engine = create_engine(self.address + '/crypto_data')
+  File "<string>", line 2, in create_engine
+  File "C:\Users\a046829713\Desktop\program\RLTrading\lib\site-packages\sqlalchemy\util\deprecations.py", line 281, in warned
+    return fn(*args, **kwargs)  # type: ignore[no-any-return]
+  File "C:\Users\a046829713\Desktop\program\RLTrading\lib\site-packages\sqlalchemy\engine\create.py", line 599, in create_engine
+    dbapi = dbapi_meth(**dbapi_args)
+  File "C:\Users\a046829713\Desktop\program\RLTrading\lib\site-packages\sqlalchemy\dialects\mysql\pymysql.py", line 75, in import_dbapi
+    return __import__("pymysql")
+ModuleNotFoundError: No module named 'pymysql'
+
+2024-12-03 16:57 ERROR Traceback (most recent call last):
+  File "c:\Users\a046829713\Desktop\program\RLTrading\SynapseX\Database\SQL_operate.py", line 13, in get_db_data
+    self.userconn = router.Router().mysql_conn
+  File "c:\Users\a046829713\Desktop\program\RLTrading\SynapseX\Database\router.py", line 13, in __init__
+    self._mysql_conn = self.get_mysql_conn()
+  File "c:\Users\a046829713\Desktop\program\RLTrading\SynapseX\Database\router.py", line 27, in get_mysql_conn
+    engine = create_engine(self.address + '/crypto_data')
+  File "<string>", line 2, in create_engine
+  File "C:\Users\a046829713\Desktop\program\RLTrading\lib\site-packages\sqlalchemy\util\deprecations.py", line 281, in warned
+    return fn(*args, **kwargs)  # type: ignore[no-any-return]
+  File "C:\Users\a046829713\Desktop\program\RLTrading\lib\site-packages\sqlalchemy\engine\create.py", line 599, in create_engine
+    dbapi = dbapi_meth(**dbapi_args)
+  File "C:\Users\a046829713\Desktop\program\RLTrading\lib\site-packages\sqlalchemy\dialects\mysql\pymysql.py", line 75, in import_dbapi
+    return __import__("pymysql")
+ModuleNotFoundError: No module named 'pymysql'
+
+2024-12-03 16:57 ERROR Traceback (most recent call last):
+  File "c:\Users\a046829713\Desktop\program\RLTrading\SynapseX\Database\SQL_operate.py", line 13, in get_db_data
+    self.userconn = router.Router().mysql_conn
+  File "c:\Users\a046829713\Desktop\program\RLTrading\SynapseX\Database\router.py", line 13, in __init__
+    self._mysql_conn = self.get_mysql_conn()
+  File "c:\Users\a046829713\Desktop\program\RLTrading\SynapseX\Database\router.py", line 27, in get_mysql_conn
+    engine = create_engine(self.address + '/crypto_data')
+  File "<string>", line 2, in create_engine
+  File "C:\Users\a046829713\Desktop\program\RLTrading\lib\site-packages\sqlalchemy\util\deprecations.py", line 281, in warned
+    return fn(*args, **kwargs)  # type: ignore[no-any-return]
+  File "C:\Users\a046829713\Desktop\program\RLTrading\lib\site-packages\sqlalchemy\engine\create.py", line 599, in create_engine
+    dbapi = dbapi_meth(**dbapi_args)
+  File "C:\Users\a046829713\Desktop\program\RLTrading\lib\site-packages\sqlalchemy\dialects\mysql\pymysql.py", line 75, in import_dbapi
+    return __import__("pymysql")
+ModuleNotFoundError: No module named 'pymysql'
+

@@ -2,17 +2,17 @@ from .Error import InvalidModeError
 import pandas as pd
 import numpy as np
 import torch
-from Brain.Common.DataFeature import DataFeature
+from Brain.Common.DataFeature import OriginalDataFrature
 from Brain.DQN.lib import environment
 from Brain.DQN.lib import common
-from Brain.DQN.lib.environment import State1D, State_time_step
-from Brain.DQN.lib import environment, models
+from Brain.DQN.lib.environment import  State_time_step
+from Brain.DQN.lib import environment, model
 from Brain.Count import nb
 import matplotlib.pyplot as plt
 import quantstats as qs
 from pathlib import Path
 import time
-from Brain.DQN.lib import offical_transformer
+from Brain.DQN.lib.model import TransformerDuelingModel
 
 
 class Strategy(object):
@@ -78,7 +78,7 @@ class RL_evaluate():
 
         self.hyperparameters(strategy)
 
-        data = DataFeature().get_train_net_work_data_by_pd(symbol=strategy.symbol_name,
+        data = OriginalDataFrature().get_train_net_work_data_by_pd(symbol=strategy.symbol_name,
                                                            df=strategy.df)
         # 準備神經網絡的狀態
         state = State_time_step(
@@ -99,9 +99,11 @@ class RL_evaluate():
 
     def load_model(self, model_path: str):
         engine_info = self.evaluate_env.engine_info()
+        print("資料輸入:")
+        print(engine_info)
         # 準備模型
         # input_size, hidden_size, output_size, num_layers=1
-        model = offical_transformer.TransformerDuelingModel(
+        model = TransformerDuelingModel(
                 d_model=engine_info['input_size'],
                 nhead=4,
                 d_hid=2048,
@@ -116,6 +118,7 @@ class RL_evaluate():
             model_path, map_location=self.device, weights_only=True)
 
         model.load_state_dict(checkpoint['model_state_dict'])
+        print("評估模式開始啟動")
         model.eval()  # 將模型設置為評估模式
         return model
 

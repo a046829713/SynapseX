@@ -30,8 +30,7 @@ class DataProvider:
 
         # 先檢查是否有相關資料 取得目前所有列
         symbol_name_list = self.SQL.get_db_data('show tables;')
-        symbol_name_list = [y[0] for y in symbol_name_list]
-
+        symbol_name_list = [y[0] for y in symbol_name_list] 
         table_name = self.datatransformer.generate_table_name(
             symbol_name, symbol_type, time_type, iflower)
 

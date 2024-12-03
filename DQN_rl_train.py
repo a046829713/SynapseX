@@ -42,7 +42,7 @@ class RL_prepare(ABC):
 
     def _prepare_symbols(self):
         # symbols = ['PEOPLEUSDT','BTCUSDT', 'ENSUSDT', 'LPTUSDT', 'GMXUSDT', 'TRBUSDT', 'ARUSDT', 'XMRUSDT', 'ETHUSDT', 'AAVEUSDT', 'ZECUSDT', 'SOLUSDT', 'DEFIUSDT', 'ETCUSDT', 'LTCUSDT', 'BCHUSDT', 'ORDIUSDT', 'BNBUSDT', 'AVAXUSDT', 'MKRUSDT', 'BTCDOMUSDT']
-        symbols = ['BTCUSDT']
+        symbols = ['BTCUSDT','ETHUSDT','SOLUSDT']
         self.symbols = list(set(symbols))
         print("There are symobls:", self.symbols)
 
