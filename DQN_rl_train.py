@@ -172,7 +172,7 @@ class RL_Train(RL_prepare):
         checkpoint_path = r''
         if checkpoint_path and os.path.isfile(checkpoint_path):
             print("資料繼續運算模式")
-            saves_path = checkpoint_path.split('\\')
+            saves_path = os.path.split(checkpoint_path)
             self.saves_path = os.path.join(saves_path[0], saves_path[1])
             checkpoint = torch.load(checkpoint_path)
             self.net.load_state_dict(checkpoint['model_state_dict'])
