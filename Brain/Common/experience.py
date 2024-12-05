@@ -70,8 +70,8 @@ class SequentialExperienceReplayBuffer:
             entry = next(self.experience_source_iter)       
             if entry.info['instrument'] not in self.buffer:
                 self.buffer[entry.info['instrument']] = deque(maxlen=self.capacity)
-            else:
-                self.buffer[entry.info['instrument']].append(entry)
+            
+            self.buffer[entry.info['instrument']].append(entry)
 
 
 class ExperienceReplayBuffer:
