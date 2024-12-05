@@ -370,142 +370,8 @@ class ExperienceSourceBuffer:
             ofs = random.randrange(self.lens[episode] - self.steps_count - 1)
             yield self.buffer[episode][ofs:ofs+self.steps_count]
 
-class ExperienceReplayBuffer:
-    def __init__(self, experience_source, buffer_size):
-        assert isinstance(experience_source, (ExperienceSource, type(None)))
-        assert isinstance(buffer_size, int)
-        self.experience_source_iter = None if experience_source is None else iter(experience_source)
-        self.buffer = []
-        self.capacity = buffer_size
-        self.pos = 0
 
-    def __len__(self):
-        return len(self.buffer)
-
-    def __iter__(self):
-        return iter(self.buffer)
-
-    def sample(self, batch_size):
-        """
-        Get one random batch from experience replay
-        TODO: implement(實施) sampling order policy
-        :param batch_size:
-        :return:
-        """
-        if len(self.buffer) <= batch_size:
-            return self.buffer
-        # Warning: replace=False makes random.choice O(n)
-        keys = np.random.choice(len(self.buffer), batch_size, replace=True)
-        return [self.buffer[key] for key in keys]
-
-    def _add(self, sample):
-        """
-        
-            將跌代的資料帶入
-            萬一超過就覆寫
-        Args:
-            sample (_type_): _description_
-        """
-        if len(self.buffer) < self.capacity:
-            self.buffer.append(sample)
-        else:
-            self.buffer[self.pos] = sample
-            self.pos = (self.pos + 1) % self.capacity
-
-    def populate(self, samples):
-        """
-        將樣本填入緩衝區中
-        Populates samples into the buffer
-        :param samples: how many samples to populate
-        
-        <class 'ptan.experience.ExperienceFirstLast'>
-        entry: ExperienceFirstLast(state=array([ 0.00773994, -0.01083591,  0.00773994,  0.00456621, -0.01065449,
-        0.00456621,  0.00607903, -0.00455927,  0.00455927,  0.        ,
-       -0.01783061, -0.00148588,  0.00437956, -0.01021898, -0.00291971,
-        0.00442478, -0.02359882, -0.02359882,  0.01226994, -0.00153374,
-        0.00306748,  0.01076923, -0.00615385,  0.00153846,  0.00310559,
-       -0.01086957, -0.00465839,  0.02503912, -0.00312989,  0.02190923,
-        0.        ,  0.        ], dtype=float32), action=1, reward=-2.7099031710120034, last_state=array([ 0.00607903, -0.00455927,  0.00455927,  0.        , -0.01783061,
-       -0.00148588,  0.00437956, -0.01021898, -0.00291971,  0.00442478,
-       -0.02359882, -0.02359882,  0.01226994, -0.00153374,  0.00306748,
-        0.01076923, -0.00615385,  0.00153846,  0.00310559, -0.01086957,
-       -0.00465839,  0.02503912, -0.00312989,  0.02190923,  0.00311042,
-       -0.00777605, -0.00311042,  0.00944882,  0.        ,  0.0015748 ,
-        1.        , -0.02603369], dtype=float32))
-        """
-        for _ in range(samples):
-            entry = next(self.experience_source_iter)
-            self._add(entry)
             
-# class ExperienceReplayBuffer:
-#     def __init__(self, experience_source, buffer_size,symbol_size:int):
-#         assert isinstance(experience_source, (ExperienceSource, type(None)))
-#         assert isinstance(buffer_size, int)
-        
-#         self.experience_source_iter = None if experience_source is None else iter(
-#             experience_source)
-        
-#         # 用來儲存所有商品的空間
-#         self.buffer = {}            
-#         self.capacity = buffer_size
-#         self.symbol_size = symbol_size
-
-#     def __len__(self):
-#         return sum(len(deq) for deq in self.buffer.values())
-    
-#     def each_symbol_the_drill(self):
-#         return { key:len(self.buffer[key]) for key in self.buffer}
-
-
-#     def each_num_len_enough(self,init_size:int):
-#         # 用來判斷神經網絡是否需要跳過，希望各商品都有充足的樣本可以使用
-#         # 需要多個樣本都有了再開始判斷數量
-#         if len(self.buffer) != self.symbol_size:
-#             return False
-        
-#         # 若有任一個商品不滿足，直接跳過
-#         for deq in self.buffer.values():
-#             if len(deq) < init_size:
-#                 return False
-        
-#         return True
-
-#     def sample(self, batch_size):
-#         # 隨機取得一個商品
-#         symbol = random.choice(list(self.buffer.keys()))
-
-#         the_data = self.buffer[symbol]
-#         # 在從商品裡面批次選擇
-#         start = random.randint(0, len(the_data) - batch_size)
-#         slicing_sample = list(itertools.islice(the_data, start, start + batch_size))
-
-#         # 檢查商品順序
-#         first_len = None
-#         for experiencefirstlast in slicing_sample:
-#             if first_len is None:
-#                 first_len = experiencefirstlast.info['offset'] 
-#             else:
-#                 if experiencefirstlast.info['offset'] == first_len + 1:
-#                     first_len = experiencefirstlast.info['offset']
-#                 else:
-#                     # 遞迴取樣
-#                     return self.sample(batch_size)
-
-
-  
-#         return slicing_sample
-
-#     def populate(self, samples):
-#         """
-#         將樣本填入緩衝區中
-#         """
-#         for _ in range(samples):
-#             entry = next(self.experience_source_iter)       
-#             if entry.info['instrument'] not in self.buffer:
-#                 self.buffer[entry.info['instrument']] = deque(maxlen=self.capacity)
-#             else:
-#                 self.buffer[entry.info['instrument']].append(entry)
-        
 class PrioReplayBufferNaive:
     def __init__(self, exp_source, buf_size, prob_alpha=0.6):
         self.exp_source_iter = iter(exp_source)
@@ -550,61 +416,61 @@ class PrioReplayBufferNaive:
             self.priorities[idx] = prio
 
 
-class PrioritizedReplayBuffer(ExperienceReplayBuffer):
-    def __init__(self, experience_source, buffer_size, alpha):
-        super(PrioritizedReplayBuffer, self).__init__(
-            experience_source, buffer_size)
-        assert alpha > 0
-        self._alpha = alpha
+# class PrioritizedReplayBuffer(ExperienceReplayBuffer):
+#     def __init__(self, experience_source, buffer_size, alpha):
+#         super(PrioritizedReplayBuffer, self).__init__(
+#             experience_source, buffer_size)
+#         assert alpha > 0
+#         self._alpha = alpha
 
-        it_capacity = 1
-        while it_capacity < buffer_size:
-            it_capacity *= 2
+#         it_capacity = 1
+#         while it_capacity < buffer_size:
+#             it_capacity *= 2
 
-        self._it_sum = utils.SumSegmentTree(it_capacity)
-        self._it_min = utils.MinSegmentTree(it_capacity)
-        self._max_priority = 1.0
+#         self._it_sum = utils.SumSegmentTree(it_capacity)
+#         self._it_min = utils.MinSegmentTree(it_capacity)
+#         self._max_priority = 1.0
 
-    def _add(self, *args, **kwargs):
-        idx = self.pos
-        super()._add(*args, **kwargs)
-        self._it_sum[idx] = self._max_priority ** self._alpha
-        self._it_min[idx] = self._max_priority ** self._alpha
+#     def _add(self, *args, **kwargs):
+#         idx = self.pos
+#         super()._add(*args, **kwargs)
+#         self._it_sum[idx] = self._max_priority ** self._alpha
+#         self._it_min[idx] = self._max_priority ** self._alpha
 
-    def _sample_proportional(self, batch_size):
-        res = []
-        for _ in range(batch_size):
-            mass = random.random() * self._it_sum.sum(0, len(self) - 1)
-            idx = self._it_sum.find_prefixsum_idx(mass)
-            res.append(idx)
-        return res
+#     def _sample_proportional(self, batch_size):
+#         res = []
+#         for _ in range(batch_size):
+#             mass = random.random() * self._it_sum.sum(0, len(self) - 1)
+#             idx = self._it_sum.find_prefixsum_idx(mass)
+#             res.append(idx)
+#         return res
 
-    def sample(self, batch_size, beta):
-        assert beta > 0
+#     def sample(self, batch_size, beta):
+#         assert beta > 0
 
-        idxes = self._sample_proportional(batch_size)
+#         idxes = self._sample_proportional(batch_size)
 
-        weights = []
-        p_min = self._it_min.min() / self._it_sum.sum()
-        max_weight = (p_min * len(self)) ** (-beta)
+#         weights = []
+#         p_min = self._it_min.min() / self._it_sum.sum()
+#         max_weight = (p_min * len(self)) ** (-beta)
 
-        for idx in idxes:
-            p_sample = self._it_sum[idx] / self._it_sum.sum()
-            weight = (p_sample * len(self)) ** (-beta)
-            weights.append(weight / max_weight)
-        weights = np.array(weights, dtype=np.float32)
-        samples = [self.buffer[idx] for idx in idxes]
-        return samples, idxes, weights
+#         for idx in idxes:
+#             p_sample = self._it_sum[idx] / self._it_sum.sum()
+#             weight = (p_sample * len(self)) ** (-beta)
+#             weights.append(weight / max_weight)
+#         weights = np.array(weights, dtype=np.float32)
+#         samples = [self.buffer[idx] for idx in idxes]
+#         return samples, idxes, weights
 
-    def update_priorities(self, idxes, priorities):
-        assert len(idxes) == len(priorities)
-        for idx, priority in zip(idxes, priorities):
-            assert priority > 0
-            assert 0 <= idx < len(self)
-            self._it_sum[idx] = priority ** self._alpha
-            self._it_min[idx] = priority ** self._alpha
+#     def update_priorities(self, idxes, priorities):
+#         assert len(idxes) == len(priorities)
+#         for idx, priority in zip(idxes, priorities):
+#             assert priority > 0
+#             assert 0 <= idx < len(self)
+#             self._it_sum[idx] = priority ** self._alpha
+#             self._it_min[idx] = priority ** self._alpha
 
-            self._max_priority = max(self._max_priority, priority)
+#             self._max_priority = max(self._max_priority, priority)
 
 
 class BatchPreprocessor:

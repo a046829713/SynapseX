@@ -13,6 +13,8 @@ from Brain.DQN.lib import model
 from abc import ABC, abstractmethod
 from Brain.DQN.lib.EfficientnetV2 import EfficientnetV2SmallDuelingModel
 from abc import ABC
+from Brain.Common.experience import SequentialExperienceReplayBuffer
+
 
 class RL_prepare(ABC):
     def __init__(self):
@@ -61,8 +63,12 @@ class RL_prepare(ABC):
         self.MODEL_DEFAULT_COMMISSION_PERC = 0.0005
         self.DEFAULT_SLIPPAGE = 0.0025
         self.REWARD_STEPS = 2
+
         self.REPLAY_SIZE = 100000
-        self.REPLAY_INITIAL = 10000
+        self.EACH_REPLAY_SIZE = 50000
+
+
+        self.REPLAY_INITIAL = 1000
         self.LEARNING_RATE = 0.0001  # optim 的學習率
         self.EPSILON_START = 1.0  # 起始機率(一開始都隨機運行)
         self.SAVES_PATH = "saves"  # 儲存的路徑
@@ -161,8 +167,8 @@ class RL_Train(RL_prepare):
         self.exp_source = ptan.experience.ExperienceSourceFirstLast(
             self.train_env, self.agent, self.GAMMA, steps_count=self.REWARD_STEPS)
 
-        self.buffer = ptan.experience.ExperienceReplayBuffer(
-            self.exp_source, self.REPLAY_SIZE)
+        self.buffer = SequentialExperienceReplayBuffer(
+            self.exp_source, self.EACH_REPLAY_SIZE, len(self.symbols))
 
         self.load_pre_train_model_state()
         self.train()
@@ -174,8 +180,6 @@ class RL_Train(RL_prepare):
             print("資料繼續運算模式")
             # 標準化路徑並分割
             self.saves_path = os.path.dirname(checkpoint_path)
-            print(self.saves_path)
-            time.sleep(100)
             checkpoint = torch.load(checkpoint_path)
             self.net.load_state_dict(checkpoint['model_state_dict'])
             self.step_idx = checkpoint['step_idx']
@@ -208,9 +212,9 @@ class RL_Train(RL_prepare):
                     reward_tracker.reward(
                         new_rewards[0], self.step_idx, self.selector.epsilon)
 
-                if len(self.buffer) < self.REPLAY_INITIAL:
+                if not self.buffer.each_num_len_enough(init_size=self.REPLAY_INITIAL):
                     continue
-
+                
                 self.optimizer.zero_grad()
                 batch = self.buffer.sample(self.BATCH_SIZE)
 
