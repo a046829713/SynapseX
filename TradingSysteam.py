@@ -262,48 +262,6 @@ class AsyncTrading_system(Trading_system):
 
         return last_status
 
-    def postionLeverage(self, finally_df: pd.DataFrame, if_order_map: dict, balance_balance_map: dict, leverage: float):
-        """
-            Args:
-            if_order_map:dict:
-                {'BTCUSDT': 0.0}
-
-            balance_balance_map (dict): 
-                {'09XXXXXXXX': 0.0,'09XXXXXXXX': 0.0, '09XXXXXXXX': 7916.93242276}
-        """
-        last_df = finally_df.groupby('tic').last()
-        count_symbols = sum(list(if_order_map.values()))
-        weight = 0.25 if count_symbols <= 4 else 1 / count_symbols
-        out_map = {user:{} for user in balance_balance_map}
-        
-        for key, value in balance_balance_map.items():
-            for symbol, if_order in if_order_map.items():
-                if if_order:
-                    shares = value * weight * leverage / \
-                        last_df[last_df.index == symbol]['close'].iloc[0]
-                    
-                    out_map[key].update({symbol: [1, shares]})
-
-        return out_map
-
-    # def generate_order_map(self) -> dict:
-    #     # # DQN 準備策略
-    #     self.DQN_engin.strategy_prepare(self.targetsymbols)
-
-    #     # 準備將資料塞入神經網絡或是策略裡面
-    #     finally_df = self.dataprovider.get_trade_data(
-    #         self.targetsymbols, self.symbol_map, freq=self.engine_setting['FREQ_TIME'])
-
-    #     # 在底層(oderbacktest會將最後一個拋棄)
-    #     if_order_map = self.DQN_engin.get_if_order_map(finally_df)
-
-    #     # 取得所有戶頭的平衡資金才有辦法去運算口數
-    #     balance_map = self.check_money_level()
-
-    #     last_status = self.postionLeverage(finally_df, if_order_map, balance_map,leverage=self.engine_setting['LEVERAGE'])
-
-    #     self.printfunc('目前交易狀態,校正之後', last_status)
-    #     return last_status
 
     async def main(self):
         self.printfunc("Crypto_trading 正式交易啟動")
