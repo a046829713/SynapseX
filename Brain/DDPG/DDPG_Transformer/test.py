@@ -1,6 +1,6 @@
 # https://deeplearningcourses.com/c/cutting-edge-artificial-intelligence
 import tensorflow as tf
-import gym
+import gymnasium as gym
 import matplotlib.pyplot as plt
 from datetime import datetime
 

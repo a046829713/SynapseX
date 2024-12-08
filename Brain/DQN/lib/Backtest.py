@@ -176,11 +176,6 @@ class Backtest(object):
         self.order:list = re_evaluate.record_orders
         self.Symbol_data = self.strategy.df
 
-        self._cwd = Path("./")
-        # results file
-        self._results_file = self._cwd / "results" / "rl"
-        self._results_file.mkdir(parents=True, exist_ok=True)
-
     def order_becktest(self, ifplot: bool):
         """
             透過order 來產生回測績效表
@@ -219,6 +214,10 @@ class Backtest(object):
         )
 
         if ifplot:
+            self._cwd = Path("./")
+            # results file
+            self._results_file = self._cwd / "results" / f"{self.strategy.symbol_name}"
+            self._results_file.mkdir(parents=True, exist_ok=True)            
             self.plot_max_drawdown(ClosedPostionprofit_array)
             self.detail_image(ClosedPostionprofit_array, orders)
 

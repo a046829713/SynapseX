@@ -119,13 +119,6 @@ class Trading_system():
 
         return self.dataprovider.filter_useful_symbol(all_symbols, tag="MTM_TYPE")
 
-    def reload_all_futures_data(self):
-        """
-            用來回補所有日線期貨資料
-        """
-        self.dataprovider.reload_all_data(
-            time_type='1m', symbol_type='FUTURES')
-
     def export_all_tables(self):
         """
             將資料全部從Mysql寫出
@@ -173,16 +166,16 @@ class AsyncTrading_system(Trading_system):
     def __init__(self) -> None:
         """
             這邊才是正式開始交易的地方，父類別大多擔任準備工作和函數提供
-
-
-
             1. 開始研究如何將更多資料寫入DB
 
         """
         super().__init__()
 
         self.checkDailydata()  # 檢查日線資料
-        # self.reload_all_futures_data() # 回補所有分鐘資料
+
+        self.dataprovider.reload_all_data(
+            time_type='1m', symbol_type='FUTURES')
+        
         self.process_target_symbol()  # 取得要交易的標的
 
         # 將標得注入引擎 #這邊可能需要獲取更多資料
@@ -241,7 +234,7 @@ class AsyncTrading_system(Trading_system):
 
         return new_last_status
 
-    def _generate_order_map(self) -> dict:
+    def generate_order_map(self) -> dict:
         # # DQN 準備策略
         self.DQN_engin.strategy_prepare(self.targetsymbols)
 

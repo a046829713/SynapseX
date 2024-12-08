@@ -5,7 +5,7 @@ class AppSetting():
     @staticmethod    
     def systeam_setting():
         permission_data ={
-            'execute_orders': True,
+            'execute_orders': False,
             'emergency_times':50
         }   
         return permission_data
@@ -34,7 +34,6 @@ class AppSetting():
             當回測可以將參數擺放至此
         """
         data = {
-            
             "BACKTEST_DEFAULT_COMMISSION_PERC":0.0005,
             "DEFAULT_SLIPPAGE":0.0025
         }
