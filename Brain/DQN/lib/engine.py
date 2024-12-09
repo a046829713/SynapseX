@@ -6,8 +6,6 @@ import os
 import time
 
 
-
-
 class EngineBase():
     def __init__(self,strategy_keyword:str,symbols :list = []) -> None:
         self.strategy_keyword = strategy_keyword

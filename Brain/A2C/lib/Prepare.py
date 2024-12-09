@@ -2,13 +2,13 @@ import os
 import numpy as np
 import torch
 import torch.optim as optim
-from Brain.Common.DataFeature import DataFeature
+from Brain.Common.DataFeature import OriginalDataFrature
 from datetime import datetime
 from tensorboardX import SummaryWriter
 import time
 from abc import ABC, abstractmethod
-from Brain.A2C.lib.environment import Env, State_time_step, State2D
-from Brain.A2C.lib.models import ActorCriticModel
+from Brain.A2C.lib.environment import Env, State_time_step
+from Brain.A2C.lib.model import ActorCriticModel
 import copy 
 
 def show_setting(title: str, content: str):
@@ -26,6 +26,7 @@ class RL_prepare(ABC):
         self._prepare_model()
         self._prepare_targer_net()
         self._prepare_agent()
+        self._prepare_optimizer()
 
     def _prepare_keyword(self):
         self.keyword = 'Transformer'
@@ -47,10 +48,10 @@ class RL_prepare(ABC):
         if self.keyword == 'Transformer':
             print("目前商品:",[self.symbols[0]])
             # self.data[np.random.choice(list(self.data.keys()))]
-            data = DataFeature().get_train_net_work_data_by_path([self.symbols[0]])
+            data = OriginalDataFrature().get_train_net_work_data_by_path([self.symbols[0]])
 
             state = State_time_step(
-                                    field_names=data[list(data.keys())[0]]._fields,
+                                    init_prices=data[list(data.keys())[0]],
                                     bars_count=self.BARS_COUNT,
                                     commission_perc=self.MODEL_DEFAULT_COMMISSION_PERC,
                                     model_train=True,
@@ -58,19 +59,13 @@ class RL_prepare(ABC):
                                     )
 
         elif self.keyword == 'EfficientNetV2':
-            state = State2D(bars_count=self.BARS_COUNT,
-                            commission_perc=self.MODEL_DEFAULT_COMMISSION_PERC,
-                            model_train=True,
-                            default_slippage=self.DEFAULT_SLIPPAGE
-                            )
+            pass
 
         show_setting("ENVIRONMENT-STATE", state)
 
 
-        for symbol in self.symbols:
-            
-            data = DataFeature().get_train_net_work_data_by_path([symbol])
-
+        for symbol in self.symbols:            
+            data = OriginalDataFrature().get_train_net_work_data_by_path([symbol])
             # 製作環境
             self.train_envs.append(Env(prices=data, state=state, random_ofs_on_reset=True))
 
@@ -124,8 +119,26 @@ class RL_prepare(ABC):
 
         ).to(self.device)
 
-        self.optimizer = optim.Adam(self.model.parameters(), lr=self.LEARNING_RATE)
+    def _prepare_optimizer(self):
+        # 定義特殊層的學習率
+        param_groups = [
+            {'params': self.model.dean.mean_layer.parameters(), 'lr': 0.0001 * self.model.dean.mean_lr},
+            {'params': self.model.dean.scaling_layer.parameters(), 'lr': 0.0001 * self.model.dean.scale_lr},
+            {'params': self.model.dean.gating_layer.parameters(), 'lr': 0.0001 * self.model.dean.gate_lr},
+        ]
 
+        # 其餘參數使用默認學習率，直接加入 param_groups
+        for name, param in self.model.named_parameters():
+            if (
+                "dean.mean_layer" not in name
+                and "dean.scaling_layer" not in name
+                and "dean.gating_layer" not in name
+            ):
+                param_groups.append({'params': param, 'lr': self.LEARNING_RATE})
+
+        # 初始化優化器
+        self.optimizer = optim.Adam(param_groups)
+    
     def _prepare_targer_net(self):
         # 创建目标网络，作为主模型的副本
         self.target_model = copy.deepcopy(self.model)

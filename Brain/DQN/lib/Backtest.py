@@ -130,25 +130,26 @@ class RL_evaluate():
         obs = self.evaluate_env.reset()
         state = torch.from_numpy(obs).to(self.device)
         state = state.unsqueeze(0)
-
         info = common.turn_to_tensor(info, self.device)
-        while not done:
-            action = self.agent(state)
-            action_idx = action.max(dim=1)[1].item()
-            record_orders.append(self._parser_order(action_idx))
-            _state, reward, done, info = self.evaluate_env.step(action_idx)
-            # info = common.turn_to_tensor([info],self.device)
-            state = torch.from_numpy(_state).to(self.device)
-            state = state.unsqueeze(0)
-            rewards.append(reward)
-        
+
+        with torch.no_grad():
+            while not done:
+                action = self.agent(state)
+                action_idx = action.max(dim=1)[1].item()
+                record_orders.append(self._parser_order(action_idx))
+                _state, reward, done, info = self.evaluate_env.step(action_idx)
+                # info = common.turn_to_tensor([info],self.device)
+                state = torch.from_numpy(_state).to(self.device)
+                state = state.unsqueeze(0)
+                rewards.append(reward)
+            
         self.record_orders = record_orders
         
 
     def hyperparameters(self, strategy):
         self.BARS_COUNT = strategy.model_feature_len  # 用來準備要取樣的特徵長度,例如:開高低收成交量各取10根K棒
-        self.MODEL_DEFAULT_COMMISSION_PERC = 0.0005
-        self.DEFAULT_SLIPPAGE = 0.0025
+        self.MODEL_DEFAULT_COMMISSION_PERC = strategy.fee
+        self.DEFAULT_SLIPPAGE = strategy.slippage
 
     def _parser_order(self, action_value: int):
         if action_value == 2:

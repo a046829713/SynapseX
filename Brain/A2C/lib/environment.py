@@ -12,7 +12,7 @@ class Actions(enum.Enum):
 
 
 class State:
-    def __init__(self, field_names: list, bars_count, commission_perc, model_train, default_slippage):
+    def __init__(self, init_prices: collections.namedtuple, bars_count, commission_perc, model_train, default_slippage):
         assert isinstance(bars_count, int)
         assert bars_count > 0
         assert isinstance(commission_perc, float)
@@ -24,12 +24,10 @@ class State:
         self.model_train = model_train
         self.default_slippage = default_slippage
 
-        self.build_fileds(field_names)
+        self.build_fileds(init_prices)
 
-    def build_fileds(self, field_names: list):
-        # "open"要記得拿掉
-        self.field_names = list(field_names)
-        self.field_names.remove("open")
+    def build_fileds(self, init_prices):
+        self.field_names = list(init_prices._fields)
 
     def reset(self, prices, offset):
         assert offset >= self.bars_count-1
@@ -43,71 +41,6 @@ class State:
         self.cost_sum = 0.0
         self.closecash = 0.0
         self.canusecash = 1.0
-
-    def _cur_close(self):
-        """
-        Calculate real close price for the current bar
-
-        # 為甚麼會這樣寫的原因是因為 透過rel_close 紀錄的和open price 的差距(百分比)來取得真實的收盤價
-        """
-        open = self._prices.open[self._offset]
-        rel_close = self._prices.close[self._offset]
-        return open * (1.0 + rel_close)
-
-    def count_postion_change_reward(self, action):
-        # 更新 self.bar_dont_change_count
-        if ((action == Actions.Buy and self.have_position) or
-            (action == Actions.Sell and not self.have_position) or
-                (action == Actions.Close)):
-            self.bar_dont_change_count += 1
-        else:
-            self.bar_dont_change_count = 0
-
-        half_steps = self.N_steps / 2
-        max_reward = 0.01  # 最大奖励值，可根据需要调整
-        max_penalty = -0.01  # 最大惩罚值，可根据需要调整
-
-        if self.bar_dont_change_count == 0:
-            reward = 0
-        else:
-            if self.bar_dont_change_count <= half_steps:
-                reward = (half_steps - self.bar_dont_change_count) / \
-                    half_steps * max_reward
-            else:
-                reward = (self.bar_dont_change_count - half_steps) / \
-                    half_steps * max_penalty
-
-        # print("改變前部位獎勵:",reward)
-        return reward
-
-    def trend_reward(self, window_size: int):
-        if self._offset >= window_size:
-            open_prices = self._prices.open[self._offset -
-                                            window_size:self._offset]
-            rel_close = self._prices.close[self._offset -
-                                           window_size:self._offset]
-            original_prices = open_prices * (1.0 + rel_close)
-            # 使用线性回归斜率作为趋势
-            x = np.arange(window_size)
-            y = original_prices
-            slope, _ = np.polyfit(x, y, 1)
-            trend = slope
-        else:
-            trend = 0.0
-
-        reward = 0.0
-        threshold = 0.0  # 趋势判断的阈值
-        base_reward = 0.0005
-        base_penalty = 0.0005
-
-        if trend > threshold and self.have_position:
-            reward += base_reward * trend  # 奖励与趋势强度相关
-        elif trend < -threshold and not self.have_position:
-            reward += base_reward * (-trend)
-        else:
-            reward -= base_penalty
-
-        return reward
 
     def step(self, action):
         """
@@ -123,7 +56,7 @@ class State:
 
         reward = 0.0
         done = False
-        close = self._cur_close()
+        close = self._prices.close[self._offset]
         # 以平倉損益每局從新歸零
         closecash_diff = 0.0
         # 未平倉損益
@@ -203,60 +136,9 @@ class State_time_step(State):
 
         if self.have_position:
             res[:, len(self.field_names)] = 1.0
-            res[:, len(self.field_names) + 1] = (self._cur_close() - self.open_price) / \
+            res[:, len(self.field_names) + 1] = (self._prices.close[self._offset] - self.open_price) / \
                 self.open_price
 
-        return res
-
-
-class State1D(State):
-    """
-        用於處理 1D 數據，如時間序列或序列數據。輸入數據的形狀通常是 (N, C, L)，其中 N 是批次大小，C 是通道數，L 是序列長度。
-        典型應用：自然語言處理、時間序列分析（如語音識別、文本分類等）。
-    """
-    @property
-    def shape(self):
-        return (6, self.bars_count)
-
-    def encode(self):
-        res = np.zeros(shape=self.shape, dtype=np.float32)
-        ofs = self.bars_count-1
-        res[0] = self._prices.high[self._offset-ofs:self._offset+1]
-        res[1] = self._prices.low[self._offset-ofs:self._offset+1]
-        res[2] = self._prices.close[self._offset-ofs:self._offset+1]
-        res[3] = self._prices.volume[self._offset-ofs:self._offset+1]
-        dst = 4
-        if self.have_position:
-            res[dst] = 1.0
-            res[dst+1] = (self._cur_close() - self.open_price) / \
-                self.open_price
-
-        return res
-
-
-class State2D(State):
-    """
-        用於處理 2D 數據，如圖像。輸入數據的形狀通常是 (N, C, H, W)，其中 N 是批次大小，C 是通道數，H 是高度，W 是寬度。
-        典型應用：圖像處理、計算機視覺任務（如圖像分類、物體檢測等）。
-    """
-    @property
-    def shape(self):
-        return (6, self.bars_count)
-
-    def encode(self):
-        res = np.zeros(shape=self.shape, dtype=np.float32)
-        ofs = self.bars_count-1
-        res[0] = self._prices.high[self._offset-ofs:self._offset+1]
-        res[1] = self._prices.low[self._offset-ofs:self._offset+1]
-        res[2] = self._prices.close[self._offset-ofs:self._offset+1]
-        res[3] = self._prices.volume[self._offset-ofs:self._offset+1]
-        dst = 4
-        if self.have_position:
-            res[dst] = 1.0
-            res[dst+1] = (self._cur_close() - self.open_price) / \
-                self.open_price
-
-        res = np.expand_dims(res, 0)
         return res
 
 
@@ -303,9 +185,7 @@ class Env(gym.Env):
         pass
 
     def engine_info(self):
-        info ={}
-
         if self._state.__class__ == State_time_step:
-            info.update({"input_size": self._state.shape[1]})
-        
-        return info
+            return {
+                "input_size": self._state.shape[1],
+            }

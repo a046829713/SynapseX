@@ -10,7 +10,7 @@ from datetime import datetime
 from tensorboardX import SummaryWriter
 import time
 from Brain.DQN.lib import model
-from abc import ABC, abstractmethod
+from abc import ABC
 from Brain.DQN.lib.EfficientnetV2 import EfficientnetV2SmallDuelingModel
 from abc import ABC
 from Brain.Common.experience import SequentialExperienceReplayBuffer
@@ -110,9 +110,9 @@ class RL_prepare(ABC):
 
 
         if self.keyword == 'Transformer':
-            self.net = model.TransformerDuelingModel(
+            self.net = model.COT_TransformerDuelingModel(
                 d_model=engine_info['input_size'],
-                nhead=4,
+                nhead=8,
                 d_hid=2048,
                 nlayers=4,
                 num_actions=self.train_env.action_space.n,  # 假设有5种可能的动作
