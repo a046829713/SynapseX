@@ -1,229 +1,152 @@
-import torch
-import torch.multiprocessing as mp
-from Brain.A2C.lib.Prepare import RL_prepare
-import time
-import os
-from Brain.Common.PytorchModelTool import ModelTool
-import torch
-import torch.nn.functional as F
-from torch.distributions import Categorical
-import time
-from torch.utils.tensorboard import SummaryWriter
+from Brain.A3C.lib.Prepare import RL_prepare
+import multiprocessing as mp
 
-class WorkerRunner(RL_prepare):
-    def __init__(self, 
-                 worker_id,
-                 global_model,
-                 optimizer,
-                 device,
-                 env_maker,
-                 num_steps,
-                 gamma,
-                 value_loss_coef,
-                 entropy_coef,
-                 tau,
-                 checkpoint_every_step,
-                 model_tool,
-                 writer_path,
-                 symbols):
-        super().__init__()
-        self.worker_id = worker_id
-        self.global_model = global_model
-        self.optimizer = optimizer
-        self.device = device
-        self.gamma = gamma
-        self.value_loss_coef = value_loss_coef
-        self.entropy_coef = entropy_coef
-        self.tau = tau
-        self.checkpoint_every_step = checkpoint_every_step
-        self.model_tool = model_tool
-        self.writer = SummaryWriter(log_dir=f"{writer_path}/worker_{worker_id}")
+# class ActorCritic(nn.Module):  # 定義演員—評論家模型
+#     def __init__(self):
+#         super(ActorCritic, self).__init__()
+#         self.l1 = nn.Linear(4, 25)  # CartPole state維度為4
+#         self.l2 = nn.Linear(25, 50)
+#         self.actor_lin1 = nn.Linear(50, 2)
+#         self.l3 = nn.Linear(50, 25)
+#         self.critic_lin1 = nn.Linear(25, 1)
+
+#     def forward(self, x):
+#         x = F.normalize(x, dim=0)  # 正規化輸入資料
+#         y = F.relu(self.l1(x))
+#         y = F.relu(self.l2(y))
+#         actor = self.actor_lin1(
+#             y)        
+#           # 演員端輸出兩個動作(向左或向右)的對數機率值
+
         
-        # 為這個 worker 建立自己的環境(僅一個環境)
-        # 若需要多環境並行在同一 worker，可以自行擴充
-        self.env = env_maker(symbols)
-        
-        # 建立本地模型並同步全局模型參數
-        self.local_model = type(self.global_model)().to(self.device)
-        self.local_model.load_state_dict(self.global_model.state_dict())
-        
-        # 訓練超參數
-        self.num_steps = num_steps
-        self.episode_rewards = 0
-        self.global_step = 0
-
-    def run(self):
-        obs = self.env.reset()
-        done = False
-        episode_rewards = 0
-        start_time = time.time()
-        last_time = start_time
-        frame_count = 0
-
-        while True:
-            # 在本地暫存多個 step 的資料，然後一起更新
-            values = []
-            log_probs = []
-            rewards = []
-            entropies = []
-            masks = []
-            
-            for step in range(self.num_steps):
-                obs_tensor = torch.tensor(obs, dtype=torch.float32, device=self.device).unsqueeze(0)
-                with torch.no_grad():
-                    action_probs, state_value = self.local_model(obs_tensor)
-                dist = Categorical(logits=action_probs)
-                action = dist.sample()
-                
-                log_prob = dist.log_prob(action)
-                entropy = dist.entropy().mean()
-                
-                obs_next, reward, done, info = self.env.step(action.item())
-                episode_rewards += reward
-
-                mask = 0.0 if done else 1.0
-                
-                values.append(state_value)
-                log_probs.append(log_prob)
-                rewards.append(reward)
-                entropies.append(entropy)
-                masks.append(mask)
-
-                obs = obs_next
-                
-                self.global_step += 1
-                frame_count += 1
-
-                if done:
-                    obs = self.env.reset()
-                    self.writer.add_scalar('Episode Reward', episode_rewards, self.global_step)
-                    episode_rewards = 0
-            
-            # 最後一個 state 的 value，用於計算 targets
-            obs_tensor = torch.tensor(obs, dtype=torch.float32, device=self.device).unsqueeze(0)
-            with torch.no_grad():
-                _, next_value = self.local_model(obs_tensor)
-            
-            # 計算優勢與目標
-            returns = []
-            R = next_value.detach()
-            for step in reversed(range(self.num_steps)):
-                R = rewards[step] + self.gamma * R * masks[step]
-                returns.insert(0, R)
-            
-            returns = torch.cat(returns).detach()
-            values = torch.cat(values)
-            log_probs = torch.cat(log_probs)
-            entropies = torch.stack(entropies)
-            
-            advantages = returns - values
-            
-            policy_loss = -(log_probs * advantages.detach()).mean()
-            value_loss = F.mse_loss(values, returns)
-            entropy_loss = entropies.mean()
-            
-            total_loss = policy_loss + self.value_loss_coef * value_loss - self.entropy_coef * entropy_loss
-            
-            # 將梯度更新應用到全局模型
-            self.optimizer.zero_grad()
-            total_loss.backward()
-            torch.nn.utils.clip_grad_norm_(self.local_model.parameters(), max_norm=0.5)
-
-            # 將本地模型梯度複製到全局模型並更新
-            for local_param, global_param in zip(self.local_model.parameters(), self.global_model.parameters()):
-                if global_param.grad is None:
-                    global_param.grad = local_param.grad
-                else:
-                    global_param.grad.copy_(local_param.grad)
-            
-            self.optimizer.step()
-            
-            # 更新完畢後，將全局模型參數複製回本地模型
-            self.local_model.load_state_dict(self.global_model.state_dict())
-            
-            # 可根據需要增加 soft_update 或省略
-            # 在 A3C 中通常不需要 target_model，如需 target_model 可以加入相同邏輯
-
-            # 記錄
-            self.writer.add_scalar('Total Loss', total_loss.item(), self.global_step)
-            self.writer.add_scalar('Value Loss', value_loss.item(), self.global_step)
-            self.writer.add_scalar('Policy Loss', policy_loss.item(), self.global_step)
-            self.writer.add_scalar('Entropy', entropy_loss.item(), self.global_step)
-            
-            current_time = time.time()
-            elapsed = current_time - last_time
-            if elapsed > 1.0:
-                fps = frame_count / elapsed
-                frame_count = 0
-                last_time = current_time
-                self.writer.add_scalar('FPS', fps, self.global_step)
-                print(f"[Worker {self.worker_id}] Step: {self.global_step}, FPS: {fps:.2f}")
-
-            if self.global_step % self.checkpoint_every_step == 0:
-                self.model_tool.save_checkpoint({
-                    'model_state_dict': self.global_model.state_dict(),
-                    'optimizer_state_dict': self.optimizer.state_dict(),
-                }, os.path.join(self.SAVES_PATH, f"checkpoint.pt"))
+#         c = F.relu(self.l3(y.detach()))
+#         critic = torch.tanh(self.critic_lin1(c))
+#         return actor, critic
 
 
+def run_episode(worker_env, worker_model):
+    # 使用新版 gymnasium 的 reset()
+    state, info = worker_env.reset()
+    state = torch.from_numpy(state).float()
+    values, logprobs, rewards = [], [], []
+    done = False
+    while not done:
+        policy, value = worker_model(state)
+        values.append(value)
+        logits = policy.view(-1)
 
+        action_dist = torch.distributions.Categorical(logits=logits)
+        action = action_dist.sample()        
+        logprob_ =action_dist.log_prob(action)
+        logprobs.append(logprob_)
 
-# 這是全局共享模型 (Global Model)
-def global_model_init(model_cls, device):
-    # 初始化全局模型，放在 CPU 或 GPU
-    global_model = model_cls().to(device)
-    global_model.share_memory()  # multiprocessing 時需要 share_memory()
-    return global_model
-
-def worker_process(worker_id, global_model, optimizer, device, env_maker, num_steps, gamma, value_loss_coef, entropy_coef, tau, checkpoint_every_step, model_tool, writer_path, symbols):
-    # 每個 worker 都有自己的 Runner 實例
-    runner = WorkerRunner(
-        worker_id=worker_id,
-        global_model=global_model,
-        optimizer=optimizer,
-        device=device,
-        env_maker=env_maker,
-        num_steps=num_steps,
-        gamma=gamma,
-        value_loss_coef=value_loss_coef,
-        entropy_coef=entropy_coef,
-        tau=tau,
-        checkpoint_every_step=checkpoint_every_step,
-        model_tool=model_tool,
-        writer_path=writer_path,
-        symbols=symbols
-    )
-    runner.run()
-
-if __name__ == "__main__":
-    # 初始化
-    device = torch.device("cpu")  # A3C常用CPU，若想用GPU可嘗試但注意同步問題
-    num_workers = 4  # 設定 worker 數量
-    gamma = 0.99
-    value_loss_coef = 0.5
-    entropy_coef = 0.01
-    tau = 0.005
-    checkpoint_every_step = 10000
-    num_steps = 5  # 每個 worker 在送回梯度前收集多少步數
+        # 使用新版 gymnasium 的 step()
+        obs, _, terminated, truncated, info = worker_env.step(action.item())
+        done = terminated or truncated
+        if done:
+            reward = -10
+            worker_env.reset()  # 遊戲結束後重置環境
+        else:
+            reward = 1.0
+        rewards.append(reward)
+        state = torch.from_numpy(obs).float()
     
-    # 環境與模型
-    # 假設有一個函數 env_maker(symbol) 可建立環境
-    # 你可以根據實務狀況將每個 worker 分配不同 symbol
-    symbols = ['BTC', 'ETH', 'XRP', 'LTC']  # 舉例
-    model_cls = ...  # 你的 ActorCriticModel 類別
-    global_model = global_model_init(model_cls, device)
+    return values, logprobs, rewards, len(rewards)
 
-    optimizer = torch.optim.Adam(global_model.parameters(), lr=1e-4)
+
+def update_params(worker_opt, values, logprobs, rewards, clc=0.1, gamma=0.95):
+    rewards = torch.Tensor(rewards).flip(dims=(0,)).view(-1)
+    logprobs = torch.stack(logprobs).flip(dims=(0,)).view(-1)
+    values = torch.stack(values).flip(dims=(0,)).view(-1)
+    Returns = []
+    ret_ = torch.Tensor([0])
     
-    model_tool = ModelTool()
-    writer_path = "runs"
+    for r in range(rewards.shape[0]):
+        ret_ = rewards[r] + gamma * ret_
+        Returns.append(ret_)
+    
+    Returns = torch.stack(Returns).view(-1)
+    Returns = F.normalize(Returns, dim=0)
+    
+    actor_loss = -1 * logprobs * (Returns - values.detach())
+    critic_loss = (values - Returns) ** 2
+
+    loss = actor_loss.sum() + clc * critic_loss.sum()
+    loss.backward()
+    worker_opt.step()
+    
+    return actor_loss, critic_loss, len(rewards)
+
+
+def worker(t, worker_model, worker_env, counter, buffer):
+    worker_env = gym.make("CartPole-v1")
+    worker_env.reset()
+    worker_opt = optim.Adam(lr=1e-4, params=worker_model.parameters())
+    worker_opt.zero_grad()
+    while:
+        worker_opt.zero_grad()
+        values, logprobs, rewards, length = run_episode(worker_env, worker_model)
+        actor_loss, critic_loss, eplen = update_params(worker_opt, values, logprobs, rewards)
+        
+        counter.value = counter.value + 1
+
+        if i % 10 == 0:
+            print(f"目前次數:{i}", eplen)
+            buffer.put(length)
+
+
+
+class Trainer():
+    def __init__(self):
+        pass
+
+
+
+if __name__ == '__main__':
+    rl_prepare = RL_prepare()
+
+    # 取得模型
+    rl_prepare.model.share_memory()
+
+    # 取得參數
+    distribution_parameters = rl_prepare.distribution_parameters()
 
     processes = []
-    for i in range(num_workers):
-        p = mp.Process(target=worker_process,
-                       args=(i, global_model, optimizer, device, env_maker, num_steps, gamma, value_loss_coef, entropy_coef, tau, checkpoint_every_step, model_tool, writer_path, symbols[i]))
+    counter = mp.Value('i', 0)
+    buffer = mp.Queue()
+
+    for i in range(distribution_parameters['n_workers']):
+        p = mp.Process(target=worker, args=(i, rl_prepare.model, counter, buffer))
         p.start()
         processes.append(p)
 
     for p in processes:
         p.join()
+
+
+
+    # print("結束測試")
+    # # 計算並繪製平均遊戲長度
+    # score = []
+    # while not buffer.empty():
+    #     score.append(buffer.get())
+    
+    # data_points = len(score)  # 應該是 params['epochs']/10
+
+    # running_mean = []
+    # total = 0.0
+    # window = 10  # 例如滑動視窗若是5，代表最近5筆記錄(即50個epoch)
+
+    # for idx in range(data_points):
+    #     # idx的score對應實際epoch為 idx*10
+    #     # 計算滑動平均(最近5筆)
+    #     start = max(0, idx - window + 1)
+    #     window_scores = score[start: idx+1]
+    #     mean = sum(window_scores) / len(window_scores)
+    #     running_mean.append(mean)
+
+    # plt.figure(figsize=(17, 12))
+    # plt.ylabel("Mean Episode Length", fontsize=17)
+    # plt.xlabel("Training Epochs", fontsize=17)
+    # plt.plot(running_mean)
+    # plt.show()

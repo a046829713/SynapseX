@@ -255,11 +255,8 @@ class COT_TransformerDuelingModel(nn.Module):
             src_embed = self.iteration_ln(src_embed)
         
 
-        # 最終輸出經過線性層壓縮維度
-        # 原本是 flatten，但我們現在嘗試使用 mean pooling:
-        x = self.linear(src_embed)  # [B, seq_len, hidden_size//8]
+        x = self.linear(src_embed)  
         x = x.view(x.size(0), -1)
-
 
         # 狀態值和優勢值
         value = self.fc_val(x)       # [B, 1]

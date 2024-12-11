@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import quantstats as qs
 from pathlib import Path
 import time
-from Brain.DQN.lib.model import TransformerDuelingModel
+from Brain.DQN.lib.model import TransformerDuelingModel,COT_TransformerDuelingModel
 
 
 class Strategy(object):
@@ -103,9 +103,9 @@ class RL_evaluate():
         print(engine_info)
         # 準備模型
         # input_size, hidden_size, output_size, num_layers=1
-        model = TransformerDuelingModel(
+        model = COT_TransformerDuelingModel(
                 d_model=engine_info['input_size'],
-                nhead=4,
+                nhead=8,
                 d_hid=2048,
                 nlayers=4,
                 num_actions=self.evaluate_env.action_space.n,  # 假设有5种可能的动作

@@ -6,7 +6,7 @@ import collections
 
 
 class Actions(enum.Enum):
-    Close = 0
+    Hold = 0
     Buy = 1
     Sell = 2
 
@@ -74,7 +74,6 @@ class State:
                 # 記錄開盤價
                 self.open_price = close * (1 + self.default_slippage)
                 cost = -self.commission_perc
-                reward += 0.001  # 可以考虑动态调整或基于条件的奖励
             else:
                 # 已持有仓位，重复买入（可能是错误行为）
                 reward = -0.01  # 给予小的惩罚，鼓励合理交易
@@ -88,7 +87,6 @@ class State:
                     close * (1 - self.default_slippage) - self.open_price) / self.open_price
                 self.open_price = 0.0
                 opencash_diff = 0.0
-                reward += 0.001  # 可以考虑动态调整或基于条件的奖励
             else:
                 # 空仓卖出（可能是错误行为）
                 reward = -0.01  # 给予小的惩罚

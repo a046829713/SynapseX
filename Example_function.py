@@ -9,15 +9,16 @@ from Major.UserManager import UserManager
 import json
 
 # from EIIE.lib.simple_evaluate import evaluate_train_test_performance
+
+
 def get_futures_position_information():
     account, passwd = UserManager.GetAccount_Passwd('author')
     client = Client(account, passwd)
-    data = client.futures_position_information(symbol = "BTCUSDT")
-    print(float(data[0]['positionAmt'])!=0)
+    data = client.futures_position_information(symbol="BTCUSDT")
+    print(float(data[0]['positionAmt']) != 0)
     # for i in data:
     #     print(i['symbol'],i['positionAmt'])
     #     print('*'*120)
-    
 
 
 def example_get_symboldata():
@@ -26,10 +27,29 @@ def example_get_symboldata():
             this function is for download history data to experiment.
 
     """
-    # symbols = ['BTCUSDT','BCHUSDT','BTCDOMUSDT','BNBUSDT','ARUSDT','BTCUSDT','ETHUSDT','SOLUSDT','SSVUSDT']
+    # symbols = ['BTCUSDT','BCHUSDT','BTCDOMUSDT','BNBUSDT','BTCUSDT','ETHUSDT','SOLUSDT','SSVUSDT']
     # symbols = ['KSMUSDT','ENSUSDT','LPTUSDT','GMXUSDT','TRBUSDT','ARUSDT','XMRUSDT','ETHUSDT', 'AAVEUSDT',  'ZECUSDT', 'SOLUSDT', 'DEFIUSDT', 'BTCUSDT',  'ETCUSDT',  'BNBUSDT', 'LTCUSDT', 'BCHUSDT']
 
-    symbols = ['BNBUSDT','ARUSDT','SUIUSDT']
+    symbols = list(
+        set(['YFIUSDT',
+             'QNTUSDT',
+             'XMRUSDT',
+             'MKRUSDT',
+             'LTCUSDT',
+             'INJUSDT',
+             'DASHUSDT',
+             'ENSUSDT',
+             'GMXUSDT',
+             'ILVUSDT',
+             'EGLDUSDT',
+             'SSVUSDT',
+             "ARUSDT",
+             "BTCUSDT",
+             "ETHUSDT",
+             "SOLUSDT",
+             "SUIUSDT",
+             "BNBUSDT"]))
+
     for _each_symbol_name in symbols:
         DataProvider().Downloader(symbol_name=_each_symbol_name, save=True, freq=30)
 
@@ -41,7 +61,7 @@ def example_get_targetsymobls():
     print(DataProvider().get_both_type_targetsymbols())
 
 
-def example_get_target_symbol(filter_type:str):
+def example_get_target_symbol(filter_type: str):
     """
         introduction:
             this function is for filter 
@@ -49,7 +69,7 @@ def example_get_target_symbol(filter_type:str):
     all_symbols = DataProvider().get_symbols_history_data(
         symbol_type='FUTURES', time_type='1d')
 
-    if filter_type =='MTM':
+    if filter_type == 'MTM':
         example = Datatransformer().get_mtm_filter_symbol(all_symbols)
     elif filter_type == 'VOLUME':
         example = Datatransformer().get_volume_top_filter_symobl(all_symbols, max_symbols=11)

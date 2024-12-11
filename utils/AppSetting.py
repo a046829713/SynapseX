@@ -14,7 +14,7 @@ class AppSetting():
     def engine_setting():
         data = {
             'FREQ_TIME':30,
-            'LEVERAGE':4
+            'LEVERAGE':3
         }
         return data
     
@@ -23,7 +23,7 @@ class AppSetting():
     def Trading_setting():
         data = {
             
-            "BACKTEST_DEFAULT_COMMISSION_PERC":0.0005,
+            "BACKTEST_DEFAULT_COMMISSION_PERC":0.0025,
             "DEFAULT_SLIPPAGE":0.0025
         }
         return data

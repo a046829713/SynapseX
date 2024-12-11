@@ -44,7 +44,24 @@ class RL_prepare(ABC):
 
     def _prepare_symbols(self):
         # symbols = ['PEOPLEUSDT','BTCUSDT', 'ENSUSDT', 'LPTUSDT', 'GMXUSDT', 'TRBUSDT', 'ARUSDT', 'XMRUSDT', 'ETHUSDT', 'AAVEUSDT', 'ZECUSDT', 'SOLUSDT', 'DEFIUSDT', 'ETCUSDT', 'LTCUSDT', 'BCHUSDT', 'ORDIUSDT', 'BNBUSDT', 'AVAXUSDT', 'MKRUSDT', 'BTCDOMUSDT']
-        symbols = ['BTCUSDT','ETHUSDT','SOLUSDT']
+        symbols = ['YFIUSDT',
+             'QNTUSDT',
+             'XMRUSDT',
+             'MKRUSDT',
+             'LTCUSDT',
+             'INJUSDT',
+             'DASHUSDT',
+             'ENSUSDT',
+             'GMXUSDT',
+             'ILVUSDT',
+             'EGLDUSDT',
+             'SSVUSDT',
+             "ARUSDT",
+             "BTCUSDT",
+             "ETHUSDT",
+             "SOLUSDT",
+             "SUIUSDT",
+             "BNBUSDT"]
         self.symbols = list(set(symbols))
         print("There are symobls:", self.symbols)
 
@@ -60,14 +77,11 @@ class RL_prepare(ABC):
     def _prepare_hyperparameters(self):
         self.BARS_COUNT = 300  # 用來準備要取樣的特徵長度,例如:開高低收成交量各取10根K棒
         self.GAMMA = 0.99
-        self.MODEL_DEFAULT_COMMISSION_PERC = 0.0005
+        self.MODEL_DEFAULT_COMMISSION_PERC = 0.0025
         self.DEFAULT_SLIPPAGE = 0.0025
         self.REWARD_STEPS = 2
-
         self.REPLAY_SIZE = 100000
         self.EACH_REPLAY_SIZE = 50000
-
-
         self.REPLAY_INITIAL = 1000
         self.LEARNING_RATE = 0.0001  # optim 的學習率
         self.EPSILON_START = 1.0  # 起始機率(一開始都隨機運行)
