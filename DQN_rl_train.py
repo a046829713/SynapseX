@@ -44,24 +44,25 @@ class RL_prepare(ABC):
 
     def _prepare_symbols(self):
         # symbols = ['PEOPLEUSDT','BTCUSDT', 'ENSUSDT', 'LPTUSDT', 'GMXUSDT', 'TRBUSDT', 'ARUSDT', 'XMRUSDT', 'ETHUSDT', 'AAVEUSDT', 'ZECUSDT', 'SOLUSDT', 'DEFIUSDT', 'ETCUSDT', 'LTCUSDT', 'BCHUSDT', 'ORDIUSDT', 'BNBUSDT', 'AVAXUSDT', 'MKRUSDT', 'BTCDOMUSDT']
-        symbols = ['YFIUSDT',
-             'QNTUSDT',
-             'XMRUSDT',
-             'MKRUSDT',
-             'LTCUSDT',
-             'INJUSDT',
-             'DASHUSDT',
-             'ENSUSDT',
-             'GMXUSDT',
-             'ILVUSDT',
-             'EGLDUSDT',
-             'SSVUSDT',
-             "ARUSDT",
-             "BTCUSDT",
-             "ETHUSDT",
-             "SOLUSDT",
-             "SUIUSDT",
-             "BNBUSDT"]
+        # symbols = ['YFIUSDT',
+        #      'QNTUSDT',
+        #      'XMRUSDT',
+        #      'MKRUSDT',
+        #      'LTCUSDT',
+        #      'INJUSDT',
+        #      'DASHUSDT',
+        #      'ENSUSDT',
+        #      'GMXUSDT',
+        #      'ILVUSDT',
+        #      'EGLDUSDT',
+        #      'SSVUSDT',
+        #      "ARUSDT",
+        #      "BTCUSDT",
+        #      "ETHUSDT",
+        #      "SOLUSDT",
+        #      "SUIUSDT",
+        #      "BNBUSDT"]
+        symbols = ['BTCUSDT']
         self.symbols = list(set(symbols))
         print("There are symobls:", self.symbols)
 
@@ -84,19 +85,17 @@ class RL_prepare(ABC):
         self.EACH_REPLAY_SIZE = 50000
         self.REPLAY_INITIAL = 1000
         self.LEARNING_RATE = 0.0001  # optim 的學習率
-        self.EPSILON_START = 1.0  # 起始機率(一開始都隨機運行)
+        self.EPSILON_START = 0.9  # 起始機率(一開始都隨機運行)
         self.SAVES_PATH = "saves"  # 儲存的路徑
         self.EPSILON_STOP = 0.1
         self.TARGET_NET_SYNC = 1000
         self.CHECKPOINT_EVERY_STEP = 20000
         self.VALIDATION_EVERY_STEP = 100000
         self.WRITER_EVERY_STEP = 100
-        self.EPSILON_STEPS = 1000000 * len(self.symbols)
         self.EVAL_EVERY_STEP = 10000  # 每一萬步驗證一次
         self.NUM_EVAL_EPISODES = 10  # 每次评估的样本数
         self.BATCH_SIZE = 32  # 每次要從buffer提取的資料筆數,用來給神經網絡更新權重
         self.STATES_TO_EVALUATE = 10000  # 每次驗證一萬筆資料
-        self.terminate_times = 8000000
         self.checkgrad_times = 1000
     
     def _prepare_env(self):
@@ -132,7 +131,8 @@ class RL_prepare(ABC):
                 num_actions=self.train_env.action_space.n,  # 假设有5种可能的动作
                 hidden_size=64, # 使用隐藏层
                 seq_dim=self.BARS_COUNT,
-                dropout=0.1  # 适度的dropout以防过拟合
+                dropout=0.1,  # 适度的dropout以防过拟合
+                num_iterations = 1
             ).to(self.device)
         
         elif self.keyword == 'EfficientNetV2':
@@ -147,7 +147,7 @@ class RL_prepare(ABC):
     def _prepare_agent(self):
         # 貪婪的選擇器
         self.selector = ptan.actions.EpsilonGreedyActionSelector(
-            self.EPSILON_START)
+            self.EPSILON_START,epsilon_stop=self.EPSILON_STOP)
 
         self.agent = ptan.agent.DQNAgent(
             self.net, self.selector, device=self.device)
@@ -189,7 +189,7 @@ class RL_Train(RL_prepare):
 
     def load_pre_train_model_state(self):
         # 加載檢查點如果存在的話
-        checkpoint_path = r''
+        checkpoint_path = r'saves\20241213-190207-300k-\checkpoint-45.pt'
         if checkpoint_path and os.path.isfile(checkpoint_path):
             print("資料繼續運算模式")
             # 標準化路徑並分割
@@ -198,7 +198,8 @@ class RL_Train(RL_prepare):
             self.net.load_state_dict(checkpoint['model_state_dict'])
             self.step_idx = checkpoint['step_idx']
             self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-            print("目前step_idx:",self.step_idx)
+            self.selector.epsilon = checkpoint['selector_state']
+            print("目前epsilon:",self.selector.epsilon)
         else:
             print("建立新的儲存點")
             # 用來儲存的位置
@@ -214,18 +215,21 @@ class RL_Train(RL_prepare):
                 self.step_idx += 1
                 self.buffer.populate(1)                
                 
-                # 探索率
-                self.selector.epsilon = max(
-                    self.EPSILON_STOP, self.EPSILON_START - self.step_idx / self.EPSILON_STEPS)
-
                 # [(-2.5305491551459296, 10)]
                 # 跑了一輪之後,清空原本的數據,並且取得獎勵
                 new_rewards = self.exp_source.pop_rewards_steps()
                 
                 if new_rewards:
-                    reward_tracker.reward(
-                        new_rewards[0], self.step_idx, self.selector.epsilon)
+                    mean_reward = reward_tracker.reward(
+                        new_rewards[0], self.step_idx, self.selector.epsilon)                   
 
+                    if isinstance(mean_reward,np.float64):
+                        # 探索率
+                        self.selector.update_epsilon(mean_reward)
+                        print("目前最新探索率:",self.selector.epsilon)
+                    else:
+                        print("mean_reward:",mean_reward)
+                    
                 if not self.buffer.each_num_len_enough(init_size=self.REPLAY_INITIAL):
                     continue
                 
@@ -241,8 +245,8 @@ class RL_Train(RL_prepare):
                         "Loss_Value", loss_v.item(), self.step_idx)
                 loss_v.backward()
 
-                if self.step_idx % self.checkgrad_times == 0:
-                    self.checkgrad()
+                # if self.step_idx % self.checkgrad_times == 0:
+                #     self.checkgrad()
 
                 self.optimizer.step()
                 if self.step_idx % self.TARGET_NET_SYNC == 0:
@@ -259,9 +263,6 @@ class RL_Train(RL_prepare):
                     }
                     self.save_checkpoint(checkpoint, os.path.join(
                         self.saves_path, f"checkpoint-{idx}.pt"))
-
-                # if self.step_idx > self.terminate_times:
-                #     break
 
     def checkgrad(self):
         # 打印梯度統計數據

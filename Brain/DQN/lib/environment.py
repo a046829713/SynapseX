@@ -136,8 +136,37 @@ class State_time_step(State):
             res[:, len(self.field_names)] = 1.0
             res[:, len(self.field_names) + 1] = (self._prices.close[self._offset] - self.open_price) / \
                 self.open_price
+        
+        # print(res) 
+        # # 加入傅立葉變換 res.shape # (300, 29)
+        # fourier_features = self.fourier_transform(res[:, :len(self.field_names)])
+        # print(fourier_features)
+        # time.sleep(100)
+        # # 可以選擇如何將傅立葉特徵與原有特徵結合，例如拼接或者替換
+        # # 這裡選擇拼接
+        # res = np.concatenate((res, fourier_features), axis=1)
 
         return res
+    
+    def fourier_transform(self, data):
+        """
+        對每一列數據進行傅立葉變換，並提取頻率和幅度信息
+
+        Args:
+            data: (np.ndarray) shape 為 (bars_count, num_features) 的數據
+
+        Returns:
+            fourier_features: (np.ndarray) shape 為 (bars_count, num_features * 2) 的傅立葉特徵
+                                         每一列數據對應兩列傅立葉特徵：頻率的實部和虛部
+        """
+        fourier_features = np.zeros((data.shape[0], data.shape[1] * 2), dtype=np.float32)
+        for i in range(data.shape[1]):
+            # 使用 rfft 進行實數傅立葉變換，只計算正頻率部分
+            fft_values = np.fft.rfft(data[:, i])
+            # 提取頻率的實部和虛部
+            fourier_features[:, i * 2] = np.real(fft_values)
+            fourier_features[:, i * 2 + 1] = np.imag(fft_values)
+        return fourier_features
 
 
 class Env(gym.Env):

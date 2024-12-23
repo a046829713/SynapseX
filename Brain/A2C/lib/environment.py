@@ -6,24 +6,24 @@ import collections
 
 
 class Actions(enum.Enum):
-    Close = 0
+    Hold = 0
     Buy = 1
     Sell = 2
 
 
 class State:
-    def __init__(self, init_prices: collections.namedtuple, bars_count, commission_perc, model_train, default_slippage):
+    def __init__(self, init_prices: collections.namedtuple, bars_count, commission_perc, default_slippage):
+        """
+            A2C 演算法的N-step 會寫在外面控制.
+        """
         assert isinstance(bars_count, int)
         assert bars_count > 0
         assert isinstance(commission_perc, float)
         assert commission_perc >= 0.0
 
         self.bars_count = bars_count
-        self.commission_perc = commission_perc
-        self.N_steps = 1000  # 這遊戲目前使用多少步學習
-        self.model_train = model_train
+        self.commission_perc = commission_perc        
         self.default_slippage = default_slippage
-
         self.build_fileds(init_prices)
 
     def build_fileds(self, init_prices):
@@ -111,9 +111,6 @@ class State:
         self.game_steps += 1  # 本次遊戲次數
         # 判斷遊戲是否結束
         done |= self._offset >= self._prices.close.shape[0] - 1
-        if self.game_steps == self.N_steps and self.model_train:
-            done = True
-
         return reward, done
 
 
@@ -159,7 +156,7 @@ class Env(gym.Env):
         else:
             offset = bars
 
-        print("目前步數:", offset)
+        print("目前步數:", offset,"目前商品:",self._instrument)
 
         self._state.reset(prices, offset)
 

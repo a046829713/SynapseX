@@ -306,7 +306,16 @@ class Binance_server(object):
     def __init__(self) -> None:
         self.trade_count = 0
         self.BinanceData = BinanceData()
+    
+    @SetConnectClose("author")
+    def futures_ticker(self, client: Client) -> dict:
+        """ 獲取所有幣安合約的 24 小時價格變動統計數據。
 
+        Returns:
+            _type_: _description_
+        """
+        return client.futures_ticker()
+    
     @SetConnectClose("author")
     def getfuturesinfo(self, client: Client) -> dict:
         """ 回傳交易所的合約

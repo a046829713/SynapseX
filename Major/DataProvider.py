@@ -203,7 +203,7 @@ class DataProvider:
 
     def filter_useful_symbol(self, all_symbols: list, tag: str):
         if tag == 'VOLUME_TYPE':
-            return self.datatransformer.get_volume_top_filter_symobl(all_symbols, max_symbols=11)
+            return self.datatransformer.get_volume_top_filter_symobl(all_symbols, max_symbols=10)
         elif tag == 'MTM_TYPE':
             return self.datatransformer.get_mtm_filter_symbol(all_symbols)
 

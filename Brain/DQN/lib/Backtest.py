@@ -1,4 +1,4 @@
-from .Error import InvalidModeError
+from ...Common.Error import InvalidModeError
 import pandas as pd
 import numpy as np
 import torch
@@ -111,7 +111,8 @@ class RL_evaluate():
                 num_actions=self.evaluate_env.action_space.n,  # 假设有5种可能的动作
                 hidden_size=64, # 使用隐藏层
                 seq_dim=self.BARS_COUNT,
-                dropout=0.1  # 适度的dropout以防过拟合
+                dropout=0.1,  # 适度的dropout以防过拟合
+                num_iterations = 1
             ).to(self.device)
         
         checkpoint = torch.load(

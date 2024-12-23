@@ -200,6 +200,7 @@ class AsyncTrading_system(Trading_system):
         else:
             raise ValueError("STRATEGY_KEYWORD didn't match,please check")
 
+        self.targetsymbols = ["BTCUSDT","SOLUSDT","SUIUSDT","ETHUSDT"]
         # 用來判斷一個模型的模式        # 一對多        # 一對一
         print_syslog(title='STRATEGY_KEYWORD', msg=self.strategy_keyword)
         print_syslog(title='TARGETSYMBOLS', msg=self.targetsymbols)

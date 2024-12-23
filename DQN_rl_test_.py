@@ -63,15 +63,19 @@ class BacktestRunner:
         # 使用 Backtest 對策略執行回測
         backtest_info = Backtest(
             re_evaluate, self.strategy).order_becktest(ifplot=ifplot)
-        
+
         return backtest_info
 
 
 # 範例使用方式
 if __name__ == "__main__":
     builder = StrategyBuilder()
-    test_symbols = ['BNBUSDT','ARUSDT','SUIUSDT','BTCUSDT','ETHUSDT','SOLUSDT']
-    
+    # test_symbols = ['BTCUSDT']
+    test_symbols = [
+             "ETHUSDT",
+             "SOLUSDT",
+             "SUIUSDT",
+             "BTCUSDT"]
 
     for test_symbol in test_symbols:
         # 建立策略

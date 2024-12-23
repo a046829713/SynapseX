@@ -7,7 +7,8 @@ import pandas as pd
 import numpy as np
 import pandas as pd
 import time
-
+from utils.Debug_tool import debug
+from typing import Optional,Union
 class RewardTracker:
     def __init__(self, writer, stop_reward, group_rewards=1):
         """用來追蹤紀錄獎勵資訊
@@ -33,11 +34,20 @@ class RewardTracker:
     def __exit__(self, *args):
         self.writer.close()
 
-    def reward(self, reward_steps, frame, epsilon=None):
+    def reward(self, reward_steps, frame, epsilon=None) -> Union[bool,np.float64]:
+        """
+            reward_steps: (-5.116108441842309, 1000)
+            frame: 3004
+            epsilon: 0.9998331111111111
+            Result Type: <class 'bool'>
+            <class 'numpy.float64'>
+        """
+
         reward, steps = reward_steps
         self.reward_buf.append(reward)
         self.steps_buf.append(steps)
         
+        # 每兩個group 顯示一次
         if len(self.reward_buf) < self.group_rewards:
             return False
         
@@ -54,7 +64,6 @@ class RewardTracker:
         self.ts_frame = frame
         self.ts = time.time()
         
-        # 每兩個group 顯示一次
         mean_reward = np.mean(self.total_rewards[-100:])
         mean_steps = np.mean(self.total_steps[-100:])
         
@@ -77,7 +86,8 @@ class RewardTracker:
         if mean_reward > self.stop_reward:
             print("Solved in %d frames!" % frame)
             return True
-        return False
+        
+        return mean_reward
 
 
 def calc_values_of_states(states, net, device="cpu"):
