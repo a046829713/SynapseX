@@ -248,8 +248,9 @@ class RL_Train(RL_prepare):
                         "Loss_Value", loss_v.item(), self.step_idx)
                 loss_v.backward()
 
-                # if self.step_idx % self.checkgrad_times == 0:
-                #     self.checkgrad()
+                if self.step_idx % self.checkgrad_times == 0:
+                    # self.checkgrad()
+                    self.checkwhight()
 
                 self.optimizer.step()
                 if self.step_idx % self.TARGET_NET_SYNC == 0:
@@ -274,6 +275,14 @@ class RL_Train(RL_prepare):
                 print(
                     f"Layer: {name}, Grad Min: {param.grad.min()}, Grad Max: {param.grad.max()}, Grad Mean: {param.grad.mean()}")
         print('*'*120)
+
+    def checkwhight(self):
+        # 打印梯度統計數據
+        for name, param in self.net.named_parameters():
+            print(f"該layer 名稱:{name}")
+            print(f"該參數為:{param}")
+            print('*'*120)
+        
 
     def save_checkpoint(self, state, filename):
         # 保存檢查點的函數
