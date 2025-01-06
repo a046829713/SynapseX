@@ -5,6 +5,7 @@ from torch.nn import functional as F
 from torch.nn.modules.transformer import MultiheadAttention
 from torch.nn.modules.transformer import _get_activation_fn
 import math
+import time
 
 class TransformerEncoderLayer(nn.Module):
     r"""
@@ -69,7 +70,6 @@ class TransformerEncoderLayer(nn.Module):
 
 
         super().__init__()
-
         self.self_attn = MultiheadAttention(d_model, nhead, dropout=dropout,
                                             bias=bias, batch_first=batch_first,
                                             **factory_kwargs)

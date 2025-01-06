@@ -85,7 +85,7 @@ class RL_prepare(ABC):
         self.EACH_REPLAY_SIZE = 50000
         self.REPLAY_INITIAL = 1000
         self.LEARNING_RATE = 0.0001  # optim 的學習率
-        self.Lambda = 1e-2  # optim L2正則化 Ridge regularization
+        self.Lambda = 1e-6  # optim L2正則化 Ridge regularization
         self.EPSILON_START = 0.9  # 起始機率(一開始都隨機運行)
         self.SAVES_PATH = "saves"  # 儲存的路徑
         self.EPSILON_STOP = 0.1
@@ -93,6 +93,7 @@ class RL_prepare(ABC):
         self.CHECKPOINT_EVERY_STEP = 20000
         self.VALIDATION_EVERY_STEP = 100000
         self.WRITER_EVERY_STEP = 100
+        self.EPSILON_STEPS = 1000000 * len(self.symbols)
         self.EVAL_EVERY_STEP = 10000  # 每一萬步驗證一次
         self.NUM_EVAL_EPISODES = 10  # 每次评估的样本数
         self.BATCH_SIZE = 32  # 每次要從buffer提取的資料筆數,用來給神經網絡更新權重
@@ -202,7 +203,7 @@ class RL_Train(RL_prepare):
             self.net.load_state_dict(checkpoint['model_state_dict'])
             self.step_idx = checkpoint['step_idx']
             self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-            self.selector.epsilon = checkpoint['selector_state']
+            # self.selector.epsilon = checkpoint['selector_state']
             print("目前epsilon:", self.selector.epsilon)
         else:
             print("建立新的儲存點")
@@ -224,16 +225,18 @@ class RL_Train(RL_prepare):
                 new_rewards = self.exp_source.pop_rewards_steps()
 
                 if new_rewards:
-                    mean_reward = reward_tracker.reward(
-                        new_rewards[0], self.step_idx, self.selector.epsilon)
+                    # mean_reward = reward_tracker.reward(
+                    #     new_rewards[0], self.step_idx, self.selector.epsilon)
 
-                    if isinstance(mean_reward, np.float64):
-                        # 探索率
-                        self.selector.update_epsilon(mean_reward)
-                        print("目前最新探索率:", self.selector.epsilon)
-                    else:
-                        print("mean_reward:", mean_reward)
-
+                    # if isinstance(mean_reward, np.float64):
+                    #     # 探索率
+                    #     self.selector.update_epsilon(mean_reward)
+                    #     print("目前最新探索率:", self.selector.epsilon)
+                    # else:
+                    #     print("mean_reward:", mean_reward)
+                    reward_tracker.reward(new_rewards[0], self.step_idx, self.selector.epsilon)
+                    self.selector.epsilon = max(self.EPSILON_STOP, self.EPSILON_START - self.step_idx / self.EPSILON_STEPS)
+                        
                 if not self.buffer.each_num_len_enough(init_size=self.REPLAY_INITIAL):
                     continue
 
@@ -249,8 +252,8 @@ class RL_Train(RL_prepare):
                 loss_v.backward()
 
                 if self.step_idx % self.checkgrad_times == 0:
-                    # self.checkgrad()
-                    self.checkwhight()
+                    self.checkgrad()
+                    # self.checkwhight()
 
                 self.optimizer.step()
                 if self.step_idx % self.TARGET_NET_SYNC == 0:
@@ -262,7 +265,7 @@ class RL_Train(RL_prepare):
                     checkpoint = {
                         'step_idx': self.step_idx,
                         'model_state_dict': self.net.state_dict(),
-                        'selector_state': self.selector.epsilon,
+                        # 'selector_state': self.selector.epsilon,
                         'optimizer_state_dict': self.optimizer.state_dict(),
                     }
                     self.save_checkpoint(checkpoint, os.path.join(
