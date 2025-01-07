@@ -241,8 +241,8 @@ class RL_prepare(ABC):
 
 
         # 用 Adam 建立優化器
-        optimizer = optim.Adam(param_groups)
-        return optimizer
+        self.optimizer = optim.Adam(param_groups)
+        
 
 
 
