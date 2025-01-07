@@ -14,6 +14,7 @@ from abc import ABC
 from Brain.DQN.lib.EfficientnetV2 import EfficientnetV2SmallDuelingModel
 from abc import ABC
 from Brain.Common.experience import SequentialExperienceReplayBuffer
+import torch.nn as nn
 
 
 class RL_prepare(ABC):
@@ -85,7 +86,7 @@ class RL_prepare(ABC):
         self.EACH_REPLAY_SIZE = 50000
         self.REPLAY_INITIAL = 1000
         self.LEARNING_RATE = 0.0001  # optim 的學習率
-        self.Lambda = 1e-8  # optim L2正則化 Ridge regularization
+        self.Lambda = 1e-6  # optim L2正則化 Ridge regularization
         self.EPSILON_START = 0.9  # 起始機率(一開始都隨機運行)
         self.SAVES_PATH = "saves"  # 儲存的路徑
         self.EPSILON_STOP = 0.1
@@ -153,29 +154,96 @@ class RL_prepare(ABC):
         self.agent = ptan.agent.DQNAgent(
             self.net, self.selector, device=self.device)
 
-    def _prepare_optimizer(self):
-        # 定義特殊層的學習率
-        param_groups = [
-            {'params': self.net.dean.mean_layer.parameters(), 'lr': 0.0001 *
-             self.net.dean.mean_lr},
-            {'params': self.net.dean.scaling_layer.parameters(), 'lr': 0.0001 *
-             self.net.dean.scale_lr},
-            {'params': self.net.dean.gating_layer.parameters(), 'lr': 0.0001 *
-             self.net.dean.gate_lr},
+    def _prepare_optimizer(self, base_lr=1e-4):
+        """
+        建立 Adam 優化器，以下功能：
+        1. BN、LN、Embedding 層的 bias/scale 不做 weight decay
+        2. dean.mean_layer、dean.scaling_layer、dean.gating_layer 不做 weight decay
+        3. 其餘參數正常做 weight decay
+        """
+
+        # 要排除 weight decay 的層 (或參數名稱) 關鍵字
+        excluded_keywords = [
+            "bias",                  # 一般 bias 都不做或少做 weight decay
+            "dean.mean_layer",       # 你的三個特殊層
+            "dean.scaling_layer",
+            "dean.gating_layer"
         ]
 
-        # 其餘參數使用默認學習率，直接加入 param_groups
-        for name, param in self.net.named_parameters():
-            if (
-                "dean.mean_layer" not in name
-                and "dean.scaling_layer" not in name
-                and "dean.gating_layer" not in name
-            ):
-                param_groups.append(
-                    {'params': param, 'lr': self.LEARNING_RATE})
+        # 另外，如果想同時排除 BN、LN、Embedding 的權重或 scale/bias，
+        # 可以在檢查 layer type 時判斷屬於以下類型：
+        excluded_types = (
+            nn.BatchNorm1d,
+            nn.BatchNorm2d,
+            nn.BatchNorm3d,
+            nn.LayerNorm,
+            nn.Embedding
+        )
 
-        # 初始化優化器
-        self.optimizer = optim.Adam(param_groups, weight_decay=self.Lambda)
+        # 用來存放不同分組
+        decay_params = []
+        no_decay_params = []
+        
+
+        for module_name, module in self.net.named_modules():
+
+            # 檢查模組類型是否屬於 BN、LN、Embedding
+            if isinstance(module, excluded_types):
+                # 這個模組底下所有參數都排除 weight decay
+                for param_name, param in module.named_parameters(recurse=False):
+                    if param.requires_grad:
+                        full_name = f"{module_name}.{param_name}"
+                        no_decay_params.append(param)
+            else:
+                # 不是 BN/LN/Embedding 層
+                for param_name, param in module.named_parameters(recurse=False):
+                    if not param.requires_grad:
+                        continue
+                    full_name = f"{module_name}.{param_name}"
+
+                    # 檢查是否在 excluded_keywords 裡面
+                    if any(kw in full_name for kw in excluded_keywords):
+                        # 如果是 dean.* 或 bias 都排除 weight decay                        
+                        if not any(layer in full_name for layer in ["dean.mean_layer", "dean.scaling_layer", "dean.gating_layer"]):
+                            no_decay_params.append(param)
+                    else:
+                        # 其他普通參數
+                        decay_params.append(param)
+
+        # 建立真正的 param groups
+        param_groups = [
+            # 1) 正常參數：有 weight decay
+            {
+                'params': decay_params,
+                'lr': self.LEARNING_RATE,
+                'weight_decay': self.Lambda
+            },
+            # 2) 不做 weight decay
+            {
+                'params': no_decay_params,
+                'lr': self.LEARNING_RATE,
+                'weight_decay': 0.0
+            }
+        ]
+
+        # 如果需要對 dean 幾個層有特別的學習率或同樣不做 weight decay：        
+        param_groups.extend([
+            {'params': self.net.dean.mean_layer.parameters(),
+                'lr': base_lr *
+                self.net.dean.mean_lr, 'weight_decay': 0.0},
+            {'params': self.net.dean.scaling_layer.parameters(),
+                'lr': base_lr *
+                self.net.dean.scale_lr, 'weight_decay': 0.0},
+            {'params': self.net.dean.gating_layer.parameters(),
+                'lr': base_lr *
+                self.net.dean.gate_lr, 'weight_decay': 0.0},
+        ])
+
+
+        # 用 Adam 建立優化器
+        optimizer = optim.Adam(param_groups)
+        return optimizer
+
 
 
 class RL_Train(RL_prepare):
@@ -234,9 +302,11 @@ class RL_Train(RL_prepare):
                     #     print("目前最新探索率:", self.selector.epsilon)
                     # else:
                     #     print("mean_reward:", mean_reward)
-                    reward_tracker.reward(new_rewards[0], self.step_idx, self.selector.epsilon)
-                    self.selector.epsilon = max(self.EPSILON_STOP, self.EPSILON_START - self.step_idx / self.EPSILON_STEPS)
-                        
+                    reward_tracker.reward(
+                        new_rewards[0], self.step_idx, self.selector.epsilon)
+                    self.selector.epsilon = max(
+                        self.EPSILON_STOP, self.EPSILON_START - self.step_idx / self.EPSILON_STEPS)
+
                 if not self.buffer.each_num_len_enough(init_size=self.REPLAY_INITIAL):
                     continue
 
@@ -285,7 +355,6 @@ class RL_Train(RL_prepare):
             print(f"該layer 名稱:{name}")
             print(f"該參數為:{param}")
             print('*'*120)
-        
 
     def save_checkpoint(self, state, filename):
         # 保存檢查點的函數
