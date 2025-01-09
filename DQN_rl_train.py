@@ -86,7 +86,7 @@ class RL_prepare(ABC):
         self.EACH_REPLAY_SIZE = 50000
         self.REPLAY_INITIAL = 1000
         self.LEARNING_RATE = 0.0001  # optim 的學習率
-        self.Lambda = 1e-6  # optim L2正則化 Ridge regularization
+        self.Lambda = 1e-10  # optim L2正則化 Ridge regularization
         self.EPSILON_START = 0.9  # 起始機率(一開始都隨機運行)
         self.SAVES_PATH = "saves"  # 儲存的路徑
         self.EPSILON_STOP = 0.1
@@ -173,20 +173,15 @@ class RL_prepare(ABC):
         # 另外，如果想同時排除 BN、LN、Embedding 的權重或 scale/bias，
         # 可以在檢查 layer type 時判斷屬於以下類型：
         excluded_types = (
-            nn.BatchNorm1d,
-            nn.BatchNorm2d,
-            nn.BatchNorm3d,
             nn.LayerNorm,
-            nn.Embedding
         )
 
         # 用來存放不同分組
         decay_params = []
         no_decay_params = []
-        
-
         for module_name, module in self.net.named_modules():
-
+            print(module)
+            print('*'*120)
             # 檢查模組類型是否屬於 BN、LN、Embedding
             if isinstance(module, excluded_types):
                 # 這個模組底下所有參數都排除 weight decay
@@ -228,17 +223,16 @@ class RL_prepare(ABC):
 
         # 如果需要對 dean 幾個層有特別的學習率或同樣不做 weight decay：        
         param_groups.extend([
-            {'params': self.net.dean.mean_layer.parameters(),
+            {'params': list(self.net.dean.mean_layer.parameters()),
                 'lr': base_lr *
                 self.net.dean.mean_lr, 'weight_decay': 0.0},
-            {'params': self.net.dean.scaling_layer.parameters(),
+            {'params': list(self.net.dean.scaling_layer.parameters()),
                 'lr': base_lr *
                 self.net.dean.scale_lr, 'weight_decay': 0.0},
-            {'params': self.net.dean.gating_layer.parameters(),
+            {'params': list(self.net.dean.gating_layer.parameters()),
                 'lr': base_lr *
                 self.net.dean.gate_lr, 'weight_decay': 0.0},
         ])
-
 
         # 用 Adam 建立優化器
         self.optimizer = optim.Adam(param_groups)
@@ -322,8 +316,8 @@ class RL_Train(RL_prepare):
                 loss_v.backward()
 
                 if self.step_idx % self.checkgrad_times == 0:
-                    self.checkgrad()
-                    # self.checkwhight()
+                    # self.checkgrad()
+                    self.checkwhight()
 
                 self.optimizer.step()
                 if self.step_idx % self.TARGET_NET_SYNC == 0:
