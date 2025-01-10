@@ -107,7 +107,7 @@ class State:
         current_drawdown = (self.equity_peak - self.canusecash) / self.equity_peak
          
         # 3) 給予某些懲罰權重，例如 0.1
-        drawdown_penalty = 0.1 * current_drawdown
+        drawdown_penalty = 0.01 * current_drawdown
         # 因為 drawdown 越大 -> 應越懲罰，所以是負的
         reward -= drawdown_penalty
         
