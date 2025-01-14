@@ -180,8 +180,6 @@ class RL_prepare(ABC):
         decay_params = []
         no_decay_params = []
         for module_name, module in self.net.named_modules():
-            print(module)
-            print('*'*120)
             # 檢查模組類型是否屬於 BN、LN、Embedding
             if isinstance(module, excluded_types):
                 # 這個模組底下所有參數都排除 weight decay
@@ -316,8 +314,9 @@ class RL_Train(RL_prepare):
                 loss_v.backward()
 
                 if self.step_idx % self.checkgrad_times == 0:
+                    pass
                     # self.checkgrad()
-                    self.checkwhight()
+                    # self.checkwhight()
 
                 self.optimizer.step()
                 if self.step_idx % self.TARGET_NET_SYNC == 0:
