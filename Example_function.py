@@ -11,6 +11,7 @@ import time
 # from EIIE.lib.simple_evaluate import evaluate_train_test_performance
 import re
 
+
 def get_futures_position_information():
     account, passwd = UserManager.GetAccount_Passwd('author')
     client = Client(account, passwd)
@@ -40,8 +41,6 @@ def example_get_symboldata():
 def ex():
     all_symbols = DataProvider().get_symbols_history_data(
         symbol_type='FUTURES', time_type='1d')
-    
-
 
     # 1. 獲取 24 小時價格變動統計數據
     tickers = DataProvider().Binanceapp.futures_ticker()
@@ -54,23 +53,22 @@ def ex():
             # 目前怪怪的合約都拋棄不要（有數字的大概論都有特殊意義）
             clear_name = re.findall(
                 '[A-Z]+USDT', ticker['symbol'])
-            
+
             if clear_name:
                 if ticker['symbol'] == clear_name[0]:
                     # 還要過濾出時間太短的10天暫時是神經網絡的極限
                     for each_data in all_symbols:
-                        symbolname = each_data[0]                        
-                        
+                        symbolname = each_data[0]
+
                         if symbolname.upper().split('-F-D')[0] == ticker['symbol']:
-                            print(symbolname.upper().split('-F-D')[0]) # btcusdt-f-d
+                            print(symbolname.upper().split(
+                                '-F-D')[0])  # btcusdt-f-d
                             length = len(each_data[1])
                             print(length)
-                            if length >10:
+                            if length > 10:
                                 filter_tickers.append(ticker)
 
-
     print(filter_tickers)
-    
 
     # # 3. 根據交易量（quoteVolume）排序，並取前 10 名
     sorted_tickers = sorted(
@@ -83,6 +81,7 @@ def ex():
 
     print(top_10_coins)
     return top_10_coins
+
 
 def example_get_targetsymobls():
     """
@@ -116,8 +115,10 @@ def example_reload_all_data(time_type: str):
     Args:
         time_type (str): '1m','1d'
     """
+    # DataProvider().reload_all_data(time_type=time_type,
+    #                                symbol_type='FUTURES')
     DataProvider().reload_all_data(time_type=time_type,
-                                   symbol_type='FUTURES')
+                                   symbol_type='SPOT')
 
 
 def example_Train_neural_networks():
@@ -136,4 +137,5 @@ def example_simple_evaluate():
                                     Meta_path=r'EIIE\Meta\policy_EIIE.pt')
 
 
-example_get_symboldata()
+
+example_reload_all_data(time_type='1m')

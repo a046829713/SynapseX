@@ -71,6 +71,10 @@ class DataProvider:
                 1d 代表日線
                 1m 代表1分鐘
 
+            symbol_type(str):
+                FUTURES 期貨
+                SPOT 現貨
+
             用來回補所有symbol的歷史資料
             為了避免寫入過慢 更改成append
 
@@ -83,7 +87,6 @@ class DataProvider:
 
         """
         for symbol_name in self.Binanceapp.get_targetsymobls(symbol_type=symbol_type):
-            
             try:
                 original_df, eachCatchDf = self.reload_data(
                     symbol_name, time_type=time_type, reload_type="History", symbol_type=symbol_type)
