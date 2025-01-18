@@ -50,7 +50,7 @@ def generate_data(begin_time, end_time,tag:str = None):
 
     #  ['INJUSDT','BNBUSDT','ETCUSDT','LTCUSDT','TRBUSDT',"ENSUSDT","SOLUSDT",'ETHUSDT','BCHUSDT',"AVAXUSDT","BTCUSDT"]
     for each_symbol in ['BNBUSDT','TRBUSDT',"SOLUSDT",'ETHUSDT',"BTCUSDT"]:
-        df = pd.read_csv(f'EIIE\simulation\data\{each_symbol}-F-30-Min.csv')
+        df = pd.read_csv(f'Brain\simulation\data\{each_symbol}-F-30-Min.csv')
         df['tic'] = each_symbol
         df.rename(columns={"Datetime": 'date',
                            "Close": "close",
@@ -64,11 +64,12 @@ def generate_data(begin_time, end_time,tag:str = None):
         new_df = pd.concat([new_df, df])
 
     new_df = fix_data_different_len_and_na(new_df)
+    print(new_df)
 
     if tag == 'train':
-        new_df.to_csv(f'EIIE\simulation\{begin_time}-{end_time}-train_data.csv')
+        new_df.to_csv(f'Brain\EIIE\simulation\{begin_time}-{end_time}-train_data.csv')
     elif tag == 'test':
-        new_df.to_csv(r'EIIE\simulation\test_data.csv')
+        new_df.to_csv(r'Brain\EIIE\simulation\test_data.csv')
 
 
 if __name__ == '__main__':
