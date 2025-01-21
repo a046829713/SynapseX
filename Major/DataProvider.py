@@ -40,7 +40,7 @@ class DataProvider:
                 SQL_Q = f"""SELECT * FROM ( SELECT * FROM `{
                     table_name}` ORDER BY Datetime DESC LIMIT 20 ) t ORDER BY Datetime ASC;"""                
                 df = self.SQL.read_Dateframe(SQL_Q)
-
+    
             elif reload_type == 'Online':
                 parser_date = str(datetime.date.today() + timedelta(days=-30))
                 df = self.SQL.read_Dateframe(
@@ -103,6 +103,7 @@ class DataProvider:
             except:
                 debug.print_info()
                 debug.record_msg(error_msg=f"symbol = {symbol_name}", log_level=logging.error)
+                time.sleep(100)
                 
     def save_data(self, symbol_name, original_df, symbol_type: str, time_type: str, iflower=True, exists="replace"):
         """

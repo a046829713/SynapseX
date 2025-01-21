@@ -235,9 +235,9 @@ class Datatransformer:
         sort_example = sorted(out_list, key=lambda x: x[1], reverse=True)
         return sort_example
 
-    def get_volume_top_filter_symobl(self, all_symbols, max_symbols: int, last_sum_day:int = 1):
+    def get_volume_top_filter_symobl(self, all_symbols, max_symbols: int, last_sum_day:int = 10):
         """
-            取得30內成交金額最高的前幾名
+            取得時間範圍內成交金額最高的前幾名
         Args:
             all_symbols (_type_): _description_            
 
@@ -248,11 +248,12 @@ class Datatransformer:
         for each_data in all_symbols:
             symbolname = each_data[0]
             data = each_data[1]
-            if 'usualusdt-f-d' == symbolname:
-                print(data)
-                print('*'*120)
+            
             # 不想要太新的商品
-            if len(data) > last_sum_day:                
+            if len(data) > last_sum_day and len(data) >90 :
+                # 價格太少的也不要
+                if data.tail(1).iloc[0]['Close'] < 0.01:continue
+
                 filter_df = data.tail(last_sum_day)
                 compare_dict.update({symbolname: sum(filter_df['Close'] * filter_df['Volume'])})
 

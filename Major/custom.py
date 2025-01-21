@@ -164,7 +164,7 @@ class BinanceData(object):
         return output_data
 
     @classmethod
-    def minutes_of_new_data(cls, symbol, kline_size: str, data: pd.DataFrame, source: str, client: Client):
+    def minutes_of_new_data(cls, symbol, kline_size: str, data: pd.DataFrame, source: str, client: Client, symbol_type:str):
         """Process old and new histrical price data format through binance api.
 
         The boundary between new data and old data is 2017.1.1.
@@ -175,10 +175,11 @@ class BinanceData(object):
         data (dataframe): The data from get_all_binance() crawlers.
         source (str): data source (ex:'binance','bitmex')
         client (Binance.Client) (optional): Binance Client object.
+        symbol_type (str): 'SPOT','FUTURES'
 
         Returns:
-        old: OHLCV DataFrame of old format.
-        new: OHLCV DataFrame of new format.
+            old: OHLCV DataFrame of old format.
+            new: OHLCV DataFrame of new format.
         """
         if len(data) > 0:
             old = parser.parse(data["Datetime"].iloc[-1])
@@ -190,12 +191,12 @@ class BinanceData(object):
 
         if source == "binance":
             """ 有些商品只有期貨的部份 所以還是以期貨的API為主 """
-            # new = pd.to_datetime(client.get_klines(symbol=symbol, interval=kline_size)[-1][0],
-            #                      unit='ms')
-
-            new = pd.to_datetime(client.futures_klines(symbol=symbol, interval=kline_size)[-1][0],
-                                 unit='ms')
-
+            if symbol_type == 'SPOT':
+                new = pd.to_datetime(client.get_klines(symbol=symbol, interval=kline_size)[-1][0],
+                                    unit='ms')
+            else:
+                new = pd.to_datetime(client.futures_klines(symbol=symbol, interval=kline_size)[-1][0],
+                                    unit='ms')
         if source == "bitmex":
             new = \
                 client.Trade.Trade_getBucketed(
@@ -252,7 +253,7 @@ class BinanceData(object):
             klines_type = HistoricalKlinesType.FUTURES
 
         oldest_point, newest_point = cls.minutes_of_new_data(
-            symbol, kline_size, original_df, source="binance", client=client)
+            symbol, kline_size, original_df, source="binance", client=client,symbol_type = symbol_type)
 
         delta_min = (newest_point - oldest_point).total_seconds() / 60
         available_data = math.ceil(delta_min / cls.binsizes[kline_size])
@@ -267,7 +268,6 @@ class BinanceData(object):
         # 取得歷史資料改寫
         klines = cls.historicalklines(symbol, kline_size, oldest_point.strftime("%d %b %Y %H:%M:%S"),
                                       newest_point.strftime("%d %b %Y %H:%M:%S"), klines_type=klines_type, client=client)
-
         data = pd.DataFrame(klines,
                             columns=['Datetime', 'Open', 'High', 'Low', 'Close', 'Volume', 'close_time', 'quote_av',
                                      'trades', 'tb_base_av', 'tb_quote_av', 'ignore'])

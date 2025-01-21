@@ -71,11 +71,7 @@ class BacktestRunner:
 if __name__ == "__main__":
     builder = StrategyBuilder()
     # test_symbols = ['BTCUSDT']
-    test_symbols = [
-             "ETHUSDT",
-             "SOLUSDT",
-             "SUIUSDT",
-             "BTCUSDT"]
+    test_symbols = ['AAVEUSDT', 'ADAUSDT', 'AVAXUSDT', 'BCHUSDT', 'COMPUSDT', 'DEFIUSDT', 'DOGEUSDT', 'ENAUSDT', 'ETCUSDT', 'KSMUSDT', 'LINKUSDT', 'MOVEUSDT', 'TRBUSDT', 'XRPUSDT', 'ZECUSDT', 'ZENUSDT']
 
     for test_symbol in test_symbols:
         # 建立策略

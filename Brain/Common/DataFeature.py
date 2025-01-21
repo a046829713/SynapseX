@@ -185,12 +185,12 @@ class OriginalDataFrature():
                 f'Brain/simulation/data/{symbol}-F-30-Min.csv')
             df.set_index('Datetime', inplace=True)
             self.df = self.cleanData(df)
-            # 使用 PyTorch Tensor 的方法
+            # 使用 PyTorch Tensor 的方法            
             out_dict.update({symbol: self.load_relative()})
 
         return out_dict
 
-    def load_relative(self):
+    def load_relative(self,if_log = True):
         """
             CSV最後排序為:
 
@@ -198,14 +198,24 @@ class OriginalDataFrature():
         """
         np_data = np.array(self.df.values, dtype=np.float32)
 
-        return self.PricesObject(
-            open=np_data[:, 0],
-            high=np_data[:, 1],
-            low=np_data[:, 2],
-            close=np_data[:, 3],
-            volume=np_data[:, 4],
-            quote_av=np_data[:, 5],
-            trades=np_data[:, 6],
-            tb_base_av=np_data[:, 7],
-            tb_quote_av=np_data[:, 8],
-        )
+
+        if if_log:
+            # 經過我的評估認為log 已經可以極大化避免極端值
+            # clamp_min, clamp_max = 0.01, 100000.0
+            # np_data = np.clip(np_data, clamp_min, clamp_max)
+
+            # 2) 再進行 log(x+1) 變換 (可改用 np.log1p)
+            
+            np_data = np.log(np_data + 1.0)
+
+            return self.PricesObject(
+                open=np_data[:, 0],
+                high=np_data[:, 1],
+                low=np_data[:, 2],
+                close=np_data[:, 3],
+                volume=np_data[:, 4],
+                quote_av=np_data[:, 5],
+                trades=np_data[:, 6],
+                tb_base_av=np_data[:, 7],
+                tb_quote_av=np_data[:, 8],
+            )
