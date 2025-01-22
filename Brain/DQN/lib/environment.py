@@ -28,6 +28,11 @@ class State:
 
     def build_fileds(self, init_prices):
         self.field_names = list(init_prices._fields)
+        for i in ['open', 'high', 'low', 'close']:
+            if i in self.field_names:
+                self.field_names.remove(i)
+        
+
 
     def reset(self, prices, offset):
         assert offset >= self.bars_count-1
@@ -68,7 +73,7 @@ class State:
         # 第一根買的時候不計算未平倉損益
         if self.have_position:
             opencash_diff = (close - self.open_price) / self.open_price
-
+        
         if action == Actions.Buy:
             if not self.have_position:
                 self.have_position = True
@@ -127,6 +132,11 @@ class State:
         if self.game_steps == self.N_steps and self.model_train:
             done = True
 
+
+        
+
+
+
         return reward, done
 
 
@@ -140,6 +150,10 @@ class State_time_step(State):
 
     def encode(self):
         res = np.zeros(shape=self.shape, dtype=np.float32)
+
+
+
+
 
         ofs = self.bars_count
         for bar_idx in range(self.bars_count):

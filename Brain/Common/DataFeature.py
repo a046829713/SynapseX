@@ -54,12 +54,12 @@ import numpy as np
 #     def calculate_previous_change(self, values):
 #         """
 #             Calculate relative data change based on the previous value.
-#             This method calculates the difference between the current value and 
+#             This method calculates the difference between the current value and
 #             the previous value, then divides by the previous value.
 
 #             Returns:
 #                 A numpy array representing the relative change in percentage.
-#                 This approach emphasizes how much the current value has changed 
+#                 This approach emphasizes how much the current value has changed
 #                 compared to the previous step, relative to the previous value.
 #         """
 #         shift_data = np.roll(values, shift=1, axis=0)
@@ -70,12 +70,12 @@ import numpy as np
 #     def calculate_current_change(self, values):
 #         """
 #             Calculate relative data change based on the current value.
-#             This method calculates the difference between the current value and 
+#             This method calculates the difference between the current value and
 #             the previous value, then divides by the current value.
 
 #             Returns:
 #                 A numpy array representing the relative change in percentage.
-#                 This approach emphasizes how much the current value has changed 
+#                 This approach emphasizes how much the current value has changed
 #                 compared to the previous step, relative to the current value.
 #         """
 #         shift_data = np.roll(values, shift=1, axis=0)
@@ -157,7 +157,19 @@ class OriginalDataFrature():
     def __init__(self, formal: bool = False) -> None:
         self.formal = formal
         self.PricesObject = collections.namedtuple('Prices', field_names=[
-            'open', 'high', 'low', 'close', 'volume', 'quote_av', 'trades', 'tb_base_av', 'tb_quote_av'
+            'open',
+            'high',
+            'low',
+            'close',
+            'log_open',
+            'log_high',
+            'log_low',
+            'log_close',
+            'log_volume',
+            'log_quote_av',
+            'log_trades',
+            'log_tb_base_av',
+            'log_tb_quote_av',
         ])
 
     def cleanData(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -165,7 +177,7 @@ class OriginalDataFrature():
         df = df.ffill(axis=0)
         df = df.bfill(axis=0)
         return df
-    
+
     def get_train_net_work_data_by_pd(self, symbol: str, df: pd.DataFrame) -> dict:
         """
             用來取得類神經網絡所需要的資料,正式交易的時候
@@ -174,7 +186,7 @@ class OriginalDataFrature():
         self.df = df
         out_dict.update({symbol: self.load_relative()})
         return out_dict
-    
+
     def get_train_net_work_data_by_path(self, symbols: list) -> dict:
         """
             用來取得類神經網絡所需要的資料
@@ -185,12 +197,12 @@ class OriginalDataFrature():
                 f'Brain/simulation/data/{symbol}-F-30-Min.csv')
             df.set_index('Datetime', inplace=True)
             self.df = self.cleanData(df)
-            # 使用 PyTorch Tensor 的方法            
+            # 使用 PyTorch Tensor 的方法
             out_dict.update({symbol: self.load_relative()})
 
         return out_dict
 
-    def load_relative(self,if_log = True):
+    def load_relative(self, if_log=True):
         """
             CSV最後排序為:
 
@@ -198,24 +210,27 @@ class OriginalDataFrature():
         """
         np_data = np.array(self.df.values, dtype=np.float32)
 
-
         if if_log:
             # 經過我的評估認為log 已經可以極大化避免極端值
             # clamp_min, clamp_max = 0.01, 100000.0
             # np_data = np.clip(np_data, clamp_min, clamp_max)
 
             # 2) 再進行 log(x+1) 變換 (可改用 np.log1p)
-            
-            np_data = np.log(np_data + 1.0)
+
+            log_np_data = np.log(np_data + 1.0)
 
             return self.PricesObject(
                 open=np_data[:, 0],
                 high=np_data[:, 1],
                 low=np_data[:, 2],
                 close=np_data[:, 3],
-                volume=np_data[:, 4],
-                quote_av=np_data[:, 5],
-                trades=np_data[:, 6],
-                tb_base_av=np_data[:, 7],
-                tb_quote_av=np_data[:, 8],
+                log_open=log_np_data[:, 0],
+                log_high=log_np_data[:, 1],
+                log_low=log_np_data[:, 2],
+                log_close=log_np_data[:, 3],
+                log_volume=log_np_data[:, 4],
+                log_quote_av=log_np_data[:, 5],
+                log_trades=log_np_data[:, 6],
+                log_tb_base_av=log_np_data[:, 7],
+                log_tb_quote_av=log_np_data[:, 8],
             )
