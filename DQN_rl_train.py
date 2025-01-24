@@ -68,7 +68,7 @@ class RL_prepare(ABC):
         self.EACH_REPLAY_SIZE = 50000
         self.REPLAY_INITIAL = 1000
         self.LEARNING_RATE = 0.0001  # optim 的學習率
-        self.Lambda = 1e-10  # optim L2正則化 Ridge regularization
+        self.Lambda = 1e-11  # optim L2正則化 Ridge regularization
         self.EPSILON_START = 0.9  # 起始機率(一開始都隨機運行)
         self.SAVES_PATH = "saves"  # 儲存的路徑
         self.EPSILON_STOP = 0.1
