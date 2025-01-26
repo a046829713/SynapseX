@@ -46,8 +46,6 @@ def default_states_preprocessor(states):
         np_states = np.expand_dims(states[0], 0)
     else:
         np_states = np.array([np.array(s, copy=False) for s in states], copy=False)
-        print("測試進入:",np_states)
-        time.sleep(100)
     return torch.tensor(np_states)
 
 

@@ -170,7 +170,6 @@ class State_time_step(State):
         # # 加入傅立葉變換 res.shape # (300, 29)
         # fourier_features = self.fourier_transform(res[:, :len(self.field_names)])
         # print(fourier_features)
-        # time.sleep(100)
         # # 可以選擇如何將傅立葉特徵與原有特徵結合，例如拼接或者替換
         # # 這裡選擇拼接
         # res = np.concatenate((res, fourier_features), axis=1)

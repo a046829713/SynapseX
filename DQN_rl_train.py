@@ -15,6 +15,20 @@ from Brain.DQN.lib.EfficientnetV2 import EfficientnetV2SmallDuelingModel
 from Brain.Common.experience import SequentialExperienceReplayBuffer
 import torch.nn as nn
 
+# import builtins
+# import inspect
+
+# original_print = builtins.print
+
+# def custom_print(*args, **kwargs):
+#     frame = inspect.currentframe().f_back
+#     file_name = frame.f_code.co_filename
+#     line_number = frame.f_lineno
+#     original_print(f"[TRACE] {file_name}:{line_number} ->", *args, **kwargs)
+
+# # 覆蓋內建 print
+# builtins.print = custom_print
+
 
 class RL_prepare(ABC):
     def __init__(self):
@@ -43,9 +57,9 @@ class RL_prepare(ABC):
         print("There is device:", self.device)
 
     def _prepare_symbols(self):
-        #
-        symbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT', 'DOGEUSDT', 'SUIUSDT', 'ADAUSDT', 'ENAUSDT', 'LINKUSDT', 'HBARUSDT', 'LTCUSDT', 'XLMUSDT', 'WIFUSDT', 'BNBUSDT', 'ONDOUSDT', 'AAVEUSDT', 'WLDUSDT', 'AVAXUSDT', 'JUPUSDT', 'DOTUSDT', 'TRXUSDT', 'FILUSDT', 'ALGOUSDT', 'ZENUSDT', 'TIAUSDT', 'CRVUSDT', 'AGLDUSDT', 'POPCATUSDT', 'GALAUSDT', 'NEARUSDT']
-        # symbols = ['BTCUSDT']
+        
+        # symbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT', 'DOGEUSDT', 'SUIUSDT', 'ADAUSDT', 'ENAUSDT', 'LINKUSDT', 'HBARUSDT', 'LTCUSDT', 'XLMUSDT', 'WIFUSDT', 'BNBUSDT', 'ONDOUSDT', 'AAVEUSDT', 'WLDUSDT', 'AVAXUSDT', 'JUPUSDT', 'DOTUSDT', 'TRXUSDT', 'FILUSDT', 'ALGOUSDT', 'ZENUSDT', 'TIAUSDT', 'CRVUSDT', 'AGLDUSDT', 'POPCATUSDT', 'GALAUSDT', 'NEARUSDT']
+        symbols = ['BTCUSDT']
         self.symbols = list(set(symbols))
         print("There are symobls:", self.symbols)
 
@@ -111,12 +125,12 @@ class RL_prepare(ABC):
                 d_model=engine_info['input_size'],
                 nhead=8,
                 d_hid=2048,
-                nlayers=4,
+                nlayers=8,
                 num_actions=self.train_env.action_space.n,  # 假设有5种可能的动作
                 hidden_size=64,  # 使用隐藏层
                 seq_dim=self.BARS_COUNT,
                 dropout=0.1,  # 适度的dropout以防过拟合
-                num_iterations=3
+                num_iterations=1
             ).to(self.device)
 
         elif self.keyword == 'EfficientNetV2':
