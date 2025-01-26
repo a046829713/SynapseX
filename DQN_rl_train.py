@@ -125,12 +125,12 @@ class RL_prepare(ABC):
                 d_model=engine_info['input_size'],
                 nhead=8,
                 d_hid=2048,
-                nlayers=8,
+                nlayers=4,
                 num_actions=self.train_env.action_space.n,  # 假设有5种可能的动作
                 hidden_size=64,  # 使用隐藏层
                 seq_dim=self.BARS_COUNT,
                 dropout=0.1,  # 适度的dropout以防过拟合
-                num_iterations=1
+                num_iterations=3
             ).to(self.device)
 
         elif self.keyword == 'EfficientNetV2':

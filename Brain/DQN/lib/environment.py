@@ -104,19 +104,21 @@ class State:
         self.canusecash = 1.0 + self.cost_sum + self.closecash + opencash_diff
         reward += self.canusecash - last_canusecash
 
-        # 1) 更新 equity_peak
-        if self.canusecash > self.equity_peak:
-            self.equity_peak = self.canusecash
 
-        # 2) 計算當前 drawdown（只要能用 equity_peak - canusecash 即可）
-        current_drawdown = (self.equity_peak - self.canusecash) / self.equity_peak
-         
-        # 3) 給予某些懲罰權重，例如 0.1
-        drawdown_penalty = 0.0001 * current_drawdown
+        #  不要強制智體去交易
+        if self.have_position:
+            # 1) 更新 equity_peak
+            if self.canusecash > self.equity_peak:
+                self.equity_peak = self.canusecash
 
-        
-        # 因為 drawdown 越大 -> 應越懲罰，所以是負的
-        reward -= drawdown_penalty
+            # 2) 計算當前 drawdown（只要能用 equity_peak - canusecash 即可）
+            current_drawdown = (self.equity_peak - self.canusecash) / self.equity_peak
+            
+            # 3) 給予某些懲罰權重，例如 0.1
+            drawdown_penalty = 0.001 * current_drawdown
+
+            # 因為 drawdown 越大 -> 應越懲罰，所以是負的
+            reward -= drawdown_penalty
         
         # 新獎勵設計
         # print("目前部位",self.have_position,"單次手續費:",cost,"單次已平倉損益:",closecash_diff,"單次未平倉損益:", opencash_diff)
