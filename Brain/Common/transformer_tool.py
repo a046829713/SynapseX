@@ -71,7 +71,7 @@ class TransformerEncoderLayer(nn.Module):
 
         super().__init__()
         self.self_attn = MultiheadAttention(d_model, nhead, dropout=dropout,
-                                            bias=bias, batch_first=batch_first,
+                                            bias=bias, batch_first=batch_first,                                        
                                             **factory_kwargs)
         # Implementation of Feedforward model
         self.linear1 = nn.Linear(
@@ -134,6 +134,10 @@ class TransformerEncoderLayer(nn.Module):
 
         Shape:
             see the docs in Transformer class.
+
+
+            src_key_padding_mask：主要用於批量數據中的填充位置遮蔽，確保模型忽略這些無用的填充數據。
+            src_mask：用於控制注意力機制的範圍和模式，如實現因果遮蔽或其他自定義的遮蔽策略。
         """
         # out_put = None
         src_key_padding_mask = F._canonical_mask(
@@ -152,6 +156,7 @@ class TransformerEncoderLayer(nn.Module):
             target_type=src.dtype,
             check_other=False,
         )
+
 
         # ReZero 機制應用於自注意力塊
         src2 = self._sa_block(src, src_mask, src_key_padding_mask, is_causal=is_causal)

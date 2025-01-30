@@ -58,8 +58,8 @@ class RL_prepare(ABC):
 
     def _prepare_symbols(self):
         
-        symbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT', 'DOGEUSDT', 'SUIUSDT', 'ADAUSDT', 'ENAUSDT', 'LINKUSDT', 'HBARUSDT', 'LTCUSDT', 'XLMUSDT', 'WIFUSDT', 'BNBUSDT', 'ONDOUSDT', 'AAVEUSDT', 'WLDUSDT', 'AVAXUSDT', 'JUPUSDT', 'DOTUSDT', 'TRXUSDT', 'FILUSDT', 'ALGOUSDT', 'ZENUSDT', 'TIAUSDT', 'CRVUSDT', 'AGLDUSDT', 'POPCATUSDT', 'GALAUSDT', 'NEARUSDT']
-        # symbols = ['BTCUSDT']
+        # symbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT', 'DOGEUSDT', 'SUIUSDT', 'ADAUSDT', 'ENAUSDT', 'LINKUSDT', 'HBARUSDT', 'LTCUSDT', 'XLMUSDT', 'WIFUSDT', 'BNBUSDT', 'ONDOUSDT', 'AAVEUSDT', 'WLDUSDT', 'AVAXUSDT', 'JUPUSDT', 'DOTUSDT', 'TRXUSDT', 'FILUSDT', 'ALGOUSDT', 'ZENUSDT', 'TIAUSDT', 'CRVUSDT', 'AGLDUSDT', 'POPCATUSDT', 'GALAUSDT', 'NEARUSDT']
+        symbols = ['BTCUSDT']
         self.symbols = list(set(symbols))
         print("There are symobls:", self.symbols)
 
