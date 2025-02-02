@@ -1,7 +1,8 @@
 import re
 from Brain.DQN.lib.Backtest import Strategy, RL_evaluate, Backtest
 from utils.AppSetting import AppSetting
-
+import os
+import time
 
 class StrategyBuilder:
     """
@@ -24,7 +25,8 @@ class StrategyBuilder:
         data_len = re.findall(r'\d+', data)[0]
 
         # 將 info 分解 (例如: 'Brain\DQN\Meta\Meta')
-        parts = info.split('\\')
+        parts = info.split(os.sep)
+
         # parts: ['Brain', 'DQN', 'Meta', 'Meta']
         # 根據原有程式碼邏輯取出 strategytype:
         # _, strategytype, _, _ = parts -> strategytype = 'DQN'
@@ -42,7 +44,7 @@ class StrategyBuilder:
         )
 
         # 載入資料
-        data_path = f'Brain\\simulation\\data\\{symbol}-F-{data_len}-Min.csv'
+        data_path = os.path.join("Brain","simulation","data",f"{symbol}-F-{data_len}-Min.csv")
         strategy.load_data(local_data_path=data_path)
 
         return strategy
@@ -73,10 +75,11 @@ if __name__ == "__main__":
     # test_symbols = ['BTCUSDT','ETHUSDT','SUIUSDT','SOLUSDT']
     test_symbols = ['ARUSDT', 'BCHUSDT', 'COMPUSDT', 'DASHUSDT', 'DEFIUSDT', 'EGLDUSDT', 'ENSUSDT', 'ETCUSDT', 'GMXUSDT', 'ILVUSDT', 'INJUSDT', 'KSMUSDT', 'MKRUSDT', 'MOVEUSDT', 'QNTUSDT', 'SSVUSDT', 'TRBUSDT', 'XMRUSDT', 'YFIUSDT', 'ZECUSDT']
 
+
     for test_symbol in test_symbols:
         # 建立策略
         strategy = builder.create_strategy(
-            'Brain\\DQN\\Meta\\Meta-300B-30K.pt', symbol=test_symbol)
+            os.path.join("Brain","DQN","Meta","Meta-300B-30K.pt"), symbol=test_symbol)
 
         # 執行回測
         runner = BacktestRunner(strategy)

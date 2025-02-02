@@ -6,6 +6,7 @@ from Brain.Common.transformer_tool import TransformerEncoderLayer, PositionalEnc
 from Brain.Common.dain import DAIN_Layer
 import time
 from einops import rearrange
+from Brain.Common.ssm_tool import MixerModel
 
 class TransformerDuelingModel(nn.Module):
     def __init__(self,
@@ -267,6 +268,31 @@ class TransformerDuelingModel(nn.Module):
     
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # 全新的Cot model
 class COT_TransformerDuelingModel(nn.Module):
     def __init__(self,
@@ -352,6 +378,12 @@ class COT_TransformerDuelingModel(nn.Module):
             nn.Sigmoid()
         )
 
+        self.mixer = MixerModel(
+            d_model= hidden_size,
+            n_layer=1,
+            d_intermediate=0
+        )
+
     def forward(self, src: Tensor) -> Tensor:
         # src: [batch_size, seq_len, d_model]
 
@@ -392,7 +424,7 @@ class COT_TransformerDuelingModel(nn.Module):
             src_embed = g * output + (1 - g) * src_embed
             src_embed = self.iteration_ln(src_embed)
         
-
+        src_embed = self.mixer(src_embed)
         x = self.linear(src_embed)  
         x = x.view(x.size(0), -1)
 

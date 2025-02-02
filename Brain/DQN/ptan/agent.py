@@ -90,9 +90,14 @@ class DQNAgent(BaseAgent):
         # 有保留info合併類別的，但是目前沒有影響
         # info = turn_to_tensor(info,self.device)
         # print("進入前info:",info)
-        q_v = self.dqn_model(states)
+
+        with torch.no_grad():
+            q_v = self.dqn_model(states)
+
         q = q_v.data.cpu().numpy()
         actions = self.action_selector(q)
+
+
         return actions, agent_states
 
 

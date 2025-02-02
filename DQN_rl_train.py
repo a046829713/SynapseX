@@ -55,6 +55,7 @@ class RL_prepare(ABC):
         self.device = torch.device(
             "cuda" if torch.cuda.is_available() else "cpu")
         print("There is device:", self.device)
+        
 
     def _prepare_symbols(self):
         
@@ -297,7 +298,7 @@ class RL_Train(RL_prepare):
 
                 if not self.buffer.each_num_len_enough(init_size=self.REPLAY_INITIAL):
                     continue
-
+                
                 self.optimizer.zero_grad()
                 batch = self.buffer.sample(self.BATCH_SIZE)
 
