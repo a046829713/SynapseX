@@ -68,10 +68,9 @@ class RL_prepare(ABC):
         self.data = OriginalDataFrature().get_train_net_work_data_by_path(self.symbols)
 
     def _prepare_writer(self):
-        self.writer = SummaryWriter(
-            log_dir=os.path.join(
-                'C:\\', 'runs', datetime.strftime(
-                    datetime.now(), "%Y%m%d-%H%M%S") + '-conv-'))
+        # 取得目前工作目錄，並在此目錄下建立 run 資料夾，並以時間戳記命名子資料夾
+        log_dir = os.path.join(os.getcwd(), 'run', datetime.now().strftime("%Y%m%d-%H%M%S") + '-conv-')
+        self.writer = SummaryWriter(log_dir=log_dir)
 
     def _prepare_hyperparameters(self):
         self.BARS_COUNT = 300  # 用來準備要取樣的特徵長度,例如:開高低收成交量各取10根K棒
