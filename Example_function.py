@@ -11,7 +11,7 @@ import time
 # from EIIE.lib.simple_evaluate import evaluate_train_test_performance
 import re
 import pandas as pd
-
+from Database.BackUp import DatabaseBackupRestore
 
 
 
@@ -116,6 +116,18 @@ def getAllDailyData():
 
 
 
+def test():
+    account, passwd = UserManager.GetAccount_Passwd('author')
+    client = Client(account, passwd)
+    # 获取合约账户信息
+    account_info = client.futures_account()
+    # 遍历持仓信息并打印杠杆倍数
+    for position in account_info['positions']:
+        symbol = position['symbol']
+        leverage = position['leverage']
+        position_amt = float(position['positionAmt'])
+        if position_amt != 0:
+            print(f"交易对: {symbol}, 杠杆倍数: {leverage}")
 
 
 
@@ -214,6 +226,9 @@ def example_simple_evaluate():
 
 # getAllDailyData()
 # example_reload_all_data(symbol_type="FUTURES",time_type = '1m')
-example_get_symboldata()
+# example_get_symboldata()
 # checksymbol(symbol='TUSDUSDT')
 # example_get_target_symbol(filter_type='VOLUME')
+test()
+
+

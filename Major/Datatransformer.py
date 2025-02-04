@@ -250,7 +250,7 @@ class Datatransformer:
             data = each_data[1]
             
             # 不想要太新的商品
-            if len(data) > last_sum_day and len(data) >90 :
+            if len(data) > last_sum_day and len(data) > 90 :
                 # 價格太少的也不要
                 if data.tail(1).iloc[0]['Close'] < 0.01:continue
 

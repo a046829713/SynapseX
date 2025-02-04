@@ -1,0 +1,51 @@
+2025-02-04 15:33 ERROR Traceback (most recent call last):
+  File "c:\Users\a046829713\Desktop\program\RLTrading\SynapseX\Database\SQL_operate.py", line 13, in get_db_data
+    self.userconn = router.Router().mysql_conn
+  File "c:\Users\a046829713\Desktop\program\RLTrading\SynapseX\Database\router.py", line 13, in __init__
+    self._mysql_conn = self.get_mysql_conn()
+  File "c:\Users\a046829713\Desktop\program\RLTrading\SynapseX\Database\router.py", line 28, in get_mysql_conn
+    connect = engine.connect()
+  File "C:\Users\a046829713\Desktop\program\RLTrading\lib\site-packages\sqlalchemy\engine\base.py", line 3278, in connect
+    return self._connection_cls(self)
+  File "C:\Users\a046829713\Desktop\program\RLTrading\lib\site-packages\sqlalchemy\engine\base.py", line 146, in __init__
+    self._dbapi_connection = engine.raw_connection()
+  File "C:\Users\a046829713\Desktop\program\RLTrading\lib\site-packages\sqlalchemy\engine\base.py", line 3302, in raw_connection
+    return self.pool.connect()
+  File "C:\Users\a046829713\Desktop\program\RLTrading\lib\site-packages\sqlalchemy\pool\base.py", line 449, in connect
+    return _ConnectionFairy._checkout(self)
+  File "C:\Users\a046829713\Desktop\program\RLTrading\lib\site-packages\sqlalchemy\pool\base.py", line 1263, in _checkout
+    fairy = _ConnectionRecord.checkout(pool)
+  File "C:\Users\a046829713\Desktop\program\RLTrading\lib\site-packages\sqlalchemy\pool\base.py", line 712, in checkout
+    rec = pool._do_get()
+  File "C:\Users\a046829713\Desktop\program\RLTrading\lib\site-packages\sqlalchemy\pool\impl.py", line 179, in _do_get
+    with util.safe_reraise():
+  File "C:\Users\a046829713\Desktop\program\RLTrading\lib\site-packages\sqlalchemy\util\langhelpers.py", line 146, in __exit__
+    raise exc_value.with_traceback(exc_tb)
+  File "C:\Users\a046829713\Desktop\program\RLTrading\lib\site-packages\sqlalchemy\pool\impl.py", line 177, in _do_get
+    return self._create_connection()
+  File "C:\Users\a046829713\Desktop\program\RLTrading\lib\site-packages\sqlalchemy\pool\base.py", line 390, in _create_connection
+    return _ConnectionRecord(self)
+  File "C:\Users\a046829713\Desktop\program\RLTrading\lib\site-packages\sqlalchemy\pool\base.py", line 674, in __init__
+    self.__connect()
+  File "C:\Users\a046829713\Desktop\program\RLTrading\lib\site-packages\sqlalchemy\pool\base.py", line 900, in __connect
+    with util.safe_reraise():
+  File "C:\Users\a046829713\Desktop\program\RLTrading\lib\site-packages\sqlalchemy\util\langhelpers.py", line 146, in __exit__
+    raise exc_value.with_traceback(exc_tb)
+  File "C:\Users\a046829713\Desktop\program\RLTrading\lib\site-packages\sqlalchemy\pool\base.py", line 896, in __connect
+    self.dbapi_connection = connection = pool._invoke_creator(self)
+  File "C:\Users\a046829713\Desktop\program\RLTrading\lib\site-packages\sqlalchemy\engine\create.py", line 643, in connect
+    return dialect.connect(*cargs, **cparams)
+  File "C:\Users\a046829713\Desktop\program\RLTrading\lib\site-packages\sqlalchemy\engine\default.py", line 621, in connect
+    return self.loaded_dbapi.connect(*cargs, **cparams)
+  File "C:\Users\a046829713\Desktop\program\RLTrading\lib\site-packages\pymysql\connections.py", line 361, in __init__
+    self.connect()
+  File "C:\Users\a046829713\Desktop\program\RLTrading\lib\site-packages\pymysql\connections.py", line 669, in connect
+    self._request_authentication()
+  File "C:\Users\a046829713\Desktop\program\RLTrading\lib\site-packages\pymysql\connections.py", line 979, in _request_authentication
+    auth_packet = _auth.caching_sha2_password_auth(self, auth_packet)
+  File "C:\Users\a046829713\Desktop\program\RLTrading\lib\site-packages\pymysql\_auth.py", line 267, in caching_sha2_password_auth
+    data = sha2_rsa_encrypt(conn.password, conn.salt, conn.server_public_key)
+  File "C:\Users\a046829713\Desktop\program\RLTrading\lib\site-packages\pymysql\_auth.py", line 144, in sha2_rsa_encrypt
+    raise RuntimeError(
+RuntimeError: 'cryptography' package is required for sha256_password or caching_sha2_password auth methods
+
