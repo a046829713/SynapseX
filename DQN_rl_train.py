@@ -59,8 +59,8 @@ class RL_prepare(ABC):
 
     def _prepare_symbols(self):
         
-        # symbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT', 'DOGEUSDT', 'SUIUSDT', 'ADAUSDT', 'ENAUSDT', 'LINKUSDT', 'HBARUSDT', 'LTCUSDT', 'XLMUSDT', 'WIFUSDT', 'BNBUSDT', 'ONDOUSDT', 'AAVEUSDT', 'WLDUSDT', 'AVAXUSDT', 'JUPUSDT', 'DOTUSDT', 'TRXUSDT', 'FILUSDT', 'ALGOUSDT', 'ZENUSDT', 'TIAUSDT', 'CRVUSDT', 'AGLDUSDT', 'POPCATUSDT', 'GALAUSDT', 'NEARUSDT']
-        symbols = ['BTCUSDT']
+        symbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT', 'DOGEUSDT', 'SUIUSDT', 'ADAUSDT', 'ENAUSDT', 'LINKUSDT', 'HBARUSDT', 'LTCUSDT', 'XLMUSDT', 'WIFUSDT', 'BNBUSDT', 'ONDOUSDT', 'AAVEUSDT', 'WLDUSDT', 'AVAXUSDT', 'JUPUSDT', 'DOTUSDT', 'TRXUSDT', 'FILUSDT', 'ALGOUSDT', 'ZENUSDT', 'TIAUSDT', 'CRVUSDT', 'AGLDUSDT', 'POPCATUSDT', 'GALAUSDT', 'NEARUSDT']
+        # symbols = ['BTCUSDT']
         self.symbols = list(set(symbols))
         print("There are symobls:", self.symbols)
 
@@ -121,16 +121,15 @@ class RL_prepare(ABC):
         engine_info = self.train_env.engine_info()
 
         if self.keyword == 'Transformer':
-            self.net = model.COT_TransformerDuelingModel(
+            self.net = model.mambaTransformerDuelingModel(
                 d_model=engine_info['input_size'],
                 nhead=8,
                 d_hid=2048,
-                nlayers=4,
+                nlayers=8,
                 num_actions=self.train_env.action_space.n,  # 假设有5种可能的动作
                 hidden_size=64,  # 使用隐藏层
                 seq_dim=self.BARS_COUNT,
                 dropout=0.1,  # 适度的dropout以防过拟合
-                num_iterations=3
             ).to(self.device)
 
         elif self.keyword == 'EfficientNetV2':

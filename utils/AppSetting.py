@@ -14,7 +14,7 @@ class AppSetting():
     def engine_setting():
         data = {
             'FREQ_TIME':30,
-            'LEVERAGE':3
+            'LEVERAGE':2.5
         }
         return data
     
