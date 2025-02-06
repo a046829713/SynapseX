@@ -117,7 +117,7 @@ class Trading_system():
         all_symbols = self.dataprovider.get_symbols_history_data(
             symbol_type='FUTURES', time_type='1d')
 
-        return self.dataprovider.filter_useful_symbol(all_symbols, tag="VOLUME_TYPE")
+        return self.dataprovider.filter_useful_symbol(all_symbols, tag="MTM_TYPE")
 
     def export_all_tables(self):
         """
@@ -187,9 +187,11 @@ class AsyncTrading_system(Trading_system):
         """
 
         if self.strategy_keyword == 'ONE_TO_MANY':
+            # 取得要交易的標的
+            market_symobl = list(map(lambda x: x[0], self.get_target_symbol()))
             # 取得binance實際擁有標的,合併 (因為原本有部位的也要持續追蹤)
             self.targetsymbols = self.datatransformer.target_symobl(
-                self.get_target_symbol(), self.dataprovider.Binanceapp.getfutures_account_name())
+                market_symobl, self.dataprovider.Binanceapp.getfutures_account_name())
 
         elif self.strategy_keyword == 'ONE_TO_ONE':
             old_symbol = self.dataprovider.Binanceapp.getfutures_account_name()  # 第一次運行會是空的
@@ -198,6 +200,7 @@ class AsyncTrading_system(Trading_system):
         else:
             raise ValueError("STRATEGY_KEYWORD didn't match,please check")
 
+        self.targetsymbols = ["BTCUSDT","SOLUSDT","SUIUSDT","ETHUSDT"]
         # 用來判斷一個模型的模式        # 一對多        # 一對一
         print_syslog(title='STRATEGY_KEYWORD', msg=self.strategy_keyword)
         print_syslog(title='TARGETSYMBOLS', msg=self.targetsymbols)

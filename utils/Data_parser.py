@@ -42,8 +42,6 @@ class Datatransformer:
             market_symobl (list): 取得目前要輪動交易的標的
             binance_catch (list): Binance 目前擁有部位的商品 (有部位的要繼續追蹤)
         """
-        print(market_symobl)
-        print(binance_catch)
 
         market_symobl.extend(binance_catch)
 

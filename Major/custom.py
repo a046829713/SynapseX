@@ -476,22 +476,17 @@ class Binance_server(object):
         self.trade_count += 1
         print('目前交易次數', self.trade_count)
         print(f"進入下單,目前下單模式:{model}")
-
-        # 获取合约账户信息
-        account_info = client.futures_account()
-
         # 下單前檢查leverage
         # 商品槓桿
         # 將已經持倉的部位傳入(讀取所有的槓桿)
         leverage_map = {}
-        for position in account_info['positions']:
-            symbol = position['symbol']
-            leverage = position['leverage']
-            position_amt = float(position['positionAmt'])
-            if position_amt != 0:
-                print(f"交易對: {symbol}, leverage numbers: {leverage}")
-                leverage_map.update({symbol: leverage})
-        
+        for i in current_size.keys():
+            # 獲取 BTCUSDT 合約的當前部位信息
+            position = client.futures_position_information(symbol=i)
+            if float(position[0]['positionAmt'])!=0:
+                # 取得目前槓桿倍數
+                leverage = int(position[0]['leverage'])
+                leverage_map.update({i: leverage})
 
         for each_symbol, ready_to_order_size in order_finally.items():
             if leverage_map.get(each_symbol, None) is None:

@@ -59,8 +59,8 @@ class RL_prepare(ABC):
 
     def _prepare_symbols(self):
         
-        # symbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT', 'DOGEUSDT', 'SUIUSDT', 'ADAUSDT', 'ENAUSDT', 'LINKUSDT', 'HBARUSDT', 'LTCUSDT', 'XLMUSDT', 'WIFUSDT', 'BNBUSDT', 'ONDOUSDT', 'AAVEUSDT', 'WLDUSDT', 'AVAXUSDT', 'JUPUSDT', 'DOTUSDT', 'TRXUSDT', 'FILUSDT', 'ALGOUSDT', 'ZENUSDT', 'TIAUSDT', 'CRVUSDT', 'AGLDUSDT', 'POPCATUSDT', 'GALAUSDT', 'NEARUSDT']
-        symbols = ['BTCUSDT']
+        symbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT', 'DOGEUSDT', 'SUIUSDT', 'ADAUSDT', 'ENAUSDT', 'LINKUSDT', 'HBARUSDT', 'LTCUSDT', 'XLMUSDT', 'WIFUSDT', 'BNBUSDT', 'ONDOUSDT', 'AAVEUSDT', 'WLDUSDT', 'AVAXUSDT', 'JUPUSDT', 'DOTUSDT', 'TRXUSDT', 'FILUSDT', 'ALGOUSDT', 'ZENUSDT', 'TIAUSDT', 'CRVUSDT', 'AGLDUSDT', 'POPCATUSDT', 'GALAUSDT', 'NEARUSDT']
+        # symbols = ['BTCUSDT']
         self.symbols = list(set(symbols))
         print("There are symobls:", self.symbols)
 
@@ -82,7 +82,7 @@ class RL_prepare(ABC):
         self.EACH_REPLAY_SIZE = 50000
         self.REPLAY_INITIAL = 1000
         self.LEARNING_RATE = 0.0001  # optim 的學習率
-        self.Lambda = 1e-11  # optim L2正則化 Ridge regularization
+        self.Lambda = 0  # optim L2正則化 Ridge regularization
         self.EPSILON_START = 0.9  # 起始機率(一開始都隨機運行)
         self.SAVES_PATH = "saves"  # 儲存的路徑
         self.EPSILON_STOP = 0.1
@@ -95,7 +95,7 @@ class RL_prepare(ABC):
         self.NUM_EVAL_EPISODES = 10  # 每次评估的样本数
         self.BATCH_SIZE = 32  # 每次要從buffer提取的資料筆數,用來給神經網絡更新權重
         self.STATES_TO_EVALUATE = 10000  # 每次驗證一萬筆資料
-        self.checkgrad_times = 1000
+        self.checkgrad_times = 10000
 
     def _prepare_env(self):
         if self.keyword == 'Transformer':
@@ -121,16 +121,15 @@ class RL_prepare(ABC):
         engine_info = self.train_env.engine_info()
 
         if self.keyword == 'Transformer':
-            self.net = model.COT_TransformerDuelingModel(
+            self.net = model.mambaTransformerDuelingModel(
                 d_model=engine_info['input_size'],
                 nhead=8,
                 d_hid=2048,
-                nlayers=4,
+                nlayers=8,
                 num_actions=self.train_env.action_space.n,  # 假设有5种可能的动作
                 hidden_size=64,  # 使用隐藏层
                 seq_dim=self.BARS_COUNT,
                 dropout=0.1,  # 适度的dropout以防过拟合
-                num_iterations=3
             ).to(self.device)
 
         elif self.keyword == 'EfficientNetV2':
@@ -312,7 +311,7 @@ class RL_Train(RL_prepare):
                 if self.step_idx % self.checkgrad_times == 0:
                     pass
                     # self.checkgrad()
-                    # self.checkwhight()
+                    self.checkwhight()
 
                 self.optimizer.step()
                 if self.step_idx % self.TARGET_NET_SYNC == 0:

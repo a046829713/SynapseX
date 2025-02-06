@@ -233,7 +233,6 @@ class Datatransformer:
                             [symbolname.split('-')[0].upper(), mom_num.iloc[-1]])
 
         sort_example = sorted(out_list, key=lambda x: x[1], reverse=True)
-        # 這邊要改成可以直接輸出最後結果的就好
         return sort_example
 
     def get_volume_top_filter_symobl(self, all_symbols, max_symbols: int, last_sum_day:int = 10):
@@ -251,16 +250,16 @@ class Datatransformer:
             data = each_data[1]
             
             # 不想要太新的商品
-            if len(data) > last_sum_day and len(data) > 90 :
+            if len(data) > last_sum_day and len(data) >90 :
                 # 價格太少的也不要
                 if data.tail(1).iloc[0]['Close'] < 0.01:continue
 
                 filter_df = data.tail(last_sum_day)
                 compare_dict.update({symbolname: sum(filter_df['Close'] * filter_df['Volume'])})
-        
+
         sorted_compare_dict = sorted(
             compare_dict, key=compare_dict.get, reverse=True)
-        
+
         return [symbolname.split('-')[0].upper() for symbolname in sorted_compare_dict[:max_symbols]]
 
     def change_min_postion(self, all_order_finally: dict, MinimumQuantity: dict):

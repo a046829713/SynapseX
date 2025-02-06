@@ -101,9 +101,9 @@ class BasePreparator:
                 os.remove(full_file_path)
 
 
-class DatabaseBackupRestore(BasePreparator):
+class DatabaseBackupRestore:
     def __init__(self):
-        super().__init__()
+        self.SQL = SQL_operate.DB_operate()
 
     def export_all_tables(self):
         """
@@ -112,10 +112,11 @@ class DatabaseBackupRestore(BasePreparator):
         getAllTablesName = self.SQL.get_db_data('show tables;')
         getAllTablesName = [y[0] for y in getAllTablesName]
         for table in getAllTablesName:
-            if table == 'users':continue
-            df = self.SQL.read_Dateframe(table)
-            path = os.path.join(f"{self.backup_folder}", f"{table}.csv")
-            df.to_csv(path, index=False)
+            if 'user' in table:
+                print(table)
+            # df = self.SQL.read_Dateframe(table)
+            # path = os.path.join(f"{self.backup_folder}", f"{table}.csv")
+            # df.to_csv(path, index=False)
     
     def export_table_data(self, table_name: str):
         """

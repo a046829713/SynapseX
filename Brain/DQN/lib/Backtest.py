@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import quantstats as qs
 from pathlib import Path
 import time
-from Brain.DQN.lib.model import TransformerDuelingModel,COT_TransformerDuelingModel
+from Brain.DQN.lib.model import TransformerDuelingModel,COT_TransformerDuelingModel,mambaTransformerDuelingModel
 
 
 class Strategy(object):
@@ -103,16 +103,15 @@ class RL_evaluate():
         print(engine_info)
         # 準備模型
         # input_size, hidden_size, output_size, num_layers=1
-        model = COT_TransformerDuelingModel(
+        model = mambaTransformerDuelingModel(
                 d_model=engine_info['input_size'],
                 nhead=8,
                 d_hid=2048,
-                nlayers=4,
+                nlayers=8,
                 num_actions=self.evaluate_env.action_space.n,  # 假设有5种可能的动作
                 hidden_size=64,  # 使用隐藏层
                 seq_dim=self.BARS_COUNT,
                 dropout=0.1,  # 适度的dropout以防过拟合
-                num_iterations=1
             ).to(self.device)
         
         checkpoint = torch.load(
