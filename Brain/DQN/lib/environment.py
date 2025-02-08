@@ -46,7 +46,8 @@ class State:
         self.cost_sum = 0.0
         self.closecash = 0.0
         self.canusecash = 1.0
-        self.equity_peak = self.canusecash  # 可以用 1.0 或其它初始值
+        self.equity_peak = None  # 可以用 1.0 或其它初始值
+
         
     def step(self, action):
         """
@@ -93,6 +94,7 @@ class State:
                     close * (1 - self.default_slippage) - self.open_price) / self.open_price
                 self.open_price = 0.0
                 opencash_diff = 0.0
+                self.equity_peak = None
             else:
                 # 空仓卖出（可能是错误行为）
                 reward = -0.01  # 给予小的惩罚
@@ -105,26 +107,26 @@ class State:
         reward += self.canusecash - last_canusecash
 
 
+
         #  不要強制智體去交易
         if self.have_position:
-            # 1) 更新 equity_peak
-            if self.canusecash > self.equity_peak:
+            if self.equity_peak is None:
                 self.equity_peak = self.canusecash
+            else:
+                self.equity_peak = max(self.equity_peak, self.canusecash)
 
-            # 2) 計算當前 drawdown（只要能用 equity_peak - canusecash 即可）
+            # 计算标准drawdown：峰值与当前净值之间的下降比例
             current_drawdown = (self.equity_peak - self.canusecash) / self.equity_peak
-            
-            # 3) 給予某些懲罰權重，例如 0.1
             drawdown_penalty = 0.001 * current_drawdown
 
-            # 因為 drawdown 越大 -> 應越懲罰，所以是負的
             reward -= drawdown_penalty
         
         # 新獎勵設計
-        # print("目前部位",self.have_position,"單次手續費:",cost,"單次已平倉損益:",closecash_diff,"單次未平倉損益:", opencash_diff)
+        # print("起始損益：",self.equity_peak,"總資金:",self.canusecash)
+        # print("目前部位",float(self.have_position),"單次手續費:",cost,"單次已平倉損益:",closecash_diff,"單次未平倉損益:", opencash_diff)
         # print("目前動作:",action,"總資金:",self.canusecash,"手續費用累積:",self.cost_sum,"累積已平倉損益:",self.closecash,"獎勵差:",reward)
         # print('*'*120)
-
+        # time.sleep(10)
         # 上一個時步的狀態 ================================
 
         self._offset += 1
