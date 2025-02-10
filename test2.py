@@ -5,14 +5,15 @@ class Exp(torch.autograd.Function):
     @staticmethod
     def forward(ctx, i):
         result = i.exp()
+        print(result)
         ctx.save_for_backward(result)
         return result
     
     @staticmethod
     def backward(ctx, grad_output):
         result, = ctx.saved_tensors
-        print("目前外面的梯度為？")
-        print(grad_output)
+        print("目前ctx 裡面為？")
+        print(result)
         print('*'*120)
         return grad_output * result
     
