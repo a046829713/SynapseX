@@ -35,7 +35,7 @@ if __name__ == "__main__":
         python_env_path = r'C:\Users\user\Desktop\program\Reinforcement_learninng\Scripts\python.exe'
     else:
         # 否則假設是Linux或其他類Unix系統，使用對應的路徑
-        python_env_path = '/home/a046829713/RLTrading/bin/python'
+        python_env_path = '/home/a046829713/MambaRLtrading/bin/python'
     
     # 執行main函數，使用檢測到的python虛擬環境路徑
     main(exe_file_name='TradingSysteam.py', python_env_path=python_env_path)
