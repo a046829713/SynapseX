@@ -44,7 +44,8 @@ class RL_prepare(ABC):
 
     def _prepare_symbols(self):
         # symbols = ['PEOPLEUSDT','BTCUSDT', 'ENSUSDT', 'LPTUSDT', 'GMXUSDT', 'TRBUSDT', 'ARUSDT', 'XMRUSDT', 'ETHUSDT', 'AAVEUSDT', 'ZECUSDT', 'SOLUSDT', 'DEFIUSDT', 'ETCUSDT', 'LTCUSDT', 'BCHUSDT', 'ORDIUSDT', 'BNBUSDT', 'AVAXUSDT', 'MKRUSDT', 'BTCDOMUSDT']
-        symbols = ['TRBUSDT','BTCUSDT']
+        # symbols = ['TRBUSDT','BTCUSDT']
+        symbols = ['BTCUSDT']
         self.symbols = list(set(symbols))
         show_setting("SYMBOLS", self.symbols)
 
@@ -242,8 +243,10 @@ class Runner(RL_prepare):
         for r in rewards:
             ret_ = r + self.GAMMA * ret_
             Returns.append(ret_)
+        
         Returns = torch.stack(Returns).view(-1)
         Returns = F.normalize(Returns, dim=0)
+        
         advantages = Returns - values.detach()
         policy_loss = -(logprobs * advantages).mean()
         value_loss = F.mse_loss(values, Returns)

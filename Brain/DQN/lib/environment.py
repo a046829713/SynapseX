@@ -23,8 +23,6 @@ class State:
         self.default_slippage = default_slippage
 
         # 以下參數可根據需求調整
-        self.pullback_threshold = 0.02        # 當資產淨值回落超過2%時，認定為獲利拉回
-        self.bonus_factor = 0.01              # 在拉回時賣出可獲得的額外獎勵比例
         self.holding_reward_factor = 0.001    # 獲利持有時，每步獎勵
         self.holding_penalty_factor = 0.001   # 虧損持有時，按持有時間乘以虧損比例進行懲罰
         self.minimal_hold_period = 10         # 交易間至少需持有10步，否則交易會有額外懲罰
@@ -48,7 +46,6 @@ class State:
         self.cost_sum = 0.0
         self.closecash = 0.0
         self.canusecash = 1.0
-        self.equity_peak = None  # 用來追蹤持倉期間的資產淨值最高點
         self.last_trade_step = 0  # 用來記錄上次交易的步數
 
     def step(self, action):
@@ -86,19 +83,9 @@ class State:
                 cost = -self.commission_perc
                 # 計算平倉獲利率
                 realized_profit = (close * (1 - self.default_slippage) - self.open_price) / self.open_price
-                bonus = 0.0
-                # 若獲利且存在獲利拉回，額外獎勵
-                if realized_profit > 0 and self.equity_peak is not None:
-                    # 此處計算平倉時的近似當前淨值（未平倉獲利納入考慮）
-                    current_equity = 1.0 + self.cost_sum + self.closecash + (close - self.open_price) / self.open_price
-                    pullback = (self.equity_peak - current_equity) / self.equity_peak
-                    if pullback > self.pullback_threshold:
-                        bonus = self.bonus_factor * pullback
-                
-                reward += realized_profit + cost + bonus
+                reward += realized_profit + cost
                 self.have_position = False
                 self.open_price = 0.0
-                self.equity_peak = None
                 self.last_trade_step = self.game_steps
             else:
                 # 空倉賣出
@@ -108,12 +95,7 @@ class State:
             if self.have_position:
                 # 計算未平倉損益
                 unrealized_profit = (close - self.open_price) / self.open_price
-                # 更新持倉期間的淨值峰值
-                current_equity = 1.0 + self.cost_sum + self.closecash + unrealized_profit
-                if self.equity_peak is None:
-                    self.equity_peak = current_equity
-                else:
-                    self.equity_peak = max(self.equity_peak, current_equity)
+
                 if unrealized_profit >= 0:
                     # 獲利持倉，每步給予微小獎勵
                     reward += self.holding_reward_factor
