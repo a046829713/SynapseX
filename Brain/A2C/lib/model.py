@@ -17,6 +17,7 @@ class TransformerModel(torch.nn.Module):
                  hidden_size: int,
                  dropout: float = 0.1,
                  batch_first=True,
+                 mode='full'
                  ) -> None:
         """
             原本EncoderLayer 是使用官方的，後面因為訓練上難以收斂
@@ -41,7 +42,7 @@ class TransformerModel(torch.nn.Module):
 
         # 將資料映射
         self.embedding = nn.Sequential(
-            nn.Linear(d_model + n_actions + 1, hidden_size),
+            nn.Linear(d_model, hidden_size),
             nn.ReLU(),
             nn.Linear(hidden_size, hidden_size)
         )
@@ -58,19 +59,32 @@ class TransformerModel(torch.nn.Module):
         self.embed_ln = nn.LayerNorm(hidden_size)  # 層歸一化
 
         # 產生各動作選擇的機率
-        self.policy_head = nn.Linear(hidden_size, n_actions)
+        self.policy_head = nn.Sequential(
+            nn.Linear(2400, hidden_size),
+            nn.ReLU(),
+            nn.Linear(hidden_size, n_actions)
+        )
 
         # Critic 的 Value Head
-        self.value_head = nn.Linear(hidden_size, 1)
-        # 初始化權重
-        self.apply(self._init_weights)
+        self.value_head = nn.Sequential(
+            nn.Linear(2400, hidden_size),
+            nn.ReLU(),
+            nn.Linear(hidden_size, 1)
+        )
 
-    def _init_weights(self, m):
-        if isinstance(m, nn.Linear):
-            nn.init.kaiming_uniform_(m.weight, nonlinearity='relu')  # He初始化
-            if m.bias is not None:
-                nn.init.constant_(m.bias, 0)
+        self.dean = DAIN_Layer(mode=mode, input_dim=d_model)
 
+
+        self.linear = nn.Sequential(
+            nn.Linear(hidden_size, hidden_size // 2),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_size // 2, hidden_size // 4),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_size // 4, hidden_size // 8)
+        )
+        
     def forward(self, src: Tensor) -> Tensor:
         """
         Arguments:
@@ -80,7 +94,13 @@ class TransformerModel(torch.nn.Module):
             output Tensor of shape ``[batch_size, num_actions]``
 
         """
+        src = src.transpose(1, 2)
+        src = self.dean(src)
+        src = src.transpose(1, 2)
+
+
         src = self.embedding(src)
+
 
         # src = torch.Size([1, 300, 6])
         if self.batch_first:
@@ -95,12 +115,14 @@ class TransformerModel(torch.nn.Module):
         else:
             src = self.transformer_encoder(src.transpose(0, 1))
 
+        src = self.linear(src)
+        src = src.view(src.size(0), -1)
 
-        x = src.mean(dim=1)
+        policy_logits = self.policy_head(src)
 
-        policy_logits = self.policy_head(x)
+
         # Critic 输出
-        state_value = self.value_head(x)
+        state_value = self.value_head(src)
 
         return policy_logits, state_value
 

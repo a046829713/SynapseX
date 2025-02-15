@@ -14,7 +14,7 @@ from tensorboardX import SummaryWriter
 import time
 from abc import ABC, abstractmethod
 from Brain.A2C.lib.environment import Env, State_time_step
-from Brain.A2C.lib.model import ActorCriticModel
+from Brain.A2C.lib.model import ActorCriticModel,TransformerModel
 import copy 
 
 def show_setting(title: str, content: str):
@@ -83,7 +83,7 @@ class RL_prepare(ABC):
         self.DEFAULT_SLIPPAGE = 0.0025
         self.LEARNING_RATE = 0.0001  # optim 的學習率
         
-        self.ENTROPY_COEF = 0.01  # 熵损失系数
+        self.ENTROPY_COEF = 0.05  # 熵损失系数
         self.SAVES_PATH = "saves"  # 儲存的路徑
 
         self.CHECKPOINT_EVERY_STEP = 100
@@ -95,7 +95,7 @@ class RL_prepare(ABC):
         engine_info = self.train_env.engine_info()
 
         # 初始化模型和優化器
-        self.model = ActorCriticModel(
+        self.model = TransformerModel(
             d_model=engine_info['input_size'],
             nhead=4,
             d_hid=2048,
@@ -104,7 +104,6 @@ class RL_prepare(ABC):
             hidden_size=64,
             dropout=0.1,
             batch_first=True,
-            num_iterations=1
 
         ).to(self.device)
 
@@ -214,10 +213,11 @@ class Runner(RL_prepare):
                 self.model_tool.save_checkpoint({
                     'model_state_dict': self.model.state_dict(),
                     'optimizer_state_dict': self.optimizer.state_dict(),
-                }, os.path.join(self.saves_path, f"checkpoint{step % self.CHECKPOINT_EVERY_STEP}.pt"))
+                }, os.path.join(self.saves_path, f"checkpoint{int(step/self.CHECKPOINT_EVERY_STEP)}.pt"))
             
             if step % self.checkgrad_times == 0:
                 self.checkgrad()
+
     def checkgrad(self):
         # 打印梯度統計數據
         for name, param in self.model.named_parameters():
@@ -245,7 +245,10 @@ class Runner(RL_prepare):
             Returns.append(ret_)
         
         Returns = torch.stack(Returns).view(-1)
+
         Returns = F.normalize(Returns, dim=0)
+        # Returns = (Returns - Returns.mean()) / (Returns.std() + 1e-8)
+
         
         advantages = Returns - values.detach()
         policy_loss = -(logprobs * advantages).mean()

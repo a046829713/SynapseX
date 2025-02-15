@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import quantstats as qs
 from pathlib import Path
 from Brain.A2C.lib.environment import State_time_step, Env
-from Brain.A2C.lib.model import ActorCriticModel
+from Brain.A2C.lib.model import ActorCriticModel,TransformerModel
 from torch.distributions import Categorical
 import time
 
@@ -99,7 +99,7 @@ class RL_evaluate():
         print(engine_info)
         # 準備模型
         # input_size, hidden_size, output_size, num_layers=1
-        model = ActorCriticModel(
+        model = TransformerModel(
             d_model=engine_info['input_size'],
             nhead=4,
             d_hid=2048,
@@ -108,7 +108,6 @@ class RL_evaluate():
             hidden_size=64,
             dropout=0.1,
             batch_first=True,
-            num_iterations=3
 
         ).to(self.device)
         
