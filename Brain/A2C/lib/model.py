@@ -122,7 +122,7 @@ class TransformerModel(torch.nn.Module):
 
 
         # Critic 输出
-        state_value = self.value_head(src)
+        state_value = self.value_head(src.detach())
 
         return policy_logits, state_value
 

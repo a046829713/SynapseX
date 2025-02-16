@@ -272,62 +272,72 @@ class RL_Train(RL_prepare):
     def train(self):
         with common.RewardTracker(self.writer, np.inf, group_rewards=2) as reward_tracker:
             while True:
-                self.step_idx += 1
-                self.buffer.populate(1)
+                try:
 
-                # [(-2.5305491551459296, 10)]
-                # 跑了一輪之後,清空原本的數據,並且取得獎勵
-                new_rewards = self.exp_source.pop_rewards_steps()
+                    self.step_idx += 1
+                    self.buffer.populate(1)
 
-                if new_rewards:
-                    # mean_reward = reward_tracker.reward(
-                    #     new_rewards[0], self.step_idx, self.selector.epsilon)
+                    # [(-2.5305491551459296, 10)]
+                    # 跑了一輪之後,清空原本的數據,並且取得獎勵
+                    new_rewards = self.exp_source.pop_rewards_steps()
 
-                    # if isinstance(mean_reward, np.float64):
-                    #     # 探索率
-                    #     self.selector.update_epsilon(mean_reward)
-                    #     print("目前最新探索率:", self.selector.epsilon)
-                    # else:
-                    #     print("mean_reward:", mean_reward)
-                    reward_tracker.reward(
-                        new_rewards[0], self.step_idx, self.selector.epsilon)
-                    self.selector.epsilon = max(
-                        self.EPSILON_STOP, self.EPSILON_START - self.step_idx / self.EPSILON_STEPS)
+                    if new_rewards:
+                        # mean_reward = reward_tracker.reward(
+                        #     new_rewards[0], self.step_idx, self.selector.epsilon)
 
-                if not self.buffer.each_num_len_enough(init_size=self.REPLAY_INITIAL):
-                    continue
-                
-                self.optimizer.zero_grad()
-                batch = self.buffer.sample(self.BATCH_SIZE)
+                        # if isinstance(mean_reward, np.float64):
+                        #     # 探索率
+                        #     self.selector.update_epsilon(mean_reward)
+                        #     print("目前最新探索率:", self.selector.epsilon)
+                        # else:
+                        #     print("mean_reward:", mean_reward)
+                        reward_tracker.reward(
+                            new_rewards[0], self.step_idx, self.selector.epsilon)
+                        self.selector.epsilon = max(
+                            self.EPSILON_STOP, self.EPSILON_START - self.step_idx / self.EPSILON_STEPS)
 
-                loss_v = common.calc_loss(
-                    batch, self.net, self.tgt_net.target_model, self.GAMMA ** self.REWARD_STEPS, device=self.device)
+                    if not self.buffer.each_num_len_enough(init_size=self.REPLAY_INITIAL):
+                        continue
+                    
+                    self.optimizer.zero_grad()
+                    batch = self.buffer.sample(self.BATCH_SIZE)
 
-                if self.step_idx % self.WRITER_EVERY_STEP == 0:
-                    self.writer.add_scalar(
-                        "Loss_Value", loss_v.item(), self.step_idx)
-                loss_v.backward()
+                    loss_v = common.calc_loss(
+                        batch, self.net, self.tgt_net.target_model, self.GAMMA ** self.REWARD_STEPS, device=self.device)
 
-                if self.step_idx % self.checkgrad_times == 0:
-                    pass
-                    # self.checkgrad()
-                    self.checkwhight()
+                    if self.step_idx % self.WRITER_EVERY_STEP == 0:
+                        self.writer.add_scalar(
+                            "Loss_Value", loss_v.item(), self.step_idx)
+                    loss_v.backward()
 
-                self.optimizer.step()
-                if self.step_idx % self.TARGET_NET_SYNC == 0:
-                    self.tgt_net.sync()
+                    if self.step_idx % self.checkgrad_times == 0:
+                        pass
+                        # self.checkgrad()
+                        self.checkwhight()
 
-                # 在主訓練循環中的合適位置插入保存檢查點的代碼
-                if self.step_idx % self.CHECKPOINT_EVERY_STEP == 0:
-                    idx = self.step_idx // self.CHECKPOINT_EVERY_STEP
-                    checkpoint = {
-                        'step_idx': self.step_idx,
-                        'model_state_dict': self.net.state_dict(),
-                        # 'selector_state': self.selector.epsilon,
-                        'optimizer_state_dict': self.optimizer.state_dict(),
-                    }
-                    self.save_checkpoint(checkpoint, os.path.join(
-                        self.saves_path, f"checkpoint-{idx}.pt"))
+                    self.optimizer.step()
+                    if self.step_idx % self.TARGET_NET_SYNC == 0:
+                        self.tgt_net.sync()
+
+                    # 在主訓練循環中的合適位置插入保存檢查點的代碼
+                    if self.step_idx % self.CHECKPOINT_EVERY_STEP == 0:
+                        idx = self.step_idx // self.CHECKPOINT_EVERY_STEP
+                        checkpoint = {
+                            'step_idx': self.step_idx,
+                            'model_state_dict': self.net.state_dict(),
+                            # 'selector_state': self.selector.epsilon,
+                            'optimizer_state_dict': self.optimizer.state_dict(),
+                        }
+                        self.save_checkpoint(checkpoint, os.path.join(
+                            self.saves_path, f"checkpoint-{idx}.pt"))
+                    
+
+                except Exception as e:
+                    print("目前錯誤層級：訓練中")
+                    print("目前時間：",datetime.now())
+                    print("目前錯誤：",e)
+                    print('*'*120)
+                    time.sleep(10)
 
     def checkgrad(self):
         # 打印梯度統計數據
@@ -365,4 +375,8 @@ class RL_Train(RL_prepare):
 
 # 我認為可以訓練出通用的模型了
 # 多數據供應
-RL_Train()
+try:
+    RL_Train()
+except Exception as e:
+    print("目前時間：",datetime.now())
+    print("目前錯誤：",e)
