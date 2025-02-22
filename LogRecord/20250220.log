@@ -1,0 +1,107 @@
+2025-02-20 11:05 ERROR Traceback (most recent call last):
+  File "/home/b0457812963/RL_mamba/SynapseX/TradingSysteam.py", line 299, in main
+    last_status = self.generate_order_map()
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/b0457812963/RL_mamba/SynapseX/TradingSysteam.py", line 245, in generate_order_map
+    if_order_map = self.DQN_engin.get_if_order_map(finally_df)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/b0457812963/RL_mamba/SynapseX/Brain/DQN/lib/engine.py", line 27, in get_if_order_map
+    re_evaluate = RL_evaluate(each_strategy)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/b0457812963/RL_mamba/SynapseX/Brain/DQN/lib/Backtest.py", line 95, in __init__
+    self.agent = self.load_model(
+                 ^^^^^^^^^^^^^^^^
+  File "/home/b0457812963/RL_mamba/SynapseX/Brain/DQN/lib/Backtest.py", line 117, in load_model
+    checkpoint = torch.load(
+                 ^^^^^^^^^^^
+  File "/home/b0457812963/RL_mamba/lib/python3.12/site-packages/torch/serialization.py", line 1425, in load
+    with _open_file_like(f, "rb") as opened_file:
+         ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/b0457812963/RL_mamba/lib/python3.12/site-packages/torch/serialization.py", line 751, in _open_file_like
+    return _open_file(name_or_buffer, mode)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/b0457812963/RL_mamba/lib/python3.12/site-packages/torch/serialization.py", line 732, in __init__
+    super().__init__(open(name, mode))
+                     ^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'Brain/DQN/Meta/Meta-300B-30K.pt'
+
+2025-02-20 11:05 ERROR Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x7aac46b5b020>
+2025-02-20 11:07 ERROR Traceback (most recent call last):
+  File "/home/b0457812963/RL_mamba/SynapseX/TradingSysteam.py", line 299, in main
+    last_status = self.generate_order_map()
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/b0457812963/RL_mamba/SynapseX/TradingSysteam.py", line 245, in generate_order_map
+    if_order_map = self.DQN_engin.get_if_order_map(finally_df)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/b0457812963/RL_mamba/SynapseX/Brain/DQN/lib/engine.py", line 27, in get_if_order_map
+    re_evaluate = RL_evaluate(each_strategy)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/b0457812963/RL_mamba/SynapseX/Brain/DQN/lib/Backtest.py", line 95, in __init__
+    self.agent = self.load_model(
+                 ^^^^^^^^^^^^^^^^
+  File "/home/b0457812963/RL_mamba/SynapseX/Brain/DQN/lib/Backtest.py", line 120, in load_model
+    model.load_state_dict(checkpoint['model_state_dict'])
+  File "/home/b0457812963/RL_mamba/lib/python3.12/site-packages/torch/nn/modules/module.py", line 2581, in load_state_dict
+    raise RuntimeError(
+RuntimeError: Error(s) in loading state_dict for mambaTransformerDuelingModel:
+	size mismatch for dean.mean_layer.weight: copying a param with shape torch.Size([11, 11]) from checkpoint, the shape in current model is torch.Size([12, 12]).
+	size mismatch for dean.scaling_layer.weight: copying a param with shape torch.Size([11, 11]) from checkpoint, the shape in current model is torch.Size([12, 12]).
+	size mismatch for dean.gating_layer.weight: copying a param with shape torch.Size([11, 11]) from checkpoint, the shape in current model is torch.Size([12, 12]).
+	size mismatch for dean.gating_layer.bias: copying a param with shape torch.Size([11]) from checkpoint, the shape in current model is torch.Size([12]).
+	size mismatch for feature_embedding.0.weight: copying a param with shape torch.Size([64, 11]) from checkpoint, the shape in current model is torch.Size([64, 12]).
+
+2025-02-20 11:07 ERROR Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x7f43948492b0>
+2025-02-20 11:17 ERROR Traceback (most recent call last):
+  File "/home/b0457812963/RL_mamba/SynapseX/TradingSysteam.py", line 299, in main
+    last_status = self.generate_order_map()
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/b0457812963/RL_mamba/SynapseX/TradingSysteam.py", line 245, in generate_order_map
+    if_order_map = self.DQN_engin.get_if_order_map(finally_df)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/b0457812963/RL_mamba/SynapseX/Brain/DQN/lib/engine.py", line 27, in get_if_order_map
+    re_evaluate = RL_evaluate(each_strategy)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/b0457812963/RL_mamba/SynapseX/Brain/DQN/lib/Backtest.py", line 95, in __init__
+    self.agent = self.load_model(
+                 ^^^^^^^^^^^^^^^^
+  File "/home/b0457812963/RL_mamba/SynapseX/Brain/DQN/lib/Backtest.py", line 120, in load_model
+    model.load_state_dict(checkpoint['model_state_dict'])
+  File "/home/b0457812963/RL_mamba/lib/python3.12/site-packages/torch/nn/modules/module.py", line 2581, in load_state_dict
+    raise RuntimeError(
+RuntimeError: Error(s) in loading state_dict for mambaTransformerDuelingModel:
+	size mismatch for dean.mean_layer.weight: copying a param with shape torch.Size([11, 11]) from checkpoint, the shape in current model is torch.Size([12, 12]).
+	size mismatch for dean.scaling_layer.weight: copying a param with shape torch.Size([11, 11]) from checkpoint, the shape in current model is torch.Size([12, 12]).
+	size mismatch for dean.gating_layer.weight: copying a param with shape torch.Size([11, 11]) from checkpoint, the shape in current model is torch.Size([12, 12]).
+	size mismatch for dean.gating_layer.bias: copying a param with shape torch.Size([11]) from checkpoint, the shape in current model is torch.Size([12]).
+	size mismatch for feature_embedding.0.weight: copying a param with shape torch.Size([64, 11]) from checkpoint, the shape in current model is torch.Size([64, 12]).
+
+2025-02-20 11:17 ERROR Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x74312a770170>
+2025-02-20 12:02 ERROR Traceback (most recent call last):
+  File "/home/b0457812963/RL_mamba/SynapseX/TradingSysteam.py", line 299, in main
+    last_status = self.generate_order_map()
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/b0457812963/RL_mamba/SynapseX/TradingSysteam.py", line 245, in generate_order_map
+    if_order_map = self.DQN_engin.get_if_order_map(finally_df)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/b0457812963/RL_mamba/SynapseX/Brain/DQN/lib/engine.py", line 27, in get_if_order_map
+    re_evaluate = RL_evaluate(each_strategy)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/b0457812963/RL_mamba/SynapseX/Brain/DQN/lib/Backtest.py", line 95, in __init__
+    self.agent = self.load_model(
+                 ^^^^^^^^^^^^^^^^
+  File "/home/b0457812963/RL_mamba/SynapseX/Brain/DQN/lib/Backtest.py", line 120, in load_model
+    model.load_state_dict(checkpoint['model_state_dict'])
+  File "/home/b0457812963/RL_mamba/lib/python3.12/site-packages/torch/nn/modules/module.py", line 2581, in load_state_dict
+    raise RuntimeError(
+RuntimeError: Error(s) in loading state_dict for mambaTransformerDuelingModel:
+	size mismatch for dean.mean_layer.weight: copying a param with shape torch.Size([11, 11]) from checkpoint, the shape in current model is torch.Size([12, 12]).
+	size mismatch for dean.scaling_layer.weight: copying a param with shape torch.Size([11, 11]) from checkpoint, the shape in current model is torch.Size([12, 12]).
+	size mismatch for dean.gating_layer.weight: copying a param with shape torch.Size([11, 11]) from checkpoint, the shape in current model is torch.Size([12, 12]).
+	size mismatch for dean.gating_layer.bias: copying a param with shape torch.Size([11]) from checkpoint, the shape in current model is torch.Size([12]).
+	size mismatch for feature_embedding.0.weight: copying a param with shape torch.Size([64, 11]) from checkpoint, the shape in current model is torch.Size([64, 12]).
+
+2025-02-20 12:02 ERROR Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x796f40f5d820>

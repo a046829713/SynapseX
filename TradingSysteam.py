@@ -173,8 +173,8 @@ class AsyncTrading_system(Trading_system):
 
         self.checkDailydata()  # 檢查日線資料
 
-        self.dataprovider.reload_all_data(
-            time_type='1m', symbol_type='FUTURES')
+        # self.dataprovider.reload_all_data(
+        #     time_type='1m', symbol_type='FUTURES')
         
         self.process_target_symbol()  # 取得要交易的標的
 

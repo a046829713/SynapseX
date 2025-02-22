@@ -50,6 +50,9 @@ class EpsilonGreedyActionSelector(ActionSelector):
         return actions
 
     def update_epsilon(self, mean_reward: np.float64):
+        """
+            No use!!
+        """
         if self.last_reward is not None:
             if mean_reward > self.last_reward:
                 self.epsilon = max(self.epsilon_stop, self.epsilon - 0.001)  # 減小 epsilon

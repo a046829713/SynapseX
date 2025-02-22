@@ -59,8 +59,8 @@ class RL_prepare(ABC):
 
     def _prepare_symbols(self):
         
-        # symbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT', 'DOGEUSDT', 'SUIUSDT', 'ADAUSDT', 'ENAUSDT', 'LINKUSDT', 'HBARUSDT', 'LTCUSDT', 'XLMUSDT', 'WIFUSDT', 'BNBUSDT', 'ONDOUSDT', 'AAVEUSDT', 'WLDUSDT', 'AVAXUSDT', 'JUPUSDT', 'DOTUSDT', 'TRXUSDT', 'FILUSDT', 'ALGOUSDT', 'ZENUSDT', 'TIAUSDT', 'CRVUSDT', 'AGLDUSDT', 'POPCATUSDT', 'GALAUSDT', 'NEARUSDT']
-        symbols = ['BTCUSDT']
+        symbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT', 'DOGEUSDT', 'SUIUSDT', 'ADAUSDT', 'ENAUSDT', 'LINKUSDT', 'HBARUSDT', 'LTCUSDT', 'XLMUSDT', 'WIFUSDT', 'BNBUSDT', 'ONDOUSDT', 'AAVEUSDT', 'WLDUSDT', 'AVAXUSDT', 'JUPUSDT', 'DOTUSDT', 'TRXUSDT', 'FILUSDT', 'ALGOUSDT', 'ZENUSDT', 'TIAUSDT', 'CRVUSDT', 'AGLDUSDT', 'POPCATUSDT', 'GALAUSDT', 'NEARUSDT']
+        # symbols = ['BTCUSDT']
         self.symbols = list(set(symbols))
         print("There are symobls:", self.symbols)
 
@@ -87,7 +87,7 @@ class RL_prepare(ABC):
         self.SAVES_PATH = "saves"  # 儲存的路徑
         self.EPSILON_STOP = 0.1
         self.TARGET_NET_SYNC = 1000
-        self.CHECKPOINT_EVERY_STEP = 20000
+        self.CHECKPOINT_EVERY_STEP = 20000  
         self.VALIDATION_EVERY_STEP = 100000
         self.WRITER_EVERY_STEP = 100
         self.EPSILON_STEPS = 1000000 * len(self.symbols)
@@ -254,11 +254,13 @@ class RL_Train(RL_prepare):
             print("資料繼續運算模式")
             # 標準化路徑並分割
             self.saves_path = os.path.dirname(checkpoint_path)
-            checkpoint = torch.load(checkpoint_path)
+            checkpoint = torch.load(checkpoint_path, weights_only=False )
             self.net.load_state_dict(checkpoint['model_state_dict'])
+            self.tgt_net.target_model.load_state_dict(checkpoint['tgt_net_state_dict'])
             self.step_idx = checkpoint['step_idx']
             self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-            # self.selector.epsilon = checkpoint['selector_state']
+            self.selector.epsilon = max(self.EPSILON_STOP, self.EPSILON_START - self.step_idx / self.EPSILON_STEPS)
+            self.buffer.load_state(checkpoint['buffer_state'])
             print("目前epsilon:", self.selector.epsilon)
         else:
             print("建立新的儲存點")
@@ -291,8 +293,10 @@ class RL_Train(RL_prepare):
                         #     print("目前最新探索率:", self.selector.epsilon)
                         # else:
                         #     print("mean_reward:", mean_reward)
+
                         reward_tracker.reward(
                             new_rewards[0], self.step_idx, self.selector.epsilon)
+                        
                         self.selector.epsilon = max(
                             self.EPSILON_STOP, self.EPSILON_START - self.step_idx / self.EPSILON_STEPS)
 
@@ -324,9 +328,10 @@ class RL_Train(RL_prepare):
                         idx = self.step_idx // self.CHECKPOINT_EVERY_STEP
                         checkpoint = {
                             'step_idx': self.step_idx,
-                            'model_state_dict': self.net.state_dict(),
-                            # 'selector_state': self.selector.epsilon,
+                            'model_state_dict': self.net.state_dict(),                            
+                            'tgt_net_state_dict': self.tgt_net.target_model.state_dict(),                            
                             'optimizer_state_dict': self.optimizer.state_dict(),
+                            'buffer_state': self.buffer.get_state(),  # 保存緩衝區
                         }
                         self.save_checkpoint(checkpoint, os.path.join(
                             self.saves_path, f"checkpoint-{idx}.pt"))

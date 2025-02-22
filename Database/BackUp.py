@@ -5,7 +5,7 @@ import os
 from datetime import datetime
 import pandas as pd
 from sqlalchemy import text
-
+import time
 
 class BasePreparator:
     def __init__(self, backup_folder="backup", log_folder='LogRecord'):
@@ -78,11 +78,25 @@ class BasePreparator:
             將資料全部寫入MySQL
         """
         # 將所有的資料讀取出來開始處理
+        symbol_name_list = self.SQL.get_db_data('show tables;')
+        symbol_name_list = [y[0] for y in symbol_name_list] 
+
+
+
         for file in os.listdir(self.backup_folder):
             if file.endswith(".csv"):
                 table_name = file[:-4]
+
+
                 full_file_path = os.path.join(
                     self.backup_folder, file)  # 獲取完整的文件路徑
+
+
+                if table_name in symbol_name_list:
+                    print(f"開始刪除:資料名稱:{table_name}")
+                    os.remove(full_file_path)
+                    continue
+
 
                 # 資料類的(開高低收的)
                 if 'usdt' in table_name:
@@ -99,7 +113,8 @@ class BasePreparator:
 
                 print(f"開始刪除:資料名稱:{table_name}")
                 os.remove(full_file_path)
-
+                
+                
 
 class DatabaseBackupRestore:
     def __init__(self):

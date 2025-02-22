@@ -420,6 +420,28 @@ class Binance_server(object):
         order_times, _ = divmod(order_quantity, max_qty)
         return order_times, max_qty
 
+
+    def _optimize_leverage(self, client: Client, symbol: str, target_value: float):
+        """ 
+            Optimize leverage for a new symbol. 
+            
+            Don't use decorate SetConnectClose. the client has been sent.
+        """
+        leverage = 1
+        while True:
+            try:
+                response = client.futures_change_leverage(symbol, leverage=leverage)
+                if float(response["maxNotionalValue"]) > target_value:
+                    leverage += 1
+                else:
+                    response = client.futures_change_leverage(symbol, leverage=leverage - 1)
+                    break
+            except BinanceAPIException as e:
+                if e.code == -4028:  # Invalid leverage
+                    print(f"Max leverage reached for {symbol}")
+                    break
+                raise e
+    
     @SetConnectClose('all_user')
     def execute_orders(self, client: Client, order_finally: dict, model=ORDER_TYPE_MARKET, current_size=dict(), symbol_map=dict(), formal=False, current_line_token=''):
         """
@@ -492,54 +514,37 @@ class Binance_server(object):
                 print(f"交易對: {symbol}, leverage numbers: {leverage}")
                 leverage_map.update({symbol: leverage})
 
+        print(leverage_map)
+        print('*'*120)
+        
         for each_symbol, ready_to_order_size in order_finally.items():
             if leverage_map.get(each_symbol, None) is None:
-                def _change_leverage(_symbol):
-                    last_leverage = 0
-                    leverage = 1
-                    Response = client.futures_change_leverage(
-                        symbol=_symbol, leverage=leverage)
+                self._optimize_leverage(client = client, symbol = each_symbol, target_value = ready_to_order_size * symbol_map[each_symbol]['Close'].iloc[-1])
+            else:                
+                try:
+                    # 如果商品已經存在 直接呼叫
+                    # 判斷是否需要更改槓桿 不需要管正負號
+                    response = client.futures_change_leverage(
+                        symbol=each_symbol, leverage=leverage_map.get(each_symbol))
+
+                    print("直接取得原始槓桿:", response)
+                    beginleverage = leverage_map.get(each_symbol)
                     while True:
-                        try:
-                            # 比下單資金更大才行
-                            if float(Response['maxNotionalValue']) > ready_to_order_size * symbol_map[each_symbol]['Close'].iloc[-1]:
-                                last_leverage = leverage
-                                leverage += 1
-                                Response = client.futures_change_leverage(
-                                    symbol=_symbol, leverage=leverage)
-                            else:
-                                Response = client.futures_change_leverage(
-                                    symbol=_symbol, leverage=last_leverage)
-                                break
-
-                        except BinanceAPIException as e:
-                            if e.code == -4028:
-                                # 槓桿值無效。請選擇一個有效的槓桿值。
-                                print(
-                                    "Invalid leverage value. Please choose a valid leverage value.")
-                                # 已經沒辦法在大開更大的槓桿時,跳出
-                                break
-                            else:
-                                raise e
-
-                _change_leverage(each_symbol)
-            else:
-                # 如果商品已經存在 直接呼叫
-                # 判斷是否需要更改槓桿 不需要管正負號
-                Response = client.futures_change_leverage(
-                    symbol=each_symbol, leverage=leverage_map.get(each_symbol))
-
-                print("直接取得原始槓桿:", Response)
-                beginleverage = leverage_map.get(each_symbol)
-                while True:
-                    if (float(current_size[each_symbol]) + ready_to_order_size) * symbol_map[each_symbol]['Close'].iloc[-1] < float(Response['maxNotionalValue']):
-                        break
-                    time.sleep(0.3)
-                    beginleverage = beginleverage - 1
-                    Response = client.futures_change_leverage(
-                        symbol=each_symbol, leverage=beginleverage)
-                    print("調整槓桿:", Response)
-
+                        if (float(current_size[each_symbol]) + ready_to_order_size) * symbol_map[each_symbol]['Close'].iloc[-1] < float(response['maxNotionalValue']):
+                            break
+                        time.sleep(0.3)
+                        beginleverage = beginleverage - 1
+                        response = client.futures_change_leverage(
+                            symbol=each_symbol, leverage=beginleverage)
+                        print("調整槓桿:", response)
+                
+                except BinanceAPIException as e:
+                    if e.code == -4028:
+                        # APIError(code=-4028) Leverage 8 is not valid                         
+                        print("Binance possibly change the leverage value. We neet to reset the leverage.")
+                        self._optimize_leverage(client = client, symbol = each_symbol, target_value = ready_to_order_size * symbol_map[each_symbol]['Close'].iloc[-1])
+                    else:
+                        raise e
         # ===========================================================================================
         # 還要測試下單
         # for symbol, ready_to_order_size in order_finally.items():

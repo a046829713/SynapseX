@@ -4,6 +4,8 @@ import itertools
 from collections import deque
 import time
 from Brain.DQN.ptan.experience import ExperienceSource
+import torch
+
 
 class SequentialExperienceReplayBuffer:
     def __init__(self, experience_source, buffer_size, symbol_size:int):
@@ -67,11 +69,33 @@ class SequentialExperienceReplayBuffer:
         將樣本填入緩衝區中
         """
         for _ in range(samples):
-            entry = next(self.experience_source_iter)       
+            entry = next(self.experience_source_iter)
+
             if entry.info['instrument'] not in self.buffer:
                 self.buffer[entry.info['instrument']] = deque(maxlen=self.capacity)
             
             self.buffer[entry.info['instrument']].append(entry)
+
+    def get_state(self):
+        """
+            保存緩衝區的當前狀態。
+            返回一個字典，包含緩衝區數據和其他屬性。
+        """
+        return {
+            'buffer': self.buffer,  # 直接保存 dict of deque
+            'capacity': self.capacity,
+            'symbol_size': self.symbol_size,
+            'enough_sign': self.enough_sign
+        }
+
+    def load_state(self, state):
+        """
+        從保存的狀態加載緩衝區。
+        """
+        self.buffer = state['buffer']  # 直接還原 dict of deque
+        self.capacity = state['capacity']
+        self.symbol_size = state['symbol_size']
+        self.enough_sign = state['enough_sign']
 
 
 class ExperienceReplayBuffer:

@@ -2,7 +2,7 @@ from Database import router
 from sqlalchemy import text
 from utils import Debug_tool
 import pandas as pd
-
+import time
 
 class DB_operate():
     def get_db_data(self, text_msg: str) -> list:
