@@ -218,7 +218,7 @@ def example_simple_evaluate():
 
 # getAllDailyData()
 # example_reload_all_data(symbol_type="FUTURES",time_type = '1m')
-# example_get_symboldata()
+example_get_symboldata()
 # checksymbol(symbol='TUSDUSDT')
 # example_get_target_symbol(filter_type='VOLUME')
 
