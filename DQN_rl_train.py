@@ -260,7 +260,8 @@ class RL_Train(RL_prepare):
             self.step_idx = checkpoint['step_idx']
             self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
             self.selector.epsilon = max(self.EPSILON_STOP, self.EPSILON_START - self.step_idx / self.EPSILON_STEPS)
-            self.buffer.load_state(checkpoint['buffer_state'])
+            # 緩衝區資料過大 很難持續保存
+            # self.buffer.load_state(checkpoint['buffer_state'])
             print("目前epsilon:", self.selector.epsilon)
         else:
             print("建立新的儲存點")
@@ -331,7 +332,7 @@ class RL_Train(RL_prepare):
                             'model_state_dict': self.net.state_dict(),                            
                             'tgt_net_state_dict': self.tgt_net.target_model.state_dict(),                            
                             'optimizer_state_dict': self.optimizer.state_dict(),
-                            'buffer_state': self.buffer.get_state(),  # 保存緩衝區
+                            # 'buffer_state': self.buffer.get_state(),  # 保存緩衝區
                         }
                         self.save_checkpoint(checkpoint, os.path.join(
                             self.saves_path, f"checkpoint-{idx}.pt"))
