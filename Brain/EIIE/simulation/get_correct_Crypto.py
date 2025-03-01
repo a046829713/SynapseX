@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-
+import os
 
 def fix_data_different_len_and_na(df: pd.DataFrame):
     # 找出最長的歷史數據長度
@@ -48,9 +48,10 @@ def fix_data_different_len_and_na(df: pd.DataFrame):
 def generate_data(begin_time, end_time,tag:str = None):
     new_df = pd.DataFrame()
 
-    #  ['INJUSDT','BNBUSDT','ETCUSDT','LTCUSDT','TRBUSDT',"ENSUSDT","SOLUSDT",'ETHUSDT','BCHUSDT',"AVAXUSDT","BTCUSDT"]
-    for each_symbol in ['BNBUSDT','TRBUSDT',"SOLUSDT",'ETHUSDT',"BTCUSDT"]:
-        df = pd.read_csv(f'Brain\simulation\data\{each_symbol}-F-30-Min.csv')
+    
+    for each_symbol in ["BTCUSDT"]:
+        file_path = os.path.join("Brain","simulation","data",f"{each_symbol}-F-30-Min.csv")
+        df = pd.read_csv(file_path)
         df['tic'] = each_symbol
         df.rename(columns={"Datetime": 'date',
                            "Close": "close",
@@ -67,10 +68,11 @@ def generate_data(begin_time, end_time,tag:str = None):
     print(new_df)
 
     if tag == 'train':
-        new_df.to_csv(f'Brain\EIIE\simulation\{begin_time}-{end_time}-train_data.csv')
+        output_file_path = os.path.join("Brain","EIIE","simulation",f"{begin_time}-{end_time}-train_data.csv")
+        new_df.to_csv(output_file_path)
     elif tag == 'test':
         new_df.to_csv(r'Brain\EIIE\simulation\test_data.csv')
 
 
 if __name__ == '__main__':
-    generate_data(begin_time='2023-01-01', end_time='2023-12-31',tag='train')
+    generate_data(begin_time='2024-01-01', end_time='2024-12-31',tag='train')

@@ -81,14 +81,14 @@ class RL_prepare(ABC):
         self.GAMMA = 0.99
         self.MODEL_DEFAULT_COMMISSION_PERC = 0.0025
         self.DEFAULT_SLIPPAGE = 0.0025
-        self.LEARNING_RATE = 0.0001  # optim 的學習率
+        self.LEARNING_RATE = 0.00001  # optim 的學習率
         
         self.ENTROPY_COEF = 0.05  # 熵损失系数
         self.SAVES_PATH = "saves"  # 儲存的路徑
 
         self.CHECKPOINT_EVERY_STEP = 100
         self.VALUE_LOSS_COEF = 0.1  # 價值損失函數 critic損失函數
-        self.N_STEP = 200
+        self.N_STEP = 250
         self.checkgrad_times = 10
 
     def _prepare_model(self):
@@ -244,10 +244,11 @@ class Runner(RL_prepare):
             ret_ = r + self.GAMMA * ret_
             Returns.append(ret_)
         
+
         Returns = torch.stack(Returns).view(-1)
 
-        Returns = F.normalize(Returns, dim=0)
-        # Returns = (Returns - Returns.mean()) / (Returns.std() + 1e-8)
+        # Returns = F.normalize(Returns, dim=0)
+        Returns = (Returns - Returns.mean()) / (Returns.std() + 1e-8)
 
         
         advantages = Returns - values.detach()
@@ -258,7 +259,7 @@ class Runner(RL_prepare):
 
         self.optimizer.zero_grad()
         total_loss.backward()
-        # torch.nn.utils.clip_grad_norm_(self.model.parameters(), 0.5)
+        torch.nn.utils.clip_grad_norm_(self.model.parameters(), 0.5)
         self.optimizer.step()
         return values, rewards
     

@@ -99,21 +99,21 @@ class State:
             if self.have_position:
                 cost = -self.commission_perc
                 self.have_position = False
+                
                 # 計算出賣掉的資產變化率,並且累加起來
                 closecash_diff = (
                     close * (1 - self.default_slippage) - self.open_price) / self.open_price
                 
                 
-                
                 # 新增：記錄每筆交易績效
                 self.total_trades += 1
-                if closecash_diff > 0:
+
+                really_closecash_diff = closecash_diff - 2 * self.commission_perc
+                if really_closecash_diff > 0:
                     self.win_trades += 1
-                    self.total_win += closecash_diff
+                    self.total_win += really_closecash_diff
                 else:
-                    self.total_loss += closecash_diff  # closecash_diff 為負數代表虧損
-                
-                
+                    self.total_loss += really_closecash_diff  # closecash_diff 為負數代表虧損
                 
                 self.open_price = 0.0
                 opencash_diff = 0.0
@@ -187,10 +187,6 @@ class State_time_step(State):
 
     def encode(self):
         res = np.zeros(shape=self.shape, dtype=np.float32)
-
-
-
-
 
         ofs = self.bars_count
         for bar_idx in range(self.bars_count):

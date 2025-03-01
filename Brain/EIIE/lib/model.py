@@ -5,7 +5,7 @@ import time
 
 class GradientPolicy(nn.Module):
     def __init__(self):
-        """DDPG policy network initializer."""
+        """ DDPG policy network initializer."""
         super().__init__()
         # [batch_size, features, height, width]
         # 對於圖像來說，這四個維度分別代表了批次大小、

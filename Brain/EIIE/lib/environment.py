@@ -322,11 +322,13 @@ class PortfolioOptimizationEnv(gym.Env):
                     self._portfolio_value = np.sum(
                         portfolio)  # new portfolio value
                     weights = portfolio / self._portfolio_value  # new weights
+                    
             elif self._comission_fee_model == "trf":
                 last_mu = 1
                 # author to create mu is different paper
                 mu = 1 - 2 * self._comission_fee_pct + self._comission_fee_pct ** 2
 
+                print("計算前---","last_mu:",last_mu,"mu:",mu)
                 # 但是他這裡的算法是完全比照paper的
                 while abs(mu - last_mu) > 1e-10:
                     last_mu = mu
@@ -338,6 +340,9 @@ class PortfolioOptimizationEnv(gym.Env):
 
                 self._info["trf_mu"] = mu
                 self._portfolio_value = mu * self._portfolio_value
+                print("計算後---","last_mu:",last_mu,"mu:",mu)
+                print('*'*120)
+                time.sleep(5)
 
             # 儲存這一時間步的初始投資組合價值
             self._asset_memory["initial"].append(self._portfolio_value)

@@ -21,7 +21,7 @@ class State:
         self.bars_count = bars_count
         self.commission_perc = commission_perc
         self.default_slippage = default_slippage
-
+        self.win_payoff_weight = 1
         self.build_fileds(init_prices)
 
     def build_fileds(self, init_prices):
@@ -40,7 +40,12 @@ class State:
         self.closecash = 0.0
         self.canusecash = 1.0
         self.equity_peak = None  # 可以用 1.0 或其它初始值
-
+        
+        # 新增：初始化交易統計資料
+        self.total_trades = 0
+        self.win_trades = 0
+        self.total_win = 0.0
+        self.total_loss = 0.0
         
     def step(self, action):
         """
@@ -125,6 +130,20 @@ class State:
         # 判斷遊戲是否結束
         done |= self._offset >= self._prices.close.shape[0] - 1
         
+
+        if done:
+            if self.total_trades > 0:
+                win_rate = self.win_trades / self.total_trades
+                avg_win = self.total_win / self.win_trades if self.win_trades > 0 else 0.0
+                num_losses = self.total_trades - self.win_trades
+                avg_loss = abs(self.total_loss) / num_losses if num_losses > 0 else 0.0
+                payoff_ratio = avg_win / avg_loss if avg_loss > 0 else avg_win
+                extra_reward = self.win_payoff_weight * (win_rate * payoff_ratio)
+            else:
+                extra_reward = 0.0
+
+
+            reward += extra_reward
         return reward, done
 
 
