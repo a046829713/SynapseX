@@ -430,11 +430,11 @@ class Binance_server(object):
         leverage = 1
         while True:
             try:
-                response = client.futures_change_leverage(symbol, leverage=leverage)
+                response = client.futures_change_leverage(symbol=symbol, leverage=leverage)
                 if float(response["maxNotionalValue"]) > target_value:
                     leverage += 1
                 else:
-                    response = client.futures_change_leverage(symbol, leverage=leverage - 1)
+                    response = client.futures_change_leverage(symbol=symbol, leverage=leverage - 1)
                     break
             except BinanceAPIException as e:
                 if e.code == -4028:  # Invalid leverage
