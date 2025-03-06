@@ -6,7 +6,7 @@ from Brain.Common.transformer_tool import TransformerEncoderLayer, PositionalEnc
 from Brain.Common.dain import DAIN_Layer
 import time
 from einops import rearrange
-from Brain.Common.ssm_tool import MixerModel
+# from Brain.Common.ssm_tool import MixerModel
 
 class TransformerDuelingModel(nn.Module):
     def __init__(self,
