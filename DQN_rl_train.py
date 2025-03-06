@@ -261,7 +261,7 @@ class RL_Train(RL_prepare):
             self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
             self.selector.epsilon = max(self.EPSILON_STOP, self.EPSILON_START - self.step_idx / self.EPSILON_STEPS)
             # 緩衝區資料過大 很難持續保存
-            # self.buffer.load_state(checkpoint['buffer_state'])
+            self.buffer.load_state(checkpoint['buffer_state'])
             print("目前epsilon:", self.selector.epsilon)
         else:
             print("建立新的儲存點")
@@ -318,7 +318,7 @@ class RL_Train(RL_prepare):
                     if self.step_idx % self.checkgrad_times == 0:
                         pass
                         # self.checkgrad()
-                        self.checkwhight()
+                        # self.checkwhight()
 
                     self.optimizer.step()
                     if self.step_idx % self.TARGET_NET_SYNC == 0:
@@ -332,11 +332,18 @@ class RL_Train(RL_prepare):
                             'model_state_dict': self.net.state_dict(),                            
                             'tgt_net_state_dict': self.tgt_net.target_model.state_dict(),                            
                             'optimizer_state_dict': self.optimizer.state_dict(),
-                            # 'buffer_state': self.buffer.get_state(),  # 保存緩衝區
+                            'buffer_state': self.buffer.get_state(),  # 保存緩衝區
                         }
                         self.save_checkpoint(checkpoint, os.path.join(
                             self.saves_path, f"checkpoint-{idx}.pt"))
-                    
+
+                        rmfilepath = os.listdir(self.saves_path)
+                        savefiles = [f"checkpoint-{i + 1}.pt"  for i in range(idx-20 ,idx) if i>0 ]
+
+
+                        for file in rmfilepath:
+                            if file not in savefiles:                                
+                                os.remove(os.path.join(self.saves_path,file))
 
                 except Exception as e:
                     print("目前錯誤層級：訓練中")

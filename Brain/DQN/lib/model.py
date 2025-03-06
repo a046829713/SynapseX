@@ -377,11 +377,11 @@ class mambaTransformerDuelingModel(nn.Module):
             nn.Sigmoid()
         )
 
-        self.mixer = MixerModel(
-            d_model= hidden_size,
-            n_layer=nlayers,
-            d_intermediate=0
-        )
+        # self.mixer = MixerModel(
+        #     d_model= hidden_size,
+        #     n_layer=nlayers,
+        #     d_intermediate=0
+        # )
 
     def forward(self, src: Tensor) -> Tensor:
         # src: [batch_size, seq_len, d_model]
@@ -421,8 +421,12 @@ class mambaTransformerDuelingModel(nn.Module):
             src_embed = g * output + (1 - g) * src_embed
             src_embed = self.iteration_ln(src_embed)
         
-        src_embed = self.mixer(src_embed)
-        x = self.linear(src_embed)  
+
+        
+        # src_embed = self.mixer(src_embed)
+        x = self.linear(src_embed)
+
+
         x = x.view(x.size(0), -1)
 
         # 狀態值和優勢值
