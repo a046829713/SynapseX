@@ -23,7 +23,7 @@ class State:
         self.N_steps = 1000  # 這遊戲目前使用多少步學習
         self.model_train = model_train
         self.default_slippage = default_slippage
-        self.win_payoff_weight = 0.8
+        self.win_payoff_weight = 0.9
         self.build_fileds(init_prices)
 
     def build_fileds(self, init_prices):
