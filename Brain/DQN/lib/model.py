@@ -377,11 +377,11 @@ class mambaTransformerDuelingModel(nn.Module):
             nn.Sigmoid()
         )
 
-        self.mixer = MixerModel(
-            d_model= hidden_size,
-            n_layer=nlayers,
-            d_intermediate=0
-        )
+        # self.mixer = MixerModel(
+        #     d_model= hidden_size,
+        #     n_layer=nlayers,
+        #     d_intermediate=0
+        # )
 
     def forward(self, src: Tensor) -> Tensor:
         # src: [batch_size, seq_len, d_model]
@@ -423,7 +423,7 @@ class mambaTransformerDuelingModel(nn.Module):
         
 
         
-        src_embed = self.mixer(src_embed)
+        # src_embed = self.mixer(src_embed)
         x = self.linear(src_embed)
 
 

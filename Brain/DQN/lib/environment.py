@@ -171,8 +171,10 @@ class State:
             else:
                 extra_reward = 0.0
 
-
+            print("特殊獎勵：",extra_reward)
             reward += extra_reward
+        
+
         
         return reward, done
 
