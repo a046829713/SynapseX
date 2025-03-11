@@ -45,7 +45,7 @@ class RL_prepare(ABC):
         self._prepare_optimizer()
 
     def _prepare_keyword(self):
-        self.keyword = 'Transformer'
+        self.keyword = 'Mamba'
         self.show_setting("KEYWORD:", self.keyword)
 
     def show_setting(self, title: str, content: str):
@@ -98,7 +98,7 @@ class RL_prepare(ABC):
         self.checkgrad_times = 10000
 
     def _prepare_env(self):
-        if self.keyword == 'Transformer':
+        if self.keyword == 'Transformer' or 'Mamba':
             state = State_time_step(
                 init_prices=self.data[np.random.choice(
                     list(self.data.keys()))],
@@ -135,6 +135,15 @@ class RL_prepare(ABC):
         elif self.keyword == 'EfficientNetV2':
             self.net = EfficientnetV2SmallDuelingModel(
                 in_channels=1, num_actions=self.train_env.action_space.n).to(self.device)
+        
+        elif self.keyword == "Mamba":
+            self.net = model.mambaDuelingModel(
+                d_model=engine_info['input_size'],
+                nlayers=2,
+                num_actions=self.train_env.action_space.n,  # 假设有5种可能的动作
+                seq_dim=self.BARS_COUNT,
+                dropout=0.1,  # 适度的dropout以防过拟合
+            ).to(self.device)
 
         print("There is netWork model:", self.net.__class__)
 

@@ -377,11 +377,11 @@ class mambaTransformerDuelingModel(nn.Module):
             nn.Sigmoid()
         )
 
-        # self.mixer = MixerModel(
-        #     d_model= hidden_size,
-        #     n_layer=nlayers,
-        #     d_intermediate=0
-        # )
+        self.mixer = MixerModel(
+            d_model= hidden_size,
+            n_layer=nlayers,
+            d_intermediate=0
+        )
 
     def forward(self, src: Tensor) -> Tensor:
         # src: [batch_size, seq_len, d_model]
@@ -421,9 +421,7 @@ class mambaTransformerDuelingModel(nn.Module):
             src_embed = g * output + (1 - g) * src_embed
             src_embed = self.iteration_ln(src_embed)
         
-
-        
-        # src_embed = self.mixer(src_embed)
+        src_embed = self.mixer(src_embed)
         x = self.linear(src_embed)
 
 
@@ -432,6 +430,71 @@ class mambaTransformerDuelingModel(nn.Module):
         # 狀態值和優勢值
         value = self.fc_val(x)       # [B, 1]
         advantage = self.fc_adv(x)   # [B, num_actions]
+
+        q_values = value + (advantage - advantage.mean(dim=1, keepdim=True))
+        return q_values
+    
+
+
+class mambaDuelingModel(nn.Module):
+    def __init__(self,
+                 d_model: int,
+                 nlayers: int,
+                 num_actions: int,
+                 seq_dim: int = 300,
+                 dropout: float = 0.5,
+                 mode='full'):
+
+        super().__init__()
+        self.dean = DAIN_Layer(mode=mode, input_dim=d_model)
+
+        # 狀態值網絡
+        self.fc_val = nn.Sequential(
+            nn.Linear(seq_dim * d_model, 512),
+            nn.LayerNorm(512),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(512, 256),
+            nn.LayerNorm(256),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(256, 1)
+        )
+
+        # 優勢網絡
+        self.fc_adv = nn.Sequential(
+            nn.Linear(seq_dim * d_model, 512),
+            nn.LayerNorm(512),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(512, 256),
+            nn.LayerNorm(256),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(256, num_actions)
+        )
+
+        self.mixer = MixerModel(
+            d_model= d_model,
+            n_layer=nlayers,
+            d_intermediate=1
+        )
+
+
+    def forward(self, src: Tensor) -> Tensor:
+        # src: [batch_size, seq_len, d_model]
+
+        # 根據實測 rearrange 比較慢一些
+        # src = rearrange(src,'b l d -> b d l')        
+        src = src.transpose(1, 2)        
+        src = self.dean(src) # [B, seq_len, d_model]
+        src = src.transpose(1, 2)
+        src = self.mixer(src)
+        src = src.view(src.size(0), -1)
+
+        # 狀態值和優勢值
+        value = self.fc_val(src)       # [B, 1]
+        advantage = self.fc_adv(src)   # [B, num_actions]
 
         q_values = value + (advantage - advantage.mean(dim=1, keepdim=True))
         return q_values

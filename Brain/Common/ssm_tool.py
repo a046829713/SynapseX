@@ -20,7 +20,7 @@ try:
 except ImportError:
     RMSNorm, layer_norm_fn, rms_norm_fn = None, None, None
 
-import time
+
 # this code if from mamba_ssm.models import mixer_seq_simple
 def create_block(
     d_model,
@@ -89,6 +89,7 @@ def create_block(
             GatedMLP, hidden_features=d_intermediate, out_features=d_model, **factory_kwargs
         )
 
+
     # 建立一個 Block，並把上面定義好的 mixer, mlp, norm 全部放進去
     block = Block(
         d_model,
@@ -152,7 +153,7 @@ class MixerModel(nn.Module):
         norm_epsilon: float = 1e-5,
         rms_norm: bool = False,
         initializer_cfg=None,
-        fused_add_norm=False,
+        fused_add_norm=True,
         residual_in_fp32=False,
         device=None,
         dtype=None,
@@ -260,4 +261,5 @@ class MixerModel(nn.Module):
                 residual_in_fp32=self.residual_in_fp32,
                 is_rms_norm=isinstance(self.norm_f, RMSNorm)
             )
+
         return hidden_states
