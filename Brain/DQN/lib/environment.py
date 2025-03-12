@@ -23,7 +23,7 @@ class State:
         self.N_steps = 1000  # 這遊戲目前使用多少步學習
         self.model_train = model_train
         self.default_slippage = default_slippage
-        self.win_payoff_weight = 0.9
+        self.win_payoff_weight = 0.1
         self.build_fileds(init_prices)
 
     def build_fileds(self, init_prices):
@@ -166,12 +166,22 @@ class State:
                 avg_win = self.total_win / self.win_trades if self.win_trades > 0 else 0.0
                 num_losses = self.total_trades - self.win_trades
                 avg_loss = abs(self.total_loss) / num_losses if num_losses > 0 else 0.0
-                payoff_ratio = avg_win / avg_loss if avg_loss > 0 else avg_win
-                extra_reward = self.win_payoff_weight * (win_rate * payoff_ratio)
+                
+
+                print("獲勝勝率：",win_rate )
+                print("平均獲利：",avg_win )
+                print("獲勝期望值：",(win_rate * avg_win))
+                print("虧損率：",1-win_rate) 
+                print("平均虧損：",avg_loss)
+                print("虧損期望值：",((1-win_rate) * avg_loss))
+                print("總交易次數：",self.total_trades)
+                
+                extra_reward = self.win_payoff_weight * self.total_trades * ((win_rate * avg_win) - ((1-win_rate) * avg_loss))
             else:
                 extra_reward = 0.0
 
             print("特殊獎勵：",extra_reward)
+            print("*"*120)
             reward += extra_reward
         
 
