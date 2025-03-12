@@ -5,12 +5,11 @@ from functools import partial
 import copy
 import torch
 import torch.nn as nn
-
+from torch.nn import functional as F
 from mamba_ssm.models.config_mamba import MambaConfig
 from mamba_ssm.modules.mamba_simple import Mamba
 from mamba_ssm.modules.mamba2 import Mamba2
 from mamba_ssm.modules.mha import MHA
-from mamba_ssm.modules.mlp import GatedMLP
 from mamba_ssm.modules.block import Block
 from mamba_ssm.utils.generation import GenerationMixin
 from mamba_ssm.utils.hf import load_config_hf, load_state_dict_hf
@@ -19,6 +18,55 @@ try:
     from mamba_ssm.ops.triton.layer_norm import RMSNorm, layer_norm_fn, rms_norm_fn
 except ImportError:
     RMSNorm, layer_norm_fn, rms_norm_fn = None, None, None
+
+
+
+class GatedMLP(nn.Module):
+    def __init__(
+        self,
+        in_features,
+        hidden_features=None,
+        out_features=None,
+        activation=F.silu,
+        bias=False,
+        multiple_of=128,
+        dropout=None,
+        device=None,
+        dtype=None,
+    ):
+        """
+            Copyright (c) 2024, Tri Dao, Albert Gu.
+
+            change auther : Louis.
+        """
+        factory_kwargs = {"device": device, "dtype": dtype}
+        super().__init__()
+        out_features = out_features if out_features is not None else in_features
+        hidden_features = (
+            hidden_features if hidden_features is not None else int(8 * in_features / 3)
+        )
+        hidden_features = (hidden_features + multiple_of - 1) // multiple_of * multiple_of
+        self.fc1 = nn.Linear(in_features, 2 * hidden_features, bias=bias, **factory_kwargs)
+        self.activation = activation
+        self.fc2 = nn.Linear(hidden_features, out_features, bias=bias, **factory_kwargs)
+
+        self.dropout = None
+        if dropout is not None:
+            self.dropout = nn.Dropout(dropout)
+
+    def forward(self, x):
+        y = self.fc1(x)
+        y, gate = y.chunk(2, dim=-1)
+        if hasattr(self, 'dropout'):
+            y = self.dropout(y)  # 主路径 dropout
+            gate = self.dropout(gate)  # 门控路径 dropout
+        y = y * self.activation(gate)
+        if hasattr(self, 'dropout'):
+            y = self.dropout(y)  # 激活后 dropout
+        y = self.fc2(y)
+        return y
+
+
 
 
 # this code if from mamba_ssm.models import mixer_seq_simple
@@ -33,6 +81,7 @@ def create_block(
     residual_in_fp32=False,
     fused_add_norm=False,
     layer_idx=None,
+    dropout=None,
     device=None,
     dtype=None,
 ):
@@ -49,6 +98,7 @@ def create_block(
       4. 產生 MLP (如 d_intermediate > 0) 或 Identity。
       5. 將上述元件包裝成 Block。
     """
+    
     if ssm_cfg is None:
         ssm_cfg = {}
     if attn_layer_idx is None:
@@ -85,10 +135,11 @@ def create_block(
     if d_intermediate == 0:
         mlp_cls = nn.Identity
     else:
+        
         mlp_cls = partial(
-            GatedMLP, hidden_features=d_intermediate, out_features=d_model, **factory_kwargs
+            GatedMLP, hidden_features=d_intermediate, out_features=d_model, dropout = dropout, **factory_kwargs
         )
-
+        
 
     # 建立一個 Block，並把上面定義好的 mixer, mlp, norm 全部放進去
     block = Block(
@@ -157,6 +208,7 @@ class MixerModel(nn.Module):
         residual_in_fp32=False,
         device=None,
         dtype=None,
+        dropout=None
     ) -> None:
         """
         參數簡要:
@@ -180,6 +232,7 @@ class MixerModel(nn.Module):
         if self.fused_add_norm:
             if layer_norm_fn is None or rms_norm_fn is None:
                 raise ImportError("Failed to import Triton LayerNorm / RMSNorm kernels")
+        
 
         # 3. 建立 n_layer 個 Block (SSM/MHA + MLP + Norm)
         self.layers = nn.ModuleList(
@@ -195,12 +248,13 @@ class MixerModel(nn.Module):
                     residual_in_fp32=residual_in_fp32,
                     fused_add_norm=fused_add_norm,
                     layer_idx=i,
+                    dropout=dropout,
                     **factory_kwargs,
                 )
                 for i in range(n_layer)
             ]
         )
-
+        
         # 4. 最後再加一個 Norm 層（如 GPT 類模型會有一個最後的 LayerNorm）
         self.norm_f = (nn.LayerNorm if not rms_norm else RMSNorm)(
             d_model, eps=norm_epsilon, **factory_kwargs
@@ -215,6 +269,7 @@ class MixerModel(nn.Module):
                 n_residuals_per_layer=1 if d_intermediate == 0 else 2,
             )
         )
+        
 
 
     def forward(self, x, inference_params=None, **mixer_kwargs):

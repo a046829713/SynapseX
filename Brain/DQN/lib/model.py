@@ -442,7 +442,7 @@ class mambaDuelingModel(nn.Module):
                  nlayers: int,
                  num_actions: int,
                  seq_dim: int = 300,
-                 dropout: float = 0.5,
+                 dropout: float = 0.1,
                  mode='full'):
 
         super().__init__()
@@ -477,9 +477,10 @@ class mambaDuelingModel(nn.Module):
         self.mixer = MixerModel(
             d_model= d_model,
             n_layer=nlayers,
-            d_intermediate=1
+            d_intermediate=1,
+            dropout=dropout
         )
-
+        
 
     def forward(self, src: Tensor) -> Tensor:
         # src: [batch_size, seq_len, d_model]
