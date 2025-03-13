@@ -142,7 +142,7 @@ class RL_prepare(ABC):
                 nlayers=2,
                 num_actions=self.train_env.action_space.n,  # 假设有5种可能的动作
                 seq_dim=self.BARS_COUNT,
-                dropout=0.1,  # 适度的dropout以防过拟合
+                dropout=0.2,  # 适度的dropout以防过拟合
             ).to(self.device)
 
         print("There is netWork model:", self.net.__class__)
