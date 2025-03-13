@@ -1,1 +1,5 @@
 1.aimed to the Mamba MLP overfitting problem, we should add the dropout layer.
+re: It is work, but need more experiment.
+
+
+2.i want to try change the reward function, i want to know if do not consider the in time reward, only provider the eventually reward.

@@ -23,7 +23,7 @@ class State:
         self.N_steps = 1000  # 這遊戲目前使用多少步學習
         self.model_train = model_train
         self.default_slippage = default_slippage
-        self.win_payoff_weight = 0.2
+        self.win_payoff_weight = 1
         self.build_fileds(init_prices)
 
     def build_fileds(self, init_prices):
@@ -55,29 +55,25 @@ class State:
         self.total_win = 0.0
         self.total_loss = 0.0
 
-    def step(self, action):
+    def step(self, action:Actions):
         """
             重新設計
             最佳動作空間探索的獎勵函數
 
-            "找尋和之前所累積的獎勵之差距"
-
-            '我認為可以將持倉後的K棒數量也讓智能體知道'
-
         Args:
-            action (_type_): _description_
+            action (Actions): the action of Actions
+
+            1. 每次交易要立刻將手續費損失傳出
+            2. 持有部位的期間, 要不斷對於回徹做出懲罰
         """
         assert isinstance(action, Actions)
 
         reward = 0.0
         done = False
         close = self._prices.close[self._offset]
-        # 以平倉損益每局從新歸零
         closecash_diff = 0.0
-        # 未平倉損益
         opencash_diff = 0.0
-        # 手續費
-        cost = 0.0
+        cost =0.0
 
         # 第一根買的時候不計算未平倉損益
         if self.have_position:
@@ -89,17 +85,16 @@ class State:
                 self.have_position = True
                 # 記錄開盤價
                 self.open_price = close * (1 + self.default_slippage)
+                self.trade_bar = 1                
                 cost = -self.commission_perc
-                self.trade_bar = 1
+                reward -= self.commission_perc
             else:
                 # 已持有仓位，重复买入（可能是错误行为）
-                reward = -0.01  # 给予小的惩罚，鼓励合理交易
+                reward -= 0.01  # 给予小的惩罚，鼓励合理交易
 
         elif action == Actions.Sell:
-            if self.have_position:
-                cost = -self.commission_perc
-                self.have_position = False
-                
+            if self.have_position:                
+                self.have_position = False                
                 # 計算出賣掉的資產變化率,並且累加起來
                 closecash_diff = (
                     close * (1 - self.default_slippage) - self.open_price) / self.open_price
@@ -119,17 +114,18 @@ class State:
                 opencash_diff = 0.0
                 self.equity_peak = None
                 self.trade_bar = 0 
+
+                cost = -self.commission_perc
+                reward -= self.commission_perc
             else:
                 # 空仓卖出（可能是错误行为）
-                reward = -0.01  # 给予小的惩罚
+                reward -= 0.01  # 给予小的惩罚
 
         self.cost_sum += cost
         self.closecash += closecash_diff
-        last_canusecash = self.canusecash
         # 累積的概念為? 淨值 = 起始資金 + 手續費 +  已平倉損益 + 未平倉損益
         self.canusecash = 1.0 + self.cost_sum + self.closecash + opencash_diff
-        reward += self.canusecash - last_canusecash
-
+        
         #  不要強制智體去交易
         if self.have_position:
             if self.equity_peak is None:
@@ -137,20 +133,12 @@ class State:
             else:
                 self.equity_peak = max(self.equity_peak, self.canusecash)
 
-            # 计算标准drawdown：峰值与当前净值之间的下降比例
-            current_drawdown = (self.equity_peak - self.canusecash) / self.equity_peak
-            drawdown_penalty = 0.001 * current_drawdown
-
-            reward -= drawdown_penalty
-        
-        # 新獎勵設計
-        # print("起始損益：",self.equity_peak,"總資金:",self.canusecash)
-        # print("目前部位",float(self.have_position),"單次手續費:",cost,"單次已平倉損益:",closecash_diff,"單次未平倉損益:", opencash_diff)
-        # print("目前動作:",action,"總資金:",self.canusecash,"手續費用累積:",self.cost_sum,"累積已平倉損益:",self.closecash,"獎勵差:",reward)
-        # print('*'*120)
-        # time.sleep(10)
-        # 上一個時步的狀態 ================================
-
+            if self.equity_peak > 0:
+                # if have_position then caculate drawdown：峰值与当前净值之间的下降比例
+                current_drawdown = (self.equity_peak - self.canusecash) / self.equity_peak
+                drawdown_penalty = 0.001 * current_drawdown
+                reward -= drawdown_penalty
+                
         self._offset += 1
         self.game_steps += 1  # 本次遊戲次數
         # 判斷遊戲是否結束
@@ -166,8 +154,6 @@ class State:
                 avg_win = self.total_win / self.win_trades if self.win_trades > 0 else 0.0
                 num_losses = self.total_trades - self.win_trades
                 avg_loss = abs(self.total_loss) / num_losses if num_losses > 0 else 0.0
-                
-
                 print("獲勝勝率：",win_rate )
                 print("平均獲利：",avg_win )
                 print("獲勝期望值：",(win_rate * avg_win))
@@ -185,7 +171,9 @@ class State:
             reward += extra_reward
         
 
-        
+        # 新獎勵設計        
+        # print("本次總獎勵：",reward)
+        # print('*'*120)        
         return reward, done
 
 

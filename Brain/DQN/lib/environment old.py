@@ -23,7 +23,7 @@ class State:
         self.N_steps = 1000  # 這遊戲目前使用多少步學習
         self.model_train = model_train
         self.default_slippage = default_slippage
-
+        self.win_payoff_weight = 0.2
         self.build_fileds(init_prices)
 
     def build_fileds(self, init_prices):
@@ -41,14 +41,20 @@ class State:
         self._prices = prices
         self._offset = offset
         self.game_steps = 0  # 這次遊戲進行了多久
-        self.bar_dont_change_count = 0  # 計算K棒之間轉換過了多久
 
         self.cost_sum = 0.0
         self.closecash = 0.0
         self.canusecash = 1.0
         self.equity_peak = None  # 可以用 1.0 或其它初始值
         self.trade_bar = 0 # 用來紀錄持倉多久
+        self.bar_dont_change_count = 0  # 計算K棒之間轉換過了多久 感覺下一次實驗也可以將這個部份加入
         
+        # 新增：初始化交易統計資料
+        self.total_trades = 0
+        self.win_trades = 0
+        self.total_win = 0.0
+        self.total_loss = 0.0
+
     def step(self, action):
         """
             重新設計
@@ -93,9 +99,22 @@ class State:
             if self.have_position:
                 cost = -self.commission_perc
                 self.have_position = False
+                
                 # 計算出賣掉的資產變化率,並且累加起來
                 closecash_diff = (
                     close * (1 - self.default_slippage) - self.open_price) / self.open_price
+                
+                
+                # 新增：記錄每筆交易績效
+                self.total_trades += 1
+
+                really_closecash_diff = closecash_diff - 2 * self.commission_perc
+                if really_closecash_diff > 0:
+                    self.win_trades += 1
+                    self.total_win += really_closecash_diff
+                else:
+                    self.total_loss += really_closecash_diff  # closecash_diff 為負數代表虧損
+                
                 self.open_price = 0.0
                 opencash_diff = 0.0
                 self.equity_peak = None
@@ -140,6 +159,33 @@ class State:
         if self.game_steps == self.N_steps and self.model_train:
             done = True
 
+        # 若 episode 結束，加入根據勝率與賠率計算的額外獎勵
+        if done:
+            if self.total_trades > 0:
+                win_rate = self.win_trades / self.total_trades
+                avg_win = self.total_win / self.win_trades if self.win_trades > 0 else 0.0
+                num_losses = self.total_trades - self.win_trades
+                avg_loss = abs(self.total_loss) / num_losses if num_losses > 0 else 0.0
+                
+
+                print("獲勝勝率：",win_rate )
+                print("平均獲利：",avg_win )
+                print("獲勝期望值：",(win_rate * avg_win))
+                print("虧損率：",1-win_rate) 
+                print("平均虧損：",avg_loss)
+                print("虧損期望值：",((1-win_rate) * avg_loss))
+                print("總交易次數：",self.total_trades)
+                
+                extra_reward = self.win_payoff_weight * self.total_trades * ((win_rate * avg_win) - ((1-win_rate) * avg_loss))
+            else:
+                extra_reward = 0.0
+
+            print("特殊獎勵：",extra_reward)
+            print("*"*120)
+            reward += extra_reward
+        
+
+        
         return reward, done
 
 
@@ -153,10 +199,6 @@ class State_time_step(State):
 
     def encode(self):
         res = np.zeros(shape=self.shape, dtype=np.float32)
-
-
-
-
 
         ofs = self.bars_count
         for bar_idx in range(self.bars_count):
