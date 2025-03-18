@@ -116,7 +116,8 @@ class State:
                 self.trade_bar = 0 
 
                 cost = -self.commission_perc
-                reward -= self.commission_perc
+
+                reward = reward - self.commission_perc + really_closecash_diff
             else:
                 # 空仓卖出（可能是错误行为）
                 reward -= 0.01  # 给予小的惩罚
