@@ -45,7 +45,7 @@ class RL_prepare(ABC):
         self._prepare_optimizer()
 
     def _prepare_keyword(self):
-        self.keyword = 'Mamba'
+        self.keyword = 'Transformer'
         self.show_setting("KEYWORD:", self.keyword)
 
     def show_setting(self, title: str, content: str):
@@ -121,15 +121,16 @@ class RL_prepare(ABC):
         engine_info = self.train_env.engine_info()
 
         if self.keyword == 'Transformer':
-            self.net = model.mambaTransformerDuelingModel(
+            self.net = model.TransformerDuelingModel(
                 d_model=engine_info['input_size'],
                 nhead=8,
                 d_hid=2048,
-                nlayers=2,
+                nlayers=4,
                 num_actions=self.train_env.action_space.n,  # 假设有5种可能的动作
                 hidden_size=64,  # 使用隐藏层
                 seq_dim=self.BARS_COUNT,
                 dropout=0.1,  # 适度的dropout以防过拟合
+                num_iterations = 2
             ).to(self.device)
 
         elif self.keyword == 'EfficientNetV2':
