@@ -6,53 +6,9 @@ from Brain.Common.transformer_tool import TransformerEncoderLayer, PositionalEnc
 from Brain.Common.dain import DAIN_Layer
 import time
 from einops import rearrange
-# from Brain.Common.ssm_tool import MixerModel,GatedMLP
+from Brain.Common.ssm_tool import MixerModel,GatedMLP
 from torch.nn import functional as F
 
-class GatedMLP(nn.Module):
-    def __init__(
-        self,
-        in_features,
-        hidden_features=None,
-        out_features=None,
-        activation=F.silu,
-        bias=False,
-        multiple_of=128,
-        dropout=None,
-        device=None,
-        dtype=None,
-    ):
-        """
-            Copyright (c) 2024, Tri Dao, Albert Gu.
-
-            change auther : Louis.
-        """
-        factory_kwargs = {"device": device, "dtype": dtype}
-        super().__init__()
-        out_features = out_features if out_features is not None else in_features
-        hidden_features = (
-            hidden_features if hidden_features is not None else int(8 * in_features / 3)
-        )
-        hidden_features = (hidden_features + multiple_of - 1) // multiple_of * multiple_of
-        self.fc1 = nn.Linear(in_features, 2 * hidden_features, bias=bias, **factory_kwargs)
-        self.activation = activation
-        self.fc2 = nn.Linear(hidden_features, out_features, bias=bias, **factory_kwargs)
-
-        self.dropout = None
-        if dropout is not None:
-            self.dropout = nn.Dropout(dropout)
-
-    def forward(self, x):
-        y = self.fc1(x)
-        y, gate = y.chunk(2, dim=-1)
-        if hasattr(self, 'dropout'):
-            y = self.dropout(y)  # 主路径 dropout
-            gate = self.dropout(gate)  # 门控路径 dropout
-        y = y * self.activation(gate)
-        if hasattr(self, 'dropout'):
-            y = self.dropout(y)  # 激活后 dropout
-        y = self.fc2(y)
-        return y
 
 # class TransformerDuelingModel(nn.Module):
 #     def __init__(self,
@@ -512,3 +468,85 @@ class TransformerDuelingModel(nn.Module):
 
 #         q_values = value + (advantage - advantage.mean(dim=1, keepdim=True))
 #         return q_values
+
+
+
+class mamba2DuelingModel(nn.Module):
+    def __init__(self,
+                 d_model: int,
+                 nlayers: int,
+                 num_actions: int,
+                 seq_dim: int = 300,
+                 dropout: float = 0.1,
+                 hidden_size :int = 64,
+                 mode='full'):
+
+        super().__init__()
+        self.dean = DAIN_Layer(mode=mode, input_dim=d_model)
+
+        # 狀態值網絡
+        self.fc_val = nn.Sequential(
+            nn.Linear(seq_dim * d_model, 512),
+            nn.LayerNorm(512),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(512, 256),
+            nn.LayerNorm(256),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(256, 1)
+        )
+
+        # 優勢網絡
+        self.fc_adv = nn.Sequential(
+            nn.Linear(seq_dim * d_model, 512),
+            nn.LayerNorm(512),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(512, 256),
+            nn.LayerNorm(256),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(256, num_actions)
+        )
+
+        self.mixer = MixerModel(
+            d_model= hidden_size,
+            n_layer=nlayers,
+            d_intermediate=1,
+            ssm_cfg ={"layer": "Mamba2",},
+            dropout=dropout
+        )
+        
+        # 將資料映射至hidden_size維度
+        self.feature_embedding = nn.Sequential(
+            nn.Linear(d_model, hidden_size),
+            nn.ReLU(),
+            nn.Linear(hidden_size, hidden_size)
+        )
+
+    def forward(self, src: Tensor) -> Tensor:
+        # src: [batch_size, seq_len, d_model]
+
+        # 根據實測 rearrange 比較慢一些
+        # src = rearrange(src,'b l d -> b d l')
+                
+        src = src.transpose(1, 2)        
+        src = self.dean(src) # [B, seq_len, d_model]
+        src = src.transpose(1, 2)
+
+
+        src = self.feature_embedding(src)
+        
+
+        src = self.mixer(src)
+        src = src.view(src.size(0), -1)
+
+        # 狀態值和優勢值
+        value = self.fc_val(src)       # [B, 1]
+        advantage = self.fc_adv(src)   # [B, num_actions]
+
+        q_values = value + (advantage - advantage.mean(dim=1, keepdim=True))
+
+        print(q_values)
+        return q_values

@@ -113,9 +113,11 @@ def create_block(
         # 若不用 Attention，就用 Mamba1 or Mamba2 (SSM)
         ssm_cfg = copy.deepcopy(ssm_cfg) if ssm_cfg is not None else {}
         ssm_layer = ssm_cfg.pop("layer", "Mamba1")
+
         if ssm_layer not in ["Mamba1", "Mamba2"]:
             raise ValueError(f"Invalid ssm_layer: {ssm_layer}, only support Mamba1 and Mamba2")
 
+        
         mixer_cls = partial(
             Mamba2 if ssm_layer == "Mamba2" else Mamba,
             layer_idx=layer_idx,
@@ -130,7 +132,7 @@ def create_block(
     norm_cls = partial(
         nn.LayerNorm if not rms_norm else RMSNorm, eps=norm_epsilon, **factory_kwargs
     )
-
+    
     # 若 d_intermediate 為 0，則不需要 MLP，直接用 Identity
     if d_intermediate == 0:
         mlp_cls = nn.Identity
@@ -139,7 +141,6 @@ def create_block(
         mlp_cls = partial(
             GatedMLP, hidden_features=d_intermediate, out_features=d_model, dropout = dropout, **factory_kwargs
         )
-        
 
     # 建立一個 Block，並把上面定義好的 mixer, mlp, norm 全部放進去
     block = Block(

@@ -14,6 +14,7 @@ from abc import ABC
 from Brain.DQN.lib.EfficientnetV2 import EfficientnetV2SmallDuelingModel
 from Brain.Common.experience import SequentialExperienceReplayBuffer
 import torch.nn as nn
+import traceback
 
 # import builtins
 # import inspect
@@ -45,7 +46,7 @@ class RL_prepare(ABC):
         self._prepare_optimizer()
 
     def _prepare_keyword(self):
-        self.keyword = 'Transformer'
+        self.keyword = 'Mamba2'
         self.show_setting("KEYWORD:", self.keyword)
 
     def show_setting(self, title: str, content: str):
@@ -98,7 +99,7 @@ class RL_prepare(ABC):
         self.checkgrad_times = 10000
 
     def _prepare_env(self):
-        if self.keyword == 'Transformer' or 'Mamba':
+        if self.keyword == 'Transformer' or 'Mamba' or "Mamba2":
             state = State_time_step(
                 init_prices=self.data[np.random.choice(
                     list(self.data.keys()))],
@@ -139,6 +140,15 @@ class RL_prepare(ABC):
         
         elif self.keyword == "Mamba":
             self.net = model.mambaDuelingModel(
+                d_model=engine_info['input_size'],
+                nlayers=2,
+                num_actions=self.train_env.action_space.n,  # 假设有5种可能的动作
+                seq_dim=self.BARS_COUNT,
+                dropout=0.2,  # 适度的dropout以防过拟合
+            ).to(self.device)
+
+        elif self.keyword == "Mamba2":
+            self.net = model.mamba2DuelingModel(
                 d_model=engine_info['input_size'],
                 nlayers=2,
                 num_actions=self.train_env.action_space.n,  # 假设有5种可能的动作
@@ -353,6 +363,7 @@ class RL_Train(RL_prepare):
                     print("目前錯誤層級：訓練中")
                     print("目前時間：",datetime.now())
                     print("目前錯誤：",e)
+                    traceback.print_exc()
                     print('*'*120)
                     time.sleep(10)
 
