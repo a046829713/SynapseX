@@ -5,12 +5,11 @@ import torch
 import torch.nn as nn
 import pandas as pd
 import numpy as np
-import pandas as pd
 import time
 from utils.Debug_tool import debug
 from typing import Optional,Union
 class RewardTracker:
-    def __init__(self, writer, stop_reward, group_rewards=1):
+    def __init__(self, stop_reward, group_rewards=1):
         """用來追蹤紀錄獎勵資訊
 
         Args:
@@ -18,7 +17,6 @@ class RewardTracker:
             stop_reward (_type_): _description_
             group_rewards (int, optional): _description_. Defaults to 1.
         """
-        self.writer = writer
         self.stop_reward = stop_reward
         self.reward_buf = []
         self.steps_buf = []
@@ -76,13 +74,6 @@ class RewardTracker:
 
         sys.stdout.flush()
         
-        if epsilon is not None:
-            self.writer.add_scalar("epsilon", epsilon, frame)
-        self.writer.add_scalar("speed", speed, frame)
-        self.writer.add_scalar("reward_100", mean_reward, frame)
-        self.writer.add_scalar("reward", reward, frame)
-        self.writer.add_scalar("steps_100", mean_steps, frame)
-        self.writer.add_scalar("steps", steps, frame)
         if mean_reward > self.stop_reward:
             print("Solved in %d frames!" % frame)
             return True

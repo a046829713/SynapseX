@@ -1,0 +1,4 @@
+docker run -it --rm --gpus all --name RLTrain my-deeplearning:latest python3 DQN_rl_train.py
+
+
+docker run -it --rm --gpus all --name RLTrain -v "C:/Users/Louis/Desktop/workSpace/mambaRL/SynapseX:/SynapseX" louis0619/my-deeplearning:latest python3 DQN_rl_train.py

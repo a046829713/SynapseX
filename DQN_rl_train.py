@@ -71,7 +71,7 @@ class RL_prepare(ABC):
     def _prepare_writer(self):
         # 取得目前工作目錄，並在此目錄下建立 run 資料夾，並以時間戳記命名子資料夾
         log_dir = os.path.join(os.getcwd(), 'run', datetime.now().strftime("%Y%m%d-%H%M%S") + '-conv-')
-        self.writer = SummaryWriter(log_dir=log_dir)
+
 
     def _prepare_hyperparameters(self):
         self.BARS_COUNT = 300  # 用來準備要取樣的特徵長度,例如:開高低收成交量各取10根K棒
@@ -90,7 +90,6 @@ class RL_prepare(ABC):
         self.TARGET_NET_SYNC = 1000
         self.CHECKPOINT_EVERY_STEP = 20000  
         self.VALIDATION_EVERY_STEP = 100000
-        self.WRITER_EVERY_STEP = 100
         self.EPSILON_STEPS = 1000000 * len(self.symbols)
         self.EVAL_EVERY_STEP = 10000  # 每一萬步驗證一次
         self.NUM_EVAL_EPISODES = 10  # 每次评估的样本数
@@ -293,7 +292,7 @@ class RL_Train(RL_prepare):
             self.step_idx = 0
 
     def train(self):
-        with common.RewardTracker(self.writer, np.inf, group_rewards=2) as reward_tracker:
+        with common.RewardTracker(np.inf, group_rewards=2) as reward_tracker:
             while True:
                 try:
 
@@ -330,9 +329,6 @@ class RL_Train(RL_prepare):
                     loss_v = common.calc_loss(
                         batch, self.net, self.tgt_net.target_model, self.GAMMA ** self.REWARD_STEPS, device=self.device)
 
-                    if self.step_idx % self.WRITER_EVERY_STEP == 0:
-                        self.writer.add_scalar(
-                            "Loss_Value", loss_v.item(), self.step_idx)
                     loss_v.backward()
 
                     if self.step_idx % self.checkgrad_times == 0:
