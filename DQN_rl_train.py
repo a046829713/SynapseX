@@ -7,7 +7,6 @@ import torch.optim as optim
 from Brain.DQN import ptan
 from Brain.Common.DataFeature import OriginalDataFrature
 from datetime import datetime
-from tensorboardX import SummaryWriter
 import time
 from Brain.DQN.lib import model
 from abc import ABC
