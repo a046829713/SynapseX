@@ -45,7 +45,7 @@ class RL_prepare(ABC):
         self._prepare_optimizer()
 
     def _prepare_keyword(self):
-        self.keyword = 'Mamba2'
+        self.keyword = 'Mamba'
         self.show_setting("KEYWORD:", self.keyword)
 
     def show_setting(self, title: str, content: str):
@@ -332,7 +332,7 @@ class RL_Train(RL_prepare):
 
                     if self.step_idx % self.checkgrad_times == 0:
                         pass
-                        self.checkgrad()
+                        # self.checkgrad()
                         # self.checkwhight()
 
                     self.optimizer.step()
