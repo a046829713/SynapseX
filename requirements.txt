@@ -2,6 +2,12 @@ numpy<2.0.0
 gymnasium==0.29.1
 pandas==2.2.3
 packaging==25.0
-
-
+SQLAlchemy==2.0.35
+QuantStats==0.0.64
+ipython==8.32.0
+einops==0.8.0
+numba==0.60.0
+PyMySQL==1.1.1
+matplotlib
+tqdm
 python-binance # python-binance     1.0.29

@@ -73,9 +73,8 @@ class SqlSentense():
                 phone_number VARCHAR(255) PRIMARY KEY NOT NULL,
                 binance_api_account VARCHAR(255) NOT NULL,
                 binance_api_passwd VARCHAR(255) NOT NULL,
-                line_token VARCHAR(255) NOT NULL
+                telegram_token VARCHAR(255) NOT NULL
             );
-
         """
         return sql_query
     
@@ -88,7 +87,7 @@ class SqlSentense():
                             'phone_number': '1234567890',
                             'binance_api_account': 'new_account',
                             'binance_api_passwd': 'new_passwd',
-                            'line_token': 'new_token'
+                            'telegram_token': 'new_token'
                         }
         
         Returns:
@@ -97,12 +96,11 @@ class SqlSentense():
 
         sql_query = f"""
                     INSERT INTO `users` 
-                    (`phone_number`, `binance_api_account`, `binance_api_passwd`, `line_token`)
+                    (`phone_number`, `binance_api_account`, `binance_api_passwd`, `telegram_token`)
                     VALUES 
                     ('{result['phone_number']}', '{result['binance_api_account']}', 
-                    '{result['binance_api_passwd']}', '{result['line_token']}');
+                    '{result['binance_api_passwd']}', '{result['telegram_token']}');
                     """
-        print(sql_query)
         return sql_query
 
 

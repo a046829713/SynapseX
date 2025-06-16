@@ -5,7 +5,7 @@ from datetime import timedelta
 import datetime
 import time
 import threading
-from Infrastructure.AlertMsg import LINE_Alert
+from Infrastructure.AlertSystem import AlertSystem
 import pandas as pd
 import copy
 from utils import Debug_tool, Data_parser
@@ -35,6 +35,9 @@ class Trading_system():
         # 這次新產生的資料
         self.new_symbol_map = {}
         self.engine_setting = AppSetting.engine_setting()
+
+        
+       
 
     def buildEngine(self) -> None:
         """ 
@@ -264,8 +267,7 @@ class AsyncTrading_system(Trading_system):
 
     async def main(self):
         self.printfunc("Crypto_trading 正式交易啟動")
-        LINE_Alert().send_author("Crypto_trading 正式交易啟動")
-
+        AlertSystem.send_message_to_author("the system is begin")
         # 先將資料從DB撈取出來
         for name in self.targetsymbols:
             original_df, eachCatchDf = self.dataprovider.get_symboldata(

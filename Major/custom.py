@@ -23,7 +23,8 @@ from Database import SQL_operate
 import copy
 from tqdm.auto import tqdm
 from .UserManager import UserManager
-from Infrastructure.AlertMsg import LINE_Alert
+from Infrastructure.AlertSystem import AlertSystem
+
 
 
 def SetConnectClose(custom_user):
@@ -54,7 +55,7 @@ def SetConnectClose(custom_user):
                         new_args = (copy.deepcopy(args[0])[ID_phonenumber],)
                         new_kwargs = copy.deepcopy(kwargs)
                         new_kwargs['current_size'] = new_kwargs['current_size'][ID_phonenumber]
-                        new_kwargs['current_line_token'] = row[3]
+                        new_kwargs['current_telegram_token'] = row[3]
                         result = func(self, client, *new_args, **new_kwargs)
                         client.close_connection()
                 else:
@@ -443,7 +444,7 @@ class Binance_server(object):
                 raise e
     
     @SetConnectClose('all_user')
-    def execute_orders(self, client: Client, order_finally: dict, model=ORDER_TYPE_MARKET, current_size=dict(), symbol_map=dict(), formal=False, current_line_token=''):
+    def execute_orders(self, client: Client, order_finally: dict, model=ORDER_TYPE_MARKET, current_size=dict(), symbol_map=dict(), formal=False, current_telegram_token=''):
         """
             Execute orders to Binance.
             use for futures
@@ -478,7 +479,7 @@ class Binance_server(object):
             FOK (Fill-Or-Kill)：指示訂單立即全額執行（filled），否則將被取消（kill）。請注意，不支持冰山訂單。
 
 
-            line_alert: to send msg to LINE
+            telegram_alert: to send msg to telegram
 
             current_size:
                 {'BNBUSDT': '21.18', 'ETCUSDT': '2.35', 'XMRUSDT': '27.470',
@@ -554,15 +555,14 @@ class Binance_server(object):
         #     print(Response)
 
         self._execute_orders(client,
-                             model=model, order_finally=order_finally, formal=formal, current_line_token=current_line_token)
+                             model=model, order_finally=order_finally, formal=formal, current_telegram_token=current_telegram_token)
 
-    def _execute_orders(self, client: Client, model=ORDER_TYPE_MARKET, order_finally: dict = None, formal=False, current_line_token=''):
+    def _execute_orders(self, client: Client, model=ORDER_TYPE_MARKET, order_finally: dict = None, formal=False, current_telegram_token=''):
         """
             將下單邏輯分開方便除錯
 
         Args:
-            client (Client): _description_
-            line_alert (_type_): _description_
+            client (Client): _description_            
             model (_type_, optional): _description_. Defaults to ORDER_TYPE_MARKET.
             order_finally (dict, optional): _description_. Defaults to None.
             formal (bool, optional): _description_. Defaults to False.
@@ -602,8 +602,8 @@ class Binance_server(object):
                 else:
                     real_order = max_qty
 
-                LINE_Alert().req_line_alert(
-                    each_token=current_line_token, str_msg=f"商品:{symbol}\n買賣別:{order_side}\n委託單:{order_type}\n委託類別:{order_timeInForce}\n委託數量:{real_order}")
+                AlertSystem.send_message(each_token=current_telegram_token, str_msg=f"商品:{symbol}\n買賣別:{order_side}\n委託單:{order_type}\n委託類別:{order_timeInForce}\n委託數量:{real_order}")
+
 
                 if order_side == "SELL":
                     args = dict(side=order_side,
