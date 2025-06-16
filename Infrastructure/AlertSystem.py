@@ -45,7 +45,7 @@ class AlertSystem:
         if not data.get("ok"):
             print("Send Msg is failed.", data)
         else:
-            print(f"Mas has beem sent, Msg = {str_msg}")
+            print(f"Message has beem sent, Msg = {str_msg}")
 
     @staticmethod
     def send_message_to_author(str_msg: str):

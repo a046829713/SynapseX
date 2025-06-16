@@ -267,7 +267,8 @@ class AsyncTrading_system(Trading_system):
 
     async def main(self):
         self.printfunc("Crypto_trading 正式交易啟動")
-        AlertSystem.send_message_to_author("the system is begin")
+        AlertSystem.send_message_to_author("the Crypto system begin trading.")
+        
         # 先將資料從DB撈取出來
         for name in self.targetsymbols:
             original_df, eachCatchDf = self.dataprovider.get_symboldata(
