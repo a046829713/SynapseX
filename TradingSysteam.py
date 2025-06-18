@@ -244,6 +244,8 @@ class AsyncTrading_system(Trading_system):
         finally_df = self.dataprovider.get_trade_data(
             self.targetsymbols, self.symbol_map, freq=self.engine_setting['FREQ_TIME'])
 
+        
+
         # 在底層(oderbacktest會將最後一個拋棄)
         if_order_map = self.DQN_engin.get_if_order_map(finally_df)
 
@@ -262,6 +264,21 @@ class AsyncTrading_system(Trading_system):
 
         self.printfunc('目前交易狀態,校正之後', last_status)
 
+
+        # i want to reduce trade times.
+        if self.dataOnChangeTempStatus is None  and self.dataOnChangeLength==0:           
+            self.dataOnChangeTempStatus = copy.deepcopy(last_status)
+            self.dataOnChangeLength = len(finally_df)
+        else:            
+            if self.dataOnChangeLength == len(finally_df):
+                self.printfunc("目前長度為：",len(finally_df))
+                last_status = self.dataOnChangeTempStatus
+            else:
+                self.printfunc("資料有變目前長度為",len(finally_df))
+                self.dataOnChangeTempStatus = copy.deepcopy(last_status)
+                self.dataOnChangeLength = len(finally_df)
+
+        
         return last_status
 
 
@@ -279,6 +296,10 @@ class AsyncTrading_system(Trading_system):
         last_min = None
         self.printfunc("資料讀取結束")
 
+
+
+        self.dataOnChangeTempStatus =None
+        self.dataOnChangeLength = 0
         # 透過迴圈回補資料
         while not exit_event.is_set():
             try:
