@@ -103,7 +103,7 @@ class RL_evaluate():
         print(engine_info)
         # 準備模型
         # input_size, hidden_size, output_size, num_layers=1
-        net = model.mambaDuelingModel(
+        net = model.mamba2DuelingModel(
                 d_model=engine_info['input_size'],
                 nlayers=2,
                 num_actions=self.evaluate_env.action_space.n,  # 假设有5种可能的动作

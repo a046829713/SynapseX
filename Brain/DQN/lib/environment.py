@@ -54,6 +54,8 @@ class State:
         self.win_trades = 0
         self.total_win = 0.0
         self.total_loss = 0.0
+        
+        self.beforeBar = 50
 
     def step(self, action:Actions):
         """
@@ -75,30 +77,18 @@ class State:
         opencash_diff = 0.0
         cost =0.0
 
-        # 第一根買的時候不計算未平倉損益
+
         if self.have_position:
             opencash_diff = (close - self.open_price) / self.open_price
             self.trade_bar +=1
 
-        if action == Actions.Buy:
-            if not self.have_position:
-                self.have_position = True
-                # 記錄開盤價
-                self.open_price = close * (1 + self.default_slippage)
-                self.trade_bar = 1                
-                cost = -self.commission_perc
-                reward -= self.commission_perc
-            else:
-                # 已持有仓位，重复买入（可能是错误行为）
-                reward -= 0.01  # 给予小的惩罚，鼓励合理交易
-
-        elif action == Actions.Sell:
-            if self.have_position:                
+            if action == Actions.Buy:
+                reward -= 0.01  # When already holding a position, making an additional buy incurs a small penalty to encourage prudent trading.
+            
+            elif action == Actions.Sell:
                 self.have_position = False                
                 # 計算出賣掉的資產變化率,並且累加起來
-                closecash_diff = (
-                    close * (1 - self.default_slippage) - self.open_price) / self.open_price
-                
+                closecash_diff = (close * (1 - self.default_slippage) - self.open_price) / self.open_price                
                 
                 # 新增：記錄每筆交易績效
                 self.total_trades += 1
@@ -113,14 +103,30 @@ class State:
                 self.open_price = 0.0
                 opencash_diff = 0.0
                 self.equity_peak = None
-                self.trade_bar = 0 
-
+                self.trade_bar = 0
                 cost = -self.commission_perc
-
                 reward = reward - self.commission_perc + really_closecash_diff
-            else:
-                # 空仓卖出（可能是错误行为）
-                reward -= 0.01  # 给予小的惩罚
+                if close > self._prices.close[self._offset - self.beforeBar]:
+                    reward -=0.01
+
+            if not opencash_diff:
+                reward += 0.1 * opencash_diff
+
+        if not(self.have_position):
+            if action == Actions.Buy:
+                self.have_position = True
+                self.open_price = close * (1 + self.default_slippage)
+                self.trade_bar = 1                
+                cost = -self.commission_perc
+                reward -= self.commission_perc
+                # to reduce buy too low
+                if close < self._prices.close[self._offset - self.beforeBar]:
+                    reward -=0.01
+
+            elif action == Actions.Sell:
+                reward -= 0.01  # # When not hold a position, making an subtration incurs a small penalty to encourage prudent trading.
+
+
 
         self.cost_sum += cost
         self.closecash += closecash_diff
@@ -129,15 +135,12 @@ class State:
         
         #  不要強制智體去交易
         if self.have_position:
-            if self.equity_peak is None:
-                self.equity_peak = self.canusecash
-            else:
-                self.equity_peak = max(self.equity_peak, self.canusecash)
+            self.equity_peak = self.canusecash if self.equity_peak is None else max(self.equity_peak, self.canusecash)
 
             if self.equity_peak > 0:
                 # if have_position then caculate drawdown：峰值与当前净值之间的下降比例
                 current_drawdown = (self.equity_peak - self.canusecash) / self.equity_peak
-                drawdown_penalty = 0.001 * current_drawdown
+                drawdown_penalty = 0.0002 * current_drawdown
                 reward -= drawdown_penalty
                 
         self._offset += 1
@@ -167,8 +170,6 @@ class State:
             else:
                 extra_reward = 0.0
 
-            # print("特殊獎勵：",extra_reward)
-            # print("*"*120)
             reward += extra_reward
         
 
@@ -242,11 +243,10 @@ class Env(gym.Env):
         self._instrument = np.random.choice(list(self._prices.keys()))
         prices = self._prices[self._instrument]
 
-        bars = self._state.bars_count
         if self.random_ofs_on_reset:
-            offset = np.random.choice(prices.high.shape[0]-bars*10) + bars
+            offset = np.random.choice(prices.high.shape[0]-self._state.bars_count*10) + self._state.bars_count
         else:
-            offset = bars
+            offset = self._state.bars_count
 
         print("目前步數:", offset)
 

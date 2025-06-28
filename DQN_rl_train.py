@@ -81,7 +81,7 @@ class RL_prepare(ABC):
         self.REPLAY_SIZE = 100000
         self.EACH_REPLAY_SIZE = 50000
         self.REPLAY_INITIAL = 1000
-        self.LEARNING_RATE = 0.0001  # optim 的學習率
+        self.LEARNING_RATE = 0.00005  # optim 的學習率
         self.Lambda = 0  # optim L2正則化 Ridge regularization
         self.EPSILON_START = 0.9  # 起始機率(一開始都隨機運行)
         self.SAVES_PATH = "saves"  # 儲存的路徑
@@ -139,7 +139,7 @@ class RL_prepare(ABC):
         elif self.keyword == "Mamba":
             self.net = model.mambaDuelingModel(
                 d_model=engine_info['input_size'],
-                nlayers=2,
+                nlayers=4,
                 num_actions=self.train_env.action_space.n,  # 假设有5种可能的动作
                 seq_dim=self.BARS_COUNT,
                 dropout=0.2,  # 适度的dropout以防过拟合
@@ -331,8 +331,8 @@ class RL_Train(RL_prepare):
                     loss_v.backward()
 
                     if self.step_idx % self.checkgrad_times == 0:
-                        pass
-                        # self.checkgrad()
+                        
+                        self.checkgrad()
                         # self.checkwhight()
 
                     self.optimizer.step()
