@@ -103,12 +103,12 @@ class RL_evaluate():
         print(engine_info)
         # 準備模型
         # input_size, hidden_size, output_size, num_layers=1
-        net = model.mamba2DuelingModel(
+        net = model.mambaDuelingModel(
                 d_model=engine_info['input_size'],
-                nlayers=2,
+                nlayers=4,
                 num_actions=self.evaluate_env.action_space.n,  # 假设有5种可能的动作
                 seq_dim=self.BARS_COUNT,
-                dropout=0.2,  # 适度的dropout以防过拟合
+                dropout=0.3,  # 适度的dropout以防过拟合
             ).to(self.device)
         
         checkpoint = torch.load(

@@ -75,7 +75,7 @@ class RL_prepare(ABC):
     def _prepare_hyperparameters(self):
         self.BARS_COUNT = 300  # 用來準備要取樣的特徵長度,例如:開高低收成交量各取10根K棒
         self.GAMMA = 0.99
-        self.MODEL_DEFAULT_COMMISSION_PERC = 0.0025
+        self.MODEL_DEFAULT_COMMISSION_PERC = 0.0045
         self.DEFAULT_SLIPPAGE = 0.0025
         self.REWARD_STEPS = 2
         self.REPLAY_SIZE = 100000
@@ -142,7 +142,7 @@ class RL_prepare(ABC):
                 nlayers=4,
                 num_actions=self.train_env.action_space.n,  # 假设有5种可能的动作
                 seq_dim=self.BARS_COUNT,
-                dropout=0.2,  # 适度的dropout以防过拟合
+                dropout=0.3,  # 适度的dropout以防过拟合
             ).to(self.device)
 
         elif self.keyword == "Mamba2":
