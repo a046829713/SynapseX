@@ -60,8 +60,11 @@ class RL_prepare(ABC):
     def _prepare_symbols(self):
         
         symbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT', 'DOGEUSDT', 'SUIUSDT', 'ADAUSDT', 'ENAUSDT', 'LINKUSDT', 'HBARUSDT', 'LTCUSDT', 'XLMUSDT', 'WIFUSDT', 'BNBUSDT', 'ONDOUSDT', 'AAVEUSDT', 'WLDUSDT', 'AVAXUSDT', 'JUPUSDT', 'DOTUSDT', 'TRXUSDT', 'FILUSDT', 'ALGOUSDT', 'ZENUSDT', 'TIAUSDT', 'CRVUSDT', 'AGLDUSDT', 'POPCATUSDT', 'GALAUSDT', 'NEARUSDT']
+        
         # symbols = ['BTCUSDT']
+        
         self.symbols = list(set(symbols))
+        print(len(self.symbols))
         print("There are symobls:", self.symbols)
 
     def _prepare_data(self):
@@ -79,6 +82,7 @@ class RL_prepare(ABC):
         self.DEFAULT_SLIPPAGE = 0.0025
         self.REWARD_STEPS = 2
         self.REPLAY_SIZE = 100000
+        
         self.EACH_REPLAY_SIZE = 50000
         self.REPLAY_INITIAL = 1000
         self.LEARNING_RATE = 0.00005  # optim 的學習率
@@ -260,7 +264,7 @@ class RL_Train(RL_prepare):
             self.train_env, self.agent, self.GAMMA, steps_count=self.REWARD_STEPS)
 
         self.buffer = SequentialExperienceReplayBuffer(
-            self.exp_source, self.EACH_REPLAY_SIZE, len(self.symbols))
+            self.exp_source, self.EACH_REPLAY_SIZE, len(self.symbols),replay_initial_size=self.REPLAY_INITIAL)
 
         self.load_pre_train_model_state()
         self.train()
@@ -319,8 +323,10 @@ class RL_Train(RL_prepare):
                         self.selector.epsilon = max(
                             self.EPSILON_STOP, self.EPSILON_START - self.step_idx / self.EPSILON_STEPS)
 
-                    if not self.buffer.each_num_len_enough(init_size=self.REPLAY_INITIAL):
+                    if not self.buffer.each_num_len_enough():
                         continue
+                    
+
                     
                     self.optimizer.zero_grad()
                     batch = self.buffer.sample(self.BATCH_SIZE)

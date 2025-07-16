@@ -8,21 +8,29 @@ import torch
 
 
 class SequentialExperienceReplayBuffer:
-    def __init__(self, experience_source, buffer_size, symbol_size:int):
+    def __init__(self, experience_source, buffer_size, symbol_size:int,replay_initial_size:int):
         """
             Initialize the buffer with a source, capacity, and symbol count.
+
+            _count (int) : count the times.
         """
         assert isinstance(experience_source, (ExperienceSource, type(None)))
         assert isinstance(buffer_size, int)
         
+
         self.experience_source_iter = None if experience_source is None else iter(
             experience_source)
         
         # 用來儲存所有商品的空間
-        self.buffer = {}            
+        self.buffer = {}
+        self.sample_count_buffer = {}            
         self.capacity = buffer_size
+        self.replay_initial_size = replay_initial_size
+        assert self.capacity > replay_initial_size ,"The capacity is smaller than init_size, please change the capacity"
         self.symbol_size = symbol_size
-        self.enough_sign = False
+        self._count = 0
+        self._del_critical_len = 1000000
+
 
     def __len__(self):
         """
@@ -34,32 +42,34 @@ class SequentialExperienceReplayBuffer:
         """
         Count experiences per symbol.
         """
+
         return { key:len(self.buffer[key]) for key in self.buffer}
 
-    def each_num_len_enough(self, init_size:int):        
-        assert self.capacity > init_size ,"The capacity is smaller than init_size, please change the capacity"        
-        # 用來判斷神經網絡是否需要跳過，希望各商品都有充足的樣本可以使用
-        # 需要多個樣本都有了再開始判斷數量
-        if self.enough_sign:return self.enough_sign
-
-        if len(self.buffer) != self.symbol_size:
+    def each_num_len_enough(self): 
+        if self._count > self.replay_initial_size:
+            return True
+        else:
             return False
-        
-        self.enough_sign = all(len(deq) >= init_size for deq in self.buffer.values())
-        return self.enough_sign
     
+    def get_random_symbol(self):
+        return random.choice([ symbolName for symbolName,data in self.buffer.items() if len(data) > self.replay_initial_size])
+
+
     def sample(self, batch_size):
         """
-        Sample a batch of sequential experiences from a random symbol.
+            Sample a batch of sequential experiences from a random symbol.
         
         """
-        symbol = random.choice(list(self.buffer.keys()))
+        symbol  =self.get_random_symbol()
         data = self.buffer[symbol]
         start = random.randint(0, len(data) - batch_size)
         batch = list(itertools.islice(data, start, start + batch_size))
-
         offset = batch[0].info['offset']
         if all(exp.info['offset'] == offset + i for i, exp in enumerate(batch)):
+            if symbol not in self.sample_count_buffer:
+                self.sample_count_buffer[symbol] = 1
+            else:
+                 self.sample_count_buffer[symbol] += 1
             return batch
         
         return self.sample(batch_size)
@@ -75,6 +85,20 @@ class SequentialExperienceReplayBuffer:
                 self.buffer[entry.info['instrument']] = deque(maxlen=self.capacity)
             
             self.buffer[entry.info['instrument']].append(entry)
+            
+
+        self._count +=1
+        if sum(len(deq) for deq in self.buffer.values()) > self._del_critical_len:
+            self.dropsymbol()
+
+
+
+    def dropsymbol(self):
+        best_name = max(self.sample_count_buffer, key=self.sample_count_buffer.get)
+        self.buffer.pop(best_name)
+        self.sample_count_buffer.pop(best_name)
+        
+
 
     def get_state(self):
         """
@@ -85,7 +109,6 @@ class SequentialExperienceReplayBuffer:
             'buffer': self.buffer,  # 直接保存 dict of deque
             'capacity': self.capacity,
             'symbol_size': self.symbol_size,
-            'enough_sign': self.enough_sign
         }
 
     def load_state(self, state):
@@ -95,7 +118,7 @@ class SequentialExperienceReplayBuffer:
         self.buffer = state['buffer']  # 直接還原 dict of deque
         self.capacity = state['capacity']
         self.symbol_size = state['symbol_size']
-        self.enough_sign = state['enough_sign']
+        
 
 
 class ExperienceReplayBuffer:
