@@ -120,7 +120,7 @@ class Trading_system():
         all_symbols = self.dataprovider.get_symbols_history_data(
             symbol_type='FUTURES', time_type='1d')
 
-        return self.dataprovider.filter_useful_symbol(all_symbols, tag="VOLUME_TYPE")
+        return self.dataprovider.filter_useful_symbol(all_symbols, tag="MTM_TYPE")
 
     def export_all_tables(self):
         """
