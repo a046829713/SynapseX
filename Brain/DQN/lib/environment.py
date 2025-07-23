@@ -91,13 +91,6 @@ class RewardHelp():
             else:
                 total_loss += really_closecash_diff
 
-
-        # print("目前交易次數:",total_trades)
-        # print("目前勝利次數:",win_trades)
-        # print("目前總贏比例:",total_win)
-        # print("目前總輸比例:",total_loss)
-        # print('*'*120)
-        # time.sleep(1)
         return total_trades, win_trades, total_win, total_loss
 
     def Caculatetrade_bar(self, trade_bar: int, havePostion: bool, action: Actions) -> int:
@@ -300,17 +293,17 @@ class State:
                 num_losses = self.total_trades - self.win_trades
                 avg_loss = abs(self.total_loss) / \
                     num_losses if num_losses > 0 else 0.0
-                print("獲勝勝率：",win_rate )
-                print("平均獲利：",avg_win )
-                print("獲勝期望值：",(win_rate * avg_win))
-                print("虧損率：",1-win_rate)
-                print("平均虧損：",avg_loss)
-                print("虧損期望值：",((1-win_rate) * avg_loss))
-                print("總交易次數：",self.total_trades)
+                # print("獲勝勝率：",win_rate )
+                # print("平均獲利：",avg_win )
+                # print("獲勝期望值：",(win_rate * avg_win))
+                # print("虧損率：",1-win_rate)
+                # print("平均虧損：",avg_loss)
+                # print("虧損期望值：",((1-win_rate) * avg_loss))
+                # print("總交易次數：",self.total_trades)
                 extra_reward = self.win_payoff_weight * self.total_trades * \
                     ((win_rate * avg_win) - ((1-win_rate) * avg_loss))
-                print("總期望值:",extra_reward)
-                print('*'*120)
+                # print("總期望值:",extra_reward)
+                # print('*'*120)
             else:
                 extra_reward = 0.0
 
