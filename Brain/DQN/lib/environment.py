@@ -393,7 +393,7 @@ class Env(gym.Env):
         else:
             offset = self._state.bars_count
 
-        print("目前步數:", offset)
+        print("目前商品:",self._instrument,"目前步數:", offset)
 
         self._state.reset(prices, offset)
 

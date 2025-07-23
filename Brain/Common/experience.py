@@ -8,7 +8,7 @@ import torch
 
 
 class SequentialExperienceReplayBuffer:
-    def __init__(self, experience_source, buffer_size, symbol_size:int,replay_initial_size:int):
+    def __init__(self, experience_source, buffer_size,replay_initial_size:int):
         """
             Initialize the buffer with a source, capacity, and symbol count.
 
@@ -27,7 +27,7 @@ class SequentialExperienceReplayBuffer:
         self.capacity = buffer_size
         self.replay_initial_size = replay_initial_size
         assert self.capacity > replay_initial_size ,"The capacity is smaller than init_size, please change the capacity"
-        self.symbol_size = symbol_size
+        
         self._count = 0
         self._del_critical_len = 1000000
 
@@ -108,7 +108,6 @@ class SequentialExperienceReplayBuffer:
         return {
             'buffer': self.buffer,  # 直接保存 dict of deque
             'capacity': self.capacity,
-            'symbol_size': self.symbol_size,
         }
 
     def load_state(self, state):
@@ -117,7 +116,7 @@ class SequentialExperienceReplayBuffer:
         """
         self.buffer = state['buffer']  # 直接還原 dict of deque
         self.capacity = state['capacity']
-        self.symbol_size = state['symbol_size']
+
         
 
 

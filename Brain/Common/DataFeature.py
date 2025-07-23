@@ -187,18 +187,18 @@ class OriginalDataFrature():
         out_dict.update({symbol: self.load_relative()})
         return out_dict
 
-    def get_train_net_work_data_by_path(self, symbols: list) -> dict:
+    def get_train_net_work_data_by_path(self, symbolNames: list) -> dict:
         """
             用來取得類神經網絡所需要的資料
         """
         out_dict = {}
-        for symbol in symbols:
+        for symbolName in symbolNames:
             df = pd.read_csv(
-                f'Brain/simulation/data/{symbol}-F-30-Min.csv')
+                f'Brain/simulation/data/{symbolName}.csv')
             df.set_index('Datetime', inplace=True)
             self.df = self.cleanData(df)
             # 使用 PyTorch Tensor 的方法
-            out_dict.update({symbol: self.load_relative()})
+            out_dict.update({symbolName: self.load_relative()})
 
         return out_dict
 

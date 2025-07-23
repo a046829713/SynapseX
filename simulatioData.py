@@ -1,5 +1,4 @@
 import pandas as pd
-import matplotlib.pyplot as plt
 import numpy as np
 
 
@@ -15,7 +14,7 @@ def clip(x):
 def genrateDate(symbols:list,repetTimes:int):
     for symbol in symbols:
         # 讀入原始資料
-        df = pd.read_csv(f"/home/b0457812963/MambaRL/SynapseX/Brain/simulation/data/{symbol}-F-30-Min.csv")
+        df = pd.read_csv(rf"C:\Users\Louis\Desktop\workSpace\mambaRL\SynapseX\Brain\simulation\data\{symbol}-F-30-Min.csv")
 
 
         for i in range(repetTimes):
@@ -63,7 +62,7 @@ def genrateDate(symbols:list,repetTimes:int):
 
 
             new_df.set_index('Datetime',inplace=True)
-            new_df.to_csv(f'/home/b0457812963/MambaRL/SynapseX/Brain/simulation/data/{symbol}-F-30-Min-Fake{i}.csv')
+            new_df.to_csv(rf'C:\Users\Louis\Desktop\workSpace\mambaRL\SynapseX\Brain\simulation\data\{symbol}-F-30-Min-Fake{i}.csv')
 
 symbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT', 'DOGEUSDT', 'SUIUSDT', 'ADAUSDT', 'ENAUSDT', 'LINKUSDT', 'HBARUSDT', 'LTCUSDT', 'XLMUSDT', 'WIFUSDT', 'BNBUSDT', 'ONDOUSDT', 'AAVEUSDT', 'WLDUSDT', 'AVAXUSDT', 'JUPUSDT', 'DOTUSDT', 'TRXUSDT', 'FILUSDT', 'ALGOUSDT', 'ZENUSDT', 'TIAUSDT', 'CRVUSDT', 'AGLDUSDT', 'POPCATUSDT', 'GALAUSDT', 'NEARUSDT']
 genrateDate(symbols,repetTimes=10)
