@@ -215,7 +215,7 @@ class Datatransformer:
             print('*'*120)
 
         return []
-    def get_mtm_filter_symbol(self, all_symbols):
+    def get_mtm_filter_symbol(self, all_symbols, max_symbols: int):
         """
             將過濾完的標的(can trade symobl)輸出
         """
@@ -233,8 +233,9 @@ class Datatransformer:
                             [symbolname.split('-')[0].upper(), mom_num.iloc[-1]])
 
         sort_example = sorted(out_list, key=lambda x: x[1], reverse=True)
-        return sort_example
-
+        
+        return [eachrow[0] for eachrow in sort_example[:max_symbols]]
+    
     def get_volume_top_filter_symobl(self, all_symbols, max_symbols: int, last_sum_day:int = 10):
         """
             取得時間範圍內成交金額最高的前幾名

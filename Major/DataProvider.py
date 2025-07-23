@@ -208,7 +208,7 @@ class DataProvider:
         if tag == 'VOLUME_TYPE':
             return self.datatransformer.get_volume_top_filter_symobl(all_symbols, max_symbols=10)
         elif tag == 'MTM_TYPE':
-            return self.datatransformer.get_mtm_filter_symbol(all_symbols)
+            return self.datatransformer.get_mtm_filter_symbol(all_symbols, max_symbols=10)
 
     def last_profolio_adjust_time(self):
         data = self.SQL.get_db_data('select * from interval_record')

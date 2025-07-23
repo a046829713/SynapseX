@@ -1,0 +1,18 @@
+2025-07-23 19:16 ERROR Traceback (most recent call last):
+  File "/home/b0457812963/MambaRL/SynapseX/Major/DataProvider.py", line 91, in reload_all_data
+    original_df, eachCatchDf = self.reload_data(
+                               ^^^^^^^^^^^^^^^^^
+  File "/home/b0457812963/MambaRL/SynapseX/Major/DataProvider.py", line 62, in reload_data
+    original_df, eachCatchDf = self.Binanceapp.BinanceData.download(
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/b0457812963/MambaRL/SynapseX/Major/custom.py", line 44, in wrapper
+    result = func(self, client, *args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/b0457812963/MambaRL/SynapseX/Major/custom.py", line 270, in download
+    klines = cls.historicalklines(symbol, kline_size, oldest_point.strftime("%d %b %Y %H:%M:%S"),
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/b0457812963/MambaRL/SynapseX/Major/custom.py", line 161, in historicalklines
+    time.sleep(1)
+KeyboardInterrupt
+
+2025-07-23 19:16 ERROR symbol = HOTUSDT
