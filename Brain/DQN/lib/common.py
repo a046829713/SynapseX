@@ -141,7 +141,13 @@ def turn_to_tensor(infos,device):
 
 def calc_loss(batch, net, tgt_net, gamma, device="cpu"):
     """
-    ************************************************************************************************************************   
+        計算 DQN 的 MSE loss，並同時計算每筆 transition 的 TD‐error。
+
+        Returns:
+            loss: torch.Tensor            # 均方誤差損失  
+            td_errors: torch.Tensor      # shape=(batch_size,)
+
+
     state_action_values like this : tensor([ 0.0645,  0.0453,  0.0322,  0.0556, -0.0476, -0.0432,  0.0252,  0.0906,
          0.0539,  0.0750,  0.0675,  0.0596, -0.0412,  0.0456,  0.0526, -0.0150,
          0.0530,  0.0434,  0.0388, -0.0372,  0.0480,  0.0358,  0.0743,  0.0275,
@@ -157,18 +163,31 @@ def calc_loss(batch, net, tgt_net, gamma, device="cpu"):
     infos = turn_to_tensor(infos,device=device)
     last_infos = turn_to_tensor(last_infos,device=device)
 
+
+    # 1) Q(s,a)  —— current network
     state_action_values = net(states_v).gather(
         1, actions_v.unsqueeze(-1)).squeeze(-1)
     
+
+    # 2) max_a' Q_target(s',a')  —— double DQN
     next_state_actions = net(next_states_v).max(1)[1]
 
     next_state_values = tgt_net(next_states_v).gather(
         1, next_state_actions.unsqueeze(-1)).squeeze(-1)
     
     next_state_values[done_mask] = 0.0
+
+
+    # 3) build TD target: y = r + γ·max_a' Q_target(s',a')
+    expected_values = rewards_v + gamma * next_state_values.detach()
+
+
+    # 4) TD‐errors = y - Q(s,a)
+    td_errors = expected_values - state_action_values         # shape=[B]
+
     # detach 單純的tensor 沒有grad_fn
     expected_state_action_values = next_state_values.detach() * gamma + rewards_v 
-    return nn.MSELoss()(state_action_values, expected_state_action_values)
+    return nn.MSELoss()(state_action_values, expected_state_action_values), td_errors
 
 
 def update_eval_states(buffer, STATES_TO_EVALUATE):

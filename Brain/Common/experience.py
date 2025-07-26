@@ -5,6 +5,67 @@ from collections import deque
 import time
 from Brain.DQN.ptan.experience import ExperienceSource
 import torch
+import random
+from collections import namedtuple, deque
+import numpy as np
+
+
+
+class PrioritizedStratifiedReplayBuffer:
+    def __init__(self, experience_source, batch_size:int, each_symbol_size:int, capacity:int,each_capacity:int):
+        """
+            batch_size (int): batch_size input model.
+        """
+        assert isinstance(experience_source, (ExperienceSource, type(None)))
+        assert batch_size % each_symbol_size == 0
+        assert isinstance(batch_size, int)
+        self.experience_source_iter = None if experience_source is None else iter(
+            experience_source)
+        
+        self.batch_size = batch_size
+        self.symbol_len = self.batch_size / each_symbol_size
+
+        self.symbols = []
+        self.buffer ={}
+        self.capacity = capacity
+        self.each_capacity = each_capacity
+
+
+    def add(self, samples, td_error):
+        """
+            將樣本填入緩衝區中
+        """
+        for _ in range(samples):
+            entry = next(self.experience_source_iter)
+            print(entry)
+            time.sleep(100)
+            if entry.info['instrument'] not in self.buffer:
+                self.buffer[entry.info['instrument']] = deque(maxlen=self.each_capacity)
+            
+            self.buffer[entry.info['instrument']].append(entry)
+
+    
+    def choose_symbols(self)->list:
+        pass
+
+
+    def sample(self,batch_size:int):
+        pass
+
+    
+    def dropsymbol(self):
+        """
+            remove the minum prioritized 
+        """
+        pass
+
+
+
+
+
+
+
+
 
 
 class SequentialExperienceReplayBuffer:

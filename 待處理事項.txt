@@ -1,0 +1,2 @@
+1. 了解 GAE 是甚麼。 
+2. 將model 改成Agent 模式

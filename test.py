@@ -1,38 +1,50 @@
 import torch
+import gymnasium as gym
+import numpy as np
+from model import MlpPolicy  # 請將 your_module 換成你定義網路的模組名稱
+import time
 
-# 繼承自 Function
-class LinearFunction(torch.autograd.Function):
+def test_trained_policy(env_name='CartPole-v1',
+                        model_path='ppo_cartpole.pt',
+                        episodes=10,
+                        render=False):
+    # 建立環境與網路
+    env = gym.make(env_name, render_mode="human")
+    net = MlpPolicy(env.observation_space, env.action_space)
+    net.load_state_dict(torch.load(model_path, map_location='cpu')['model_state_dict'])
+    net.eval()
 
-    # 注意：forward、setup_context 以及 backward 都是 @staticmethods
-    @staticmethod
-    def forward(input, weight, bias):
-        output = input.mm(weight.t())
-        if bias is not None:
-            output += bias.unsqueeze(0).expand_as(output)
-        return output
+    rewards = []
+    for ep in range(episodes):
+        state, _ = env.reset()
+        done = False
+        ep_reward = 0.0
 
-    @staticmethod
-    # inputs 是一個 Tuple，包含所有傳入 forward 的輸入。
-    # output 是 forward() 的輸出。
-    def setup_context(ctx, inputs, output):
-        input, weight, bias = inputs
-        ctx.save_for_backward(input, weight, bias)
+        while not done:
+            if render:
+                env.render()
 
-    # 此函數只有一個輸出，因此只接收一個梯度
-    @staticmethod
-    def backward(ctx, grad_output):
-        # 這是一種非常方便的模式 —— 在 backward 開頭處解包 saved_tensors 並將所有對輸入的梯度初始化為 None。
-        # 多餘的 None 返回值會被忽略，因此即使函數有可選的輸入，return 語句也可以保持簡單。
-        input, weight, bias = ctx.saved_tensors
-        grad_input = grad_weight = grad_bias = None
+            # 前向計算 action 分布，取最大機率
+            state_tensor = torch.tensor(state, dtype=torch.float32)
+            
+            action, _ = net.act(stochastic=False, obs = state_tensor)
 
-        # 這些 needs_input_grad 檢查是可選的，主要用來提高效率。如果你想讓代碼更簡單，可以跳過它們。
-        # 為不需要梯度的輸入返回梯度並不會造成錯誤。
-        if ctx.needs_input_grad[0]:
-            grad_input = grad_output.mm(weight)
-        if ctx.needs_input_grad[1]:
-            grad_weight = grad_output.t().mm(input)
-        if bias is not None and ctx.needs_input_grad[2]:
-            grad_bias = grad_output.sum(0)
+            # 執行 action
+            next_state, reward, Terminated, Truncated, _ = env.step(action.item())
+            done = Terminated or Truncated
+            ep_reward += reward
+            state = next_state
 
-        return grad_input, grad_weight, grad_bias
+        rewards.append(ep_reward)
+        print(f"[Episode {ep+1:2d}] Reward = {ep_reward:.2f}")
+
+    env.close()
+    print(f"\nAverage Reward over {episodes} episodes: {np.mean(rewards):.2f} ± {np.std(rewards):.2f}")
+    return rewards
+
+if __name__ == '__main__':
+    # 範例：測試 20 個 episode，不開啟畫面
+    test_trained_policy(env_name='CartPole-v1',
+                        model_path='model.pt',
+                        episodes=20,
+                        render=True)

@@ -11,7 +11,7 @@ import time
 from Brain.DQN.lib import model
 from abc import ABC
 from Brain.DQN.lib.EfficientnetV2 import EfficientnetV2SmallDuelingModel
-from Brain.Common.experience import SequentialExperienceReplayBuffer
+from Brain.Common.experience import SequentialExperienceReplayBuffer,PrioritizedStratifiedReplayBuffer
 import torch.nn as nn
 import traceback
 
@@ -81,10 +81,11 @@ class RL_prepare(ABC):
         self.MODEL_DEFAULT_COMMISSION_PERC = 0.0045
         self.DEFAULT_SLIPPAGE = 0.0025
         self.REWARD_STEPS = 2
-        self.REPLAY_SIZE = 100000
         
-        self.EACH_REPLAY_SIZE = 50000
+        
+        
         self.REPLAY_INITIAL = 1000
+        
         self.LEARNING_RATE = 0.00005  # optim 的學習率
         self.Lambda = 0  # optim L2正則化 Ridge regularization
         self.EPSILON_START = 0.9  # 起始機率(一開始都隨機運行)
@@ -96,7 +97,15 @@ class RL_prepare(ABC):
         self.EPSILON_STEPS = 1000000 * 30
         self.EVAL_EVERY_STEP = 10000  # 每一萬步驗證一次
         self.NUM_EVAL_EPISODES = 10  # 每次评估的样本数
-        self.BATCH_SIZE = 32  # 每次要從buffer提取的資料筆數,用來給神經網絡更新權重
+        
+        
+        
+        self.BATCH_SIZE = 128  # 每次要從buffer提取的資料筆數,用來給神經網絡更新權重
+        self.PIECE_BATCH_SIZE =32
+        self.REPLAY_SIZE = 1000000
+        self.EACH_REPLAY_SIZE = 50000
+
+
         self.STATES_TO_EVALUATE = 10000  # 每次驗證一萬筆資料
         self.checkgrad_times = 10000
 
@@ -263,8 +272,16 @@ class RL_Train(RL_prepare):
         self.exp_source = ptan.experience.ExperienceSourceFirstLast(
             self.train_env, self.agent, self.GAMMA, steps_count=self.REWARD_STEPS)
 
-        self.buffer = SequentialExperienceReplayBuffer(
-            self.exp_source, self.EACH_REPLAY_SIZE,replay_initial_size=self.REPLAY_INITIAL)
+        # self.buffer = SequentialExperienceReplayBuffer(
+        #     self.exp_source, self.EACH_REPLAY_SIZE,replay_initial_size=self.REPLAY_INITIAL)
+
+        self.buffer = PrioritizedStratifiedReplayBuffer(
+            self.exp_source, batch_size=self.BATCH_SIZE ,each_symbol_size=self.PIECE_BATCH_SIZE,
+            capacity = self.REPLAY_SIZE,each_capacity=self.EACH_REPLAY_SIZE
+        )
+
+
+
 
         self.load_pre_train_model_state()
         self.train()
