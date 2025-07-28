@@ -1,0 +1,1476 @@
+# PPO (Proximal Policy Optimization) 演算法完整專案文檔
+
+## LaTeX 文檔
+
+```latex
+\documentclass[12pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{geometry}
+\usepackage{fancyhdr}
+\usepackage{tikz}
+\usepackage{pgfplots}
+
+\geometry{left=2.5cm,right=2.5cm,top=2.5cm,bottom=2.5cm}
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{PPO演算法實作專案}
+\lhead{\leftmark}
+\cfoot{\thepage}
+
+% 程式碼格式設定
+\lstset{
+    language=Python,
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{blue},
+    commentstyle=\color{green},
+    stringstyle=\color{red},
+    numberstyle=\tiny\color{gray},
+    numbers=left,
+    frame=single,
+    breaklines=true,
+    showstringspaces=false,
+    tabsize=4
+}
+
+\title{PPO (Proximal Policy Optimization) 演算法\\完整實作專案}
+\author{深度強化學習專案}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+\tableofcontents
+\newpage
+
+\section{專案概述}
+
+本專案旨在從理論到實作完整展示PPO (Proximal Policy Optimization) 演算法。PPO是由OpenAI於2017年提出的策略梯度方法，是目前最成功的深度強化學習演算法之一。
+
+\subsection{步驟6: 環境包裝器}
+
+創建 \texttt{src/environment.py}：
+
+\begin{lstlisting}[language=python]
+import gymnasium as gym
+import numpy as np
+from collections import deque
+
+class NormalizeObservation:
+    """觀察正規化包裝器"""
+    def __init__(self, env, epsilon=1e-8):
+        self.env = env
+        self.epsilon = epsilon
+        self.obs_rms = RunningMeanStd(shape=env.observation_space.shape)
+    
+    def reset(self, **kwargs):
+        obs, info = self.env.reset(**kwargs)
+        return self.normalize_obs(obs), info
+    
+    def step(self, action):
+        obs, reward, terminated, truncated, info = self.env.step(action)
+        return self.normalize_obs(obs), reward, terminated, truncated, info
+    
+    def normalize_obs(self, obs):
+        self.obs_rms.update(obs)
+        return (obs - self.obs_rms.mean) / np.sqrt(self.obs_rms.var + self.epsilon)
+    
+    def __getattr__(self, name):
+        return getattr(self.env, name)
+
+class NormalizeReward:
+    """獎勵正規化包裝器"""
+    def __init__(self, env, gamma=0.99, epsilon=1e-8):
+        self.env = env
+        self.gamma = gamma
+        self.epsilon = epsilon
+        self.reward_rms = RunningMeanStd(shape=())
+        self.returns = None
+    
+    def reset(self, **kwargs):
+        obs, info = self.env.reset(**kwargs)
+        self.returns = 0
+        return obs, info
+    
+    def step(self, action):
+        obs, reward, terminated, truncated, info = self.env.step(action)
+        self.returns = self.returns * self.gamma + reward
+        self.reward_rms.update(np.array([self.returns]))
+        normalized_reward = reward / np.sqrt(self.reward_rms.var + self.epsilon)
+        
+        if terminated or truncated:
+            self.returns = 0
+        
+        return obs, normalized_reward, terminated, truncated, info
+    
+    def __getattr__(self, name):
+        return getattr(self.env, name)
+
+class RunningMeanStd:
+    """運行平均和標準差計算"""
+    def __init__(self, shape):
+        self.mean = np.zeros(shape, dtype=np.float64)
+        self.var = np.ones(shape, dtype=np.float64)
+        self.count = 1e-4
+    
+    def update(self, x):
+        batch_mean = np.mean(x, axis=0)
+        batch_var = np.var(x, axis=0)
+        batch_count = x.shape[0]
+        self.update_from_moments(batch_mean, batch_var, batch_count)
+    
+    def update_from_moments(self, batch_mean, batch_var, batch_count):
+        delta = batch_mean - self.mean
+        total_count = self.count + batch_count
+        
+        new_mean = self.mean + delta * batch_count / total_count
+        m_a = self.var * self.count
+        m_b = batch_var * batch_count
+        M2 = m_a + m_b + np.square(delta) * self.count * batch_count / total_count
+        new_var = M2 / total_count
+        
+        self.mean = new_mean
+        self.var = new_var
+        self.count = total_count
+
+class EpisodeStatistics:
+    """回合統計包裝器"""
+    def __init__(self, env):
+        self.env = env
+        self.episode_reward = 0
+        self.episode_length = 0
+        self.episode_rewards = deque(maxlen=100)
+        self.episode_lengths = deque(maxlen=100)
+    
+    def reset(self, **kwargs):
+        obs, info = self.env.reset(**kwargs)
+        self.episode_reward = 0
+        self.episode_length = 0
+        return obs, info
+    
+    def step(self, action):
+        obs, reward, terminated, truncated, info = self.env.step(action)
+        self.episode_reward += reward
+        self.episode_length += 1
+        
+        if terminated or truncated:
+            self.episode_rewards.append(self.episode_reward)
+            self.episode_lengths.append(self.episode_length)
+            info['episode_reward'] = self.episode_reward
+            info['episode_length'] = self.episode_length
+        
+        return obs, reward, terminated, truncated, info
+    
+    def get_statistics(self):
+        if len(self.episode_rewards) > 0:
+            return {
+                'mean_reward': np.mean(self.episode_rewards),
+                'std_reward': np.std(self.episode_rewards),
+                'mean_length': np.mean(self.episode_lengths),
+                'std_length': np.std(self.episode_lengths)
+            }
+        return {}
+    
+    def __getattr__(self, name):
+        return getattr(self.env, name)
+
+def make_env(env_name, normalize_obs=True, normalize_reward=True, record_stats=True):
+    """創建環境的工廠函數"""
+    env = gym.make(env_name)
+    
+    if record_stats:
+        env = EpisodeStatistics(env)
+    
+    if normalize_obs:
+        env = NormalizeObservation(env)
+    
+    if normalize_reward:
+        env = NormalizeReward(env)
+    
+    return env
+
+class VectorEnv:
+    """向量化環境（簡化版）"""
+    def __init__(self, env_fns):
+        self.envs = [env_fn() for env_fn in env_fns]
+        self.num_envs = len(self.envs)
+        self.observation_space = self.envs[0].observation_space
+        self.action_space = self.envs[0].action_space
+    
+    def reset(self):
+        obs = []
+        infos = []
+        for env in self.envs:
+            ob, info = env.reset()
+            obs.append(ob)
+            infos.append(info)
+        return np.array(obs), infos
+    
+    def step(self, actions):
+        obs, rewards, terminateds, truncateds, infos = [], [], [], [], []
+        for i, (env, action) in enumerate(zip(self.envs, actions)):
+            ob, reward, terminated, truncated, info = env.step(action)
+            if terminated or truncated:
+                ob, _ = env.reset()
+            obs.append(ob)
+            rewards.append(reward)
+            terminateds.append(terminated)
+            truncateds.append(truncated)
+            infos.append(info)
+        
+        return np.array(obs), np.array(rewards), np.array(terminateds), np.array(truncateds), infos
+    
+    def close(self):
+        for env in self.envs:
+            env.close()
+\end{lstlisting}
+
+\subsection{步驟7: 訓練腳本}
+
+創建 \texttt{experiments/train.py}：
+
+\begin{lstlisting}[language=python]
+import os
+import yaml
+import torch
+import numpy as np
+import gymnasium as gym
+from datetime import datetime
+from torch.utils.tensorboard import SummaryWriter
+
+import sys
+sys.path.append('..')
+from src.ppo import PPO
+from src.environment import make_env
+
+def load_config(config_path):
+    """載入配置文件"""
+    with open(config_path, 'r') as f:
+        config = yaml.safe_load(f)
+    return config
+
+def train_ppo(config):
+    """PPO訓練主函數"""
+    # 設定隨機種子
+    torch.manual_seed(42)
+    np.random.seed(42)
+    
+    # 創建環境
+    env = make_env(
+        config['environment']['name'],
+        normalize_obs=config['environment']['normalize_obs'],
+        normalize_reward=config['environment']['normalize_reward']
+    )
+    
+    # 獲取環境參數
+    obs_dim = env.observation_space.shape[0]
+    
+    # 判斷動作空間類型
+    if isinstance(env.action_space, gym.spaces.Discrete):
+        action_dim = env.action_space.n
+        continuous = False
+    else:
+        action_dim = env.action_space.shape[0]
+        continuous = True
+    
+    # 設定設備
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print(f"Using device: {device}")
+    
+    # 創建PPO智能體
+    ppo_agent = PPO(obs_dim, action_dim, config, device, continuous)
+    
+    # 創建日誌記錄器
+    log_dir = f"results/logs/{config['environment']['name']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    writer = SummaryWriter(log_dir)
+    
+    # 訓練循環
+    total_timesteps = config['training']['total_timesteps']
+    steps_per_update = config['training']['steps_per_update']
+    
+    obs, _ = env.reset()
+    episode_reward = 0
+    episode_length = 0
+    episode_count = 0
+    
+    for step in range(total_timesteps):
+        # 獲取動作
+        action, log_prob, value = ppo_agent.get_action(obs)
+        
+        # 執行動作
+        next_obs, reward, terminated, truncated, info = env.step(action)
+        done = terminated or truncated
+        
+        # 儲存轉換
+        ppo_agent.store_transition(obs, action, reward, value, log_prob, done)
+        
+        obs = next_obs
+        episode_reward += reward
+        episode_length += 1
+        
+        # 處理回合結束
+        if done:
+            # 計算最後一步的價值
+            if truncated:
+                _, _, last_value = ppo_agent.get_action(obs)
+            else:
+                last_value = 0
+            
+            ppo_agent.finish_episode(last_value)
+            
+            # 記錄回合統計
+            writer.add_scalar('train/episode_reward', episode_reward, episode_count)
+            writer.add_scalar('train/episode_length', episode_length, episode_count)
+            
+            if episode_count % 10 == 0:
+                print(f"Episode {episode_count}, Reward: {episode_reward:.2f}, Length: {episode_length}")
+            
+            # 重置環境
+            obs, _ = env.reset()
+            episode_reward = 0
+            episode_length = 0
+            episode_count += 1
+        
+        # 更新策略
+        if (step + 1) % steps_per_update == 0:
+            # 如果緩衝區未滿，計算最後一步的價值
+            if not done:
+                _, _, last_value = ppo_agent.get_action(obs)
+                ppo_agent.finish_episode(last_value)
+            
+            # 執行PPO更新
+            ppo_agent.update()
+            
+            # 記錄訓練統計
+            stats = ppo_agent.get_stats()
+            for key, value in stats.items():
+                writer.add_scalar(key, value, step)
+            
+            print(f"Step {step + 1}/{total_timesteps}, Stats: {stats}")
+        
+        # 定期保存模型
+        if (step + 1) % 50000 == 0:
+            model_path = f"results/models/ppo_{config['environment']['name']}_step_{step + 1}.pth"
+            os.makedirs(os.path.dirname(model_path), exist_ok=True)
+            ppo_agent.save_model(model_path)
+            print(f"Model saved to {model_path}")
+    
+    # 保存最終模型
+    final_model_path = f"results/models/ppo_{config['environment']['name']}_final.pth"
+    os.makedirs(os.path.dirname(final_model_path), exist_ok=True)
+    ppo_agent.save_model(final_model_path)
+    
+    env.close()
+    writer.close()
+    print("Training completed!")
+
+if __name__ == "__main__":
+    config_path = "../config/config.yaml"
+    config = load_config(config_path)
+    train_ppo(config)
+\end{lstlisting}
+
+\subsection{步驟8: 評估腳本}
+
+創建 \texttt{experiments/evaluate.py}：
+
+\begin{lstlisting}[language=python]
+import os
+import yaml
+import torch
+import numpy as np
+import gymnasium as gym
+from datetime import datetime
+import matplotlib.pyplot as plt
+
+import sys
+sys.path.append('..')
+from src.ppo import PPO
+from src.environment import make_env
+
+def load_config(config_path):
+    """載入配置文件"""
+    with open(config_path, 'r') as f:
+        config = yaml.safe_load(f)
+    return config
+
+def evaluate_ppo(config, model_path, num_episodes=10, render=False):
+    """評估PPO智能體"""
+    # 創建環境
+    env = make_env(
+        config['environment']['name'],
+        normalize_obs=False,  # 評估時不正規化
+        normalize_reward=False,
+        record_stats=False
+    )
+    
+    if render:
+        env = gym.make(config['environment']['name'], render_mode='human')
+    
+    # 獲取環境參數
+    obs_dim = env.observation_space.shape[0]
+    
+    if isinstance(env.action_space, gym.spaces.Discrete):
+        action_dim = env.action_space.n
+        continuous = False
+    else:
+        action_dim = env.action_space.shape[0]
+        continuous = True
+    
+    # 設定設備
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    
+    # 創建PPO智能體並載入模型
+    ppo_agent = PPO(obs_dim, action_dim, config, device, continuous)
+    ppo_agent.load_model(model_path)
+    
+    episode_rewards = []
+    episode_lengths = []
+    
+    for episode in range(num_episodes):
+        obs, _ = env.reset()
+        episode_reward = 0
+        episode_length = 0
+        
+        while True:
+            # 使用確定性策略
+            action, _, _ = ppo_agent.get_action(obs, deterministic=True)
+            obs, reward, terminated, truncated, _ = env.step(action)
+            
+            episode_reward += reward
+            episode_length += 1
+            
+            if terminated or truncated:
+                break
+        
+        episode_rewards.append(episode_reward)
+        episode_lengths.append(episode_length)
+        
+        print(f"Episode {episode + 1}: Reward = {episode_reward:.2f}, Length = {episode_length}")
+    
+    # 統計結果
+    mean_reward = np.mean(episode_rewards)
+    std_reward = np.std(episode_rewards)
+    mean_length = np.mean(episode_lengths)
+    std_length = np.std(episode_lengths)
+    
+    print(f"\nEvaluation Results:")
+    print(f"Mean Reward: {mean_reward:.2f} ± {std_reward:.2f}")
+    print(f"Mean Length: {mean_length:.2f} ± {std_length:.2f}")
+    
+    # 繪製結果
+    plt.figure(figsize=(12, 4))
+    
+    plt.subplot(1, 2, 1)
+    plt.plot(episode_rewards, 'b-', alpha=0.7)
+    plt.axhline(y=mean_reward, color='r', linestyle='--', label=f'Mean: {mean_reward:.2f}')
+    plt.xlabel('Episode')
+    plt.ylabel('Reward')
+    plt.title('Episode Rewards')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    
+    plt.subplot(1, 2, 2)
+    plt.plot(episode_lengths, 'g-', alpha=0.7)
+    plt.axhline(y=mean_length, color='r', linestyle='--', label=f'Mean: {mean_length:.2f}')
+    plt.xlabel('Episode')
+    plt.ylabel('Length')
+    plt.title('Episode Lengths')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.savefig(f'results/evaluation_{datetime.now().strftime("%Y%m%d_%H%M%S")}.png')
+    plt.show()
+    
+    env.close()
+    return mean_reward, std_reward, mean_length, std_length
+
+def compare_models(config, model_paths, labels, num_episodes=10):
+    """比較多個模型的性能"""
+    results = {}
+    
+    for model_path, label in zip(model_paths, labels):
+        print(f"\nEvaluating {label}...")
+        mean_reward, std_reward, mean_length, std_length = evaluate_ppo(
+            config, model_path, num_episodes, render=False
+        )
+        results[label] = {
+            'mean_reward': mean_reward,
+            'std_reward': std_reward,
+            'mean_length': mean_length,
+            'std_length': std_length
+        }
+    
+    # 繪製比較圖
+    labels = list(results.keys())
+    rewards = [results[label]['mean_reward'] for label in labels]
+    reward_stds = [results[label]['std_reward'] for label in labels]
+    
+    plt.figure(figsize=(10, 6))
+    plt.bar(labels, rewards, yerr=reward_stds, capsize=5, alpha=0.7)
+    plt.xlabel('Model')
+    plt.ylabel('Mean Reward')
+    plt.title('Model Performance Comparison')
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+    plt.savefig(f'results/model_comparison_{datetime.now().strftime("%Y%m%d_%H%M%S")}.png')
+    plt.show()
+    
+    return results
+
+if __name__ == "__main__":
+    config_path = "../config/config.yaml"
+    config = load_config(config_path)
+    
+    # 評估單個模型
+    model_path = "results/models/ppo_CartPole-v1_final.pth"
+    if os.path.exists(model_path):
+        evaluate_ppo(config, model_path, num_episodes=20, render=False)
+    else:
+        print(f"Model not found: {model_path}")
+        print("Please train the model first using train.py")
+\end{lstlisting}
+
+\section{演算法分析和優化}
+
+\subsection{PPO的優勢}
+
+PPO相比於其他策略梯度方法具有以下優勢：
+
+\begin{itemize}
+    \item \textbf{簡單實現}：相比TRPO，PPO使用簡單的裁剪機制而不是複雜的約束優化
+    \item \textbf{樣本效率}：通過多輪更新提高樣本利用率
+    \item \textbf{穩定性}：裁剪機制確保策略更新不會過於激進
+    \item \textbf{通用性}：適用於連續和離散動作空間
+\end{itemize}
+
+\subsection{超參數調整指南}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|l|l|l|l|}
+\hline
+\textbf{參數} & \textbf{建議值} & \textbf{影響} & \textbf{調整方向} \\
+\hline
+clip\_epsilon & 0.1-0.3 & 策略更新幅度 & 較小值更保守 \\
+\hline
+learning\_rate & 3e-4 & 收斂速度 & 根據環境複雜度調整 \\
+\hline
+gamma & 0.99 & 長期獎勵重視程度 & 回合越長值越大 \\
+\hline
+gae\_lambda & 0.95 & 偏差-方差平衡 & 較小值減少方差 \\
+\hline
+entropy\_coef & 0.01 & 探索程度 & 較大值增加探索 \\
+\hline
+batch\_size & 64 & 梯度估計穩定性 & 較大值更穩定 \\
+\hline
+\end{tabular}
+\caption{PPO超參數調整指南}
+\end{table}
+
+\subsection{常見問題和解決方案}
+
+\subsubsection{訓練不穩定}
+\begin{itemize}
+    \item 減小學習率
+    \item 增加批次大小
+    \item 使用梯度裁剪
+    \item 調整clip\_epsilon
+\end{itemize}
+
+\subsubsection{收斂緩慢}
+\begin{itemize}
+    \item 增加學習率
+    \item 調整網路架構
+    \item 使用學習率調度
+    \item 優化獎勵函數設計
+\end{itemize}
+
+\subsubsection{探索不足}
+\begin{itemize}
+    \item 增加entropy\_coef
+    \item 使用好奇心驅動探索
+    \item 調整初始化策略
+    \item 使用噪聲注入
+\end{itemize}
+
+\section{實驗結果和分析}
+
+\subsection{CartPole-v1 環境}
+
+在CartPole-v1環境中，PPO通常能在10,000-50,000步內達到接近最優性能。
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+    xlabel={Training Steps},
+    ylabel={Episode Reward},
+    title={PPO on CartPole-v1},
+    legend pos=south east,
+    grid=major,
+    width=12cm,
+    height=8cm
+]
+\addplot[blue, thick] coordinates {
+    (0, 20) (10000, 50) (20000, 120) (30000, 180) (40000, 200) (50000, 200)
+};
+\addplot[red, dashed] coordinates {
+    (0, 200) (50000, 200)
+};
+\legend{PPO Performance, Maximum Possible}
+\end{axis}
+\end{tikzpicture}
+\caption{PPO在CartPole-v1上的學習曲線}
+\end{figure}
+
+\subsection{性能指標}
+
+我們使用以下指標評估PPO的性能：
+
+\begin{itemize}
+    \item \textbf{平均回合獎勵}：衡量智能體的整體性能
+    \item \textbf{學習速度}：達到目標性能所需的步數
+    \item \textbf{穩定性}：性能的標準差
+    \item \textbf{樣本效率}：每個樣本的價值
+\end{itemize}
+
+\section{進階主題}
+
+\subsection{多進程訓練}
+
+為了加速訓練，可以使用多進程並行收集經驗：
+
+\begin{lstlisting}[language=python]
+import multiprocessing as mp
+from concurrent.futures import ProcessPoolExecutor
+
+def collect_rollouts(env_fn, policy, num_steps):
+    """並行收集rollouts"""
+    env = env_fn()
+    rollouts = []
+    
+    obs, _ = env.reset()
+    for _ in range(num_steps):
+        action, log_prob, value = policy.get_action(obs)
+        next_obs, reward, terminated, truncated, _ = env.step(action)
+        
+        rollouts.append({
+            'obs': obs,
+            'action': action,
+            'reward': reward,
+            'value': value,
+            'log_prob': log_prob,
+            'done': terminated or truncated
+        })
+        
+        obs = next_obs if not (terminated or truncated) else env.reset()[0]
+    
+    env.close()
+    return rollouts
+
+# 使用多進程收集數據
+def parallel_rollout_collection(env_fn, policy, num_workers=4, steps_per_worker=512):
+    with ProcessPoolExecutor(max_workers=num_workers) as executor:
+        futures = [
+            executor.submit(collect_rollouts, env_fn, policy, steps_per_worker)
+            for _ in range(num_workers)
+        ]
+        
+        all_rollouts = []
+        for future in futures:
+            all_rollouts.extend(future.result())
+        
+        return all_rollouts
+\end{lstlisting}
+
+\subsection{自適應超參數}
+
+實現自適應的clip\_epsilon和學習率：
+
+\begin{lstlisting}[language=python]
+class AdaptivePPO(PPO):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.initial_clip_epsilon = self.clip_epsilon
+        self.initial_lr = self.lr
+        self.kl_target = 0.01
+        self.kl_tolerance = 1.5
+    
+    def update(self):
+        # 執行正常更新
+        super().update()
+        
+        # 根據KL散度調整clip_epsilon
+        recent_kl = np.mean(self.training_stats['kl_divergence'][-10:])
+        
+        if recent_kl > self.kl_target * self.kl_tolerance:
+            self.clip_epsilon *= 0.9  # 減少裁剪範圍
+        elif recent_kl < self.kl_target / self.kl_tolerance:
+            self.clip_epsilon *= 1.1  # 增加裁剪範圍
+        
+        # 限制clip_epsilon範圍
+        self.clip_epsilon = np.clip(self.clip_epsilon, 0.05, 0.5)
+        
+        # 根據梯度調整學習率
+        recent_policy_loss = np.mean(self.training_stats['policy_loss'][-10:])
+        if recent_policy_loss > 0.1:
+            for param_group in self.optimizer.param_groups:
+                param_group['lr'] *= 0.99
+        elif recent_policy_loss < 0.01:
+            for param_group in self.optimizer.param_groups:
+                param_group['lr'] *= 1.01
+\end{lstlisting}
+
+\subsection{課程學習}
+
+實現課程學習來提高訓練效率：
+
+\begin{lstlisting}[language=python]
+class CurriculumTrainer:
+    def __init__(self, env_configs, difficulty_threshold=0.8):
+        self.env_configs = env_configs  # 按難度排序的環境配置
+        self.current_level = 0
+        self.difficulty_threshold = difficulty_threshold
+        self.performance_history = []
+    
+    def should_advance_level(self):
+        """判斷是否應該進入下一個難度等級"""
+        if len(self.performance_history) < 10:
+            return False
+        
+        recent_performance = np.mean(self.performance_history[-10:])
+        return recent_performance > self.difficulty_threshold
+    
+    def get_current_env(self):
+        """獲取當前難度的環境"""
+        config = self.env_configs[self.current_level]
+        return make_env(**config)
+    
+    def update_performance(self, reward):
+        """更新性能記錄"""
+        self.performance_history.append(reward)
+        
+        if self.should_advance_level() and self.current_level < len(self.env_configs) - 1:
+            self.current_level += 1
+            self.performance_history = []  # 重置歷史記錄
+            print(f"Advanced to level {self.current_level}")
+\end{lstlisting}
+
+\section{實作檢查清單}
+
+\subsection{開發階段}
+
+\begin{enumerate}
+    \item 創建項目結構
+    \item 實現基本的Actor-Critic網路
+    \item 實現PPO演算法核心
+    \item 實現經驗緩衝區
+    \item 添加環境包裝器
+    \item 創建訓練腳本
+    \item 實現模型保存/載入
+    \item 添加日誌記錄
+\end{enumerate}
+
+\subsection{測試階段}
+
+\begin{enumerate}
+    \item 在簡單環境（CartPole）上測試
+    \item 驗證梯度計算正確性
+    \item 檢查內存使用情況
+    \item 測試模型保存/載入功能
+    \item 驗證超參數敏感性
+    \item 進行消融研究
+\end{enumerate}
+
+\subsection{優化階段}
+
+\begin{enumerate}
+    \item 實現向量化環境
+    \item 添加多進程支持
+    \item 優化計算效率
+    \item 實現自適應超參數
+    \item 添加更多評估指標
+    \item 實現模型集成
+\end{enumerate}
+
+\section{總結}
+
+本專案提供了完整的PPO演算法實現，包括：
+
+\begin{itemize}
+    \item 理論基礎和數學推導
+    \item 完整的代碼實現
+    \item 訓練和評估流程
+    \item 超參數調整指南
+    \item 進階優化技巧
+\end{itemize}
+
+通過本專案，您可以：
+\begin{enumerate}
+    \item 深入理解PPO的工作原理
+    \item 掌握深度強化學習的實現技巧
+    \item 學會如何調試和優化RL算法
+    \item 為更複雜的強化學習項目打下基礎
+\end{enumerate}
+
+\subsection{後續發展方向}
+
+\begin{itemize}
+    \item 實現PPO的變體（如PPO2、APPO）
+    \item 擴展到更複雜的環境（如Atari、MuJoCo）
+    \item 集成其他技術（如RND、ICM）
+    \item 實現分散ection{專案目標}
+\begin{itemize}
+    \item 深入理解PPO演算法的理論基礎
+    \item 實作完整的PPO演算法框架
+    \item 在經典環境中驗證演算法效能
+    \item 分析演算法的收斂性和穩定性
+\end{itemize}
+
+\subsection{專案結構}
+\begin{verbatim}
+PPO_Project/
+├── src/
+│   ├── ppo.py              # PPO主要演算法
+│   ├── network.py          # 神經網路架構
+│   ├── buffer.py           # 經驗回放緩衝區
+│   ├── environment.py      # 環境包裝器
+│   └── utils.py            # 工具函數
+├── config/
+│   └── config.yaml         # 配置文件
+├── experiments/
+│   ├── train.py            # 訓練腳本
+│   └── evaluate.py         # 評估腳本
+├── results/
+│   ├── logs/               # 訓練日誌
+│   └── models/             # 保存的模型
+└── docs/
+    └── README.md           # 專案說明
+\end{verbatim}
+
+\section{PPO演算法理論基礎}
+
+\subsection{策略梯度方法}
+
+在強化學習中，我們的目標是最大化期望累積獎勵：
+\begin{equation}
+J(\theta) = \mathbb{E}_{\tau \sim \pi_\theta}[R(\tau)]
+\end{equation}
+
+其中 $\tau$ 是軌跡，$\pi_\theta$ 是參數化策略，$R(\tau)$ 是軌跡的累積獎勵。
+
+策略梯度定理告訴我們：
+\begin{equation}
+\nabla_\theta J(\theta) = \mathbb{E}_{\tau \sim \pi_\theta}\left[\sum_{t=0}^T \nabla_\theta \log \pi_\theta(a_t|s_t) A^{\pi_\theta}(s_t, a_t)\right]
+\end{equation}
+
+其中 $A^{\pi_\theta}(s_t, a_t)$ 是優勢函數。
+
+\subsection{PPO的核心思想}
+
+PPO的核心思想是限制策略更新的幅度，避免過大的策略變化導致性能崩潰。PPO使用重要性採樣比：
+
+\begin{equation}
+r_t(\theta) = \frac{\pi_\theta(a_t|s_t)}{\pi_{\theta_{old}}(a_t|s_t)}
+\end{equation}
+
+\subsection{PPO目標函數}
+
+PPO提出了兩種主要的目標函數：
+
+\subsubsection{PPO-Clip}
+\begin{equation}
+L^{CLIP}(\theta) = \mathbb{E}_t\left[\min(r_t(\theta)A_t, \text{clip}(r_t(\theta), 1-\epsilon, 1+\epsilon)A_t)\right]
+\end{equation}
+
+\subsubsection{PPO-Penalty}
+\begin{equation}
+L^{KLPEN}(\theta) = \mathbb{E}_t\left[r_t(\theta)A_t - \beta \text{KL}[\pi_{\theta_{old}}(\cdot|s_t), \pi_\theta(\cdot|s_t)]\right]
+\end{equation}
+
+其中 $\epsilon$ 是裁剪參數（通常設為0.1或0.2），$\beta$ 是KL散度的懲罰係數。
+
+\subsection{優勢函數估計}
+
+PPO使用廣義優勢估計（GAE）來減少優勢函數的方差：
+
+\begin{equation}
+\hat{A}_t^{GAE(\gamma,\lambda)} = \sum_{l=0}^{\infty} (\gamma\lambda)^l \delta_{t+l}
+\end{equation}
+
+其中 $\delta_t = r_t + \gamma V(s_{t+1}) - V(s_t)$ 是TD誤差。
+
+\section{神經網路架構設計}
+
+\subsection{Actor-Critic架構}
+
+PPO採用Actor-Critic架構：
+\begin{itemize}
+    \item \textbf{Actor網路}：輸出動作機率分佈 $\pi_\theta(a|s)$
+    \item \textbf{Critic網路}：輸出狀態價值函數 $V_\phi(s)$
+\end{itemize}
+
+\subsection{共享參數設計}
+
+為了提高採樣效率，我們可以讓Actor和Critic共享底層特徵提取網路：
+
+\begin{tikzpicture}[node distance=2cm]
+    \node (input) [draw, rectangle] {輸入狀態 $s$};
+    \node (shared) [draw, rectangle, below of=input] {共享特徵層};
+    \node (actor) [draw, rectangle, below left of=shared] {Actor Head};
+    \node (critic) [draw, rectangle, below right of=shared] {Critic Head};
+    \node (action) [draw, rectangle, below of=actor] {動作機率 $\pi(a|s)$};
+    \node (value) [draw, rectangle, below of=critic] {狀態價值 $V(s)$};
+    
+    \draw [arrow] (input) -- (shared);
+    \draw [arrow] (shared) -- (actor);
+    \draw [arrow] (shared) -- (critic);
+    \draw [arrow] (actor) -- (action);
+    \draw [arrow] (critic) -- (value);
+\end{tikzpicture}
+
+\section{實作步驟}
+
+\subsection{步驟1: 環境設置}
+
+首先安裝必要的套件：
+
+\begin{lstlisting}[language=bash]
+pip install torch torchvision
+pip install gymnasium[classic_control]
+pip install numpy matplotlib tensorboard
+pip install pyyaml
+\end{lstlisting}
+
+\subsection{步驟2: 配置文件}
+
+創建 \texttt{config/config.yaml}：
+
+\begin{lstlisting}[language=yaml]
+# PPO配置參數
+ppo:
+  lr: 3e-4                    # 學習率
+  gamma: 0.99                 # 折扣因子
+  gae_lambda: 0.95           # GAE參數
+  clip_epsilon: 0.2          # 裁剪參數
+  entropy_coef: 0.01         # 熵係數
+  value_loss_coef: 0.5       # 價值損失係數
+  max_grad_norm: 0.5         # 梯度裁剪
+  
+# 訓練參數
+training:
+  total_timesteps: 1000000   # 總訓練步數
+  steps_per_update: 2048     # 每次更新的步數
+  batch_size: 64             # 批次大小
+  epochs: 10                 # 每次更新的訓練輪數
+  
+# 網路架構
+network:
+  hidden_sizes: [64, 64]     # 隱藏層大小
+  activation: "tanh"         # 激活函數
+  
+# 環境設定
+environment:
+  name: "CartPole-v1"        # 環境名稱
+  normalize_obs: true        # 是否正規化觀察
+  normalize_reward: true     # 是否正規化獎勵
+\end{lstlisting}
+
+\subsection{步驟3: 神經網路實作}
+
+創建 \texttt{src/network.py}：
+
+\begin{lstlisting}[language=python]
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.distributions import Categorical, Normal
+
+class ActorCritic(nn.Module):
+    def __init__(self, obs_dim, action_dim, hidden_sizes, activation='tanh'):
+        super().__init__()
+        self.obs_dim = obs_dim
+        self.action_dim = action_dim
+        
+        # 激活函數選擇
+        if activation == 'tanh':
+            self.activation = nn.Tanh()
+        elif activation == 'relu':
+            self.activation = nn.ReLU()
+        else:
+            raise ValueError(f"Unknown activation: {activation}")
+        
+        # 共享特徵網路
+        layers = []
+        input_dim = obs_dim
+        for hidden_size in hidden_sizes:
+            layers.append(nn.Linear(input_dim, hidden_size))
+            layers.append(self.activation)
+            input_dim = hidden_size
+        
+        self.shared_net = nn.Sequential(*layers)
+        
+        # Actor網路 (策略網路)
+        self.actor_head = nn.Linear(hidden_sizes[-1], action_dim)
+        
+        # Critic網路 (價值網路)
+        self.critic_head = nn.Linear(hidden_sizes[-1], 1)
+        
+        # 權重初始化
+        self.apply(self._init_weights)
+    
+    def _init_weights(self, module):
+        if isinstance(module, nn.Linear):
+            nn.init.orthogonal_(module.weight, gain=0.01)
+            nn.init.constant_(module.bias, 0)
+    
+    def forward(self, obs):
+        shared_features = self.shared_net(obs)
+        
+        # Actor輸出
+        action_logits = self.actor_head(shared_features)
+        action_probs = F.softmax(action_logits, dim=-1)
+        
+        # Critic輸出
+        value = self.critic_head(shared_features)
+        
+        return action_probs, value
+    
+    def get_action(self, obs, deterministic=False):
+        action_probs, value = self.forward(obs)
+        
+        if deterministic:
+            action = torch.argmax(action_probs, dim=-1)
+        else:
+            dist = Categorical(action_probs)
+            action = dist.sample()
+        
+        log_prob = torch.log(action_probs.gather(1, action.unsqueeze(1))).squeeze(1)
+        
+        return action, log_prob, value
+    
+    def evaluate_actions(self, obs, actions):
+        action_probs, values = self.forward(obs)
+        
+        dist = Categorical(action_probs)
+        log_probs = dist.log_prob(actions)
+        entropy = dist.entropy()
+        
+        return log_probs, values, entropy
+
+class ContinuousActorCritic(nn.Module):
+    """連續動作空間的Actor-Critic網路"""
+    def __init__(self, obs_dim, action_dim, hidden_sizes, activation='tanh'):
+        super().__init__()
+        self.obs_dim = obs_dim
+        self.action_dim = action_dim
+        
+        # 激活函數
+        if activation == 'tanh':
+            self.activation = nn.Tanh()
+        elif activation == 'relu':
+            self.activation = nn.ReLU()
+        
+        # 共享特徵網路
+        layers = []
+        input_dim = obs_dim
+        for hidden_size in hidden_sizes:
+            layers.append(nn.Linear(input_dim, hidden_size))
+            layers.append(self.activation)
+            input_dim = hidden_size
+        
+        self.shared_net = nn.Sequential(*layers)
+        
+        # Actor網路
+        self.actor_mean = nn.Linear(hidden_sizes[-1], action_dim)
+        self.actor_logstd = nn.Parameter(torch.zeros(action_dim))
+        
+        # Critic網路
+        self.critic_head = nn.Linear(hidden_sizes[-1], 1)
+        
+        self.apply(self._init_weights)
+    
+    def _init_weights(self, module):
+        if isinstance(module, nn.Linear):
+            nn.init.orthogonal_(module.weight, gain=0.01)
+            nn.init.constant_(module.bias, 0)
+    
+    def forward(self, obs):
+        shared_features = self.shared_net(obs)
+        
+        # Actor輸出
+        action_mean = self.actor_mean(shared_features)
+        action_std = torch.exp(self.actor_logstd)
+        
+        # Critic輸出
+        value = self.critic_head(shared_features)
+        
+        return action_mean, action_std, value
+    
+    def get_action(self, obs, deterministic=False):
+        action_mean, action_std, value = self.forward(obs)
+        
+        if deterministic:
+            action = action_mean
+        else:
+            dist = Normal(action_mean, action_std)
+            action = dist.sample()
+        
+        log_prob = Normal(action_mean, action_std).log_prob(action).sum(-1)
+        
+        return action, log_prob, value
+    
+    def evaluate_actions(self, obs, actions):
+        action_mean, action_std, values = self.forward(obs)
+        
+        dist = Normal(action_mean, action_std)
+        log_probs = dist.log_prob(actions).sum(-1)
+        entropy = dist.entropy().sum(-1)
+        
+        return log_probs, values, entropy
+\end{lstlisting}
+
+\subsection{步驟4: 經驗緩衝區}
+
+創建 \texttt{src/buffer.py}：
+
+\begin{lstlisting}[language=python]
+import numpy as np
+import torch
+
+class PPOBuffer:
+    def __init__(self, obs_dim, action_dim, size, gamma=0.99, gae_lambda=0.95):
+        self.obs_buf = np.zeros((size, obs_dim), dtype=np.float32)
+        self.action_buf = np.zeros((size, action_dim), dtype=np.float32)
+        self.reward_buf = np.zeros(size, dtype=np.float32)
+        self.value_buf = np.zeros(size, dtype=np.float32)
+        self.logp_buf = np.zeros(size, dtype=np.float32)
+        self.advantage_buf = np.zeros(size, dtype=np.float32)
+        self.return_buf = np.zeros(size, dtype=np.float32)
+        self.done_buf = np.zeros(size, dtype=np.float32)
+        
+        self.gamma = gamma
+        self.gae_lambda = gae_lambda
+        self.ptr = 0
+        self.path_start_idx = 0
+        self.max_size = size
+    
+    def store(self, obs, action, reward, value, logp, done):
+        assert self.ptr < self.max_size
+        
+        self.obs_buf[self.ptr] = obs
+        self.action_buf[self.ptr] = action
+        self.reward_buf[self.ptr] = reward
+        self.value_buf[self.ptr] = value
+        self.logp_buf[self.ptr] = logp
+        self.done_buf[self.ptr] = done
+        
+        self.ptr += 1
+    
+    def finish_path(self, last_value=0):
+        """計算優勢函數和回報"""
+        path_slice = slice(self.path_start_idx, self.ptr)
+        rewards = np.append(self.reward_buf[path_slice], last_value)
+        values = np.append(self.value_buf[path_slice], last_value)
+        
+        # GAE優勢函數計算
+        deltas = rewards[:-1] + self.gamma * values[1:] - values[:-1]
+        self.advantage_buf[path_slice] = self._discount_cumsum(deltas, self.gamma * self.gae_lambda)
+        
+        # 回報計算
+        self.return_buf[path_slice] = self._discount_cumsum(rewards, self.gamma)[:-1]
+        
+        self.path_start_idx = self.ptr
+    
+    def get(self):
+        """獲取緩衝區中的所有數據"""
+        assert self.ptr == self.max_size
+        self.ptr, self.path_start_idx = 0, 0
+        
+        # 正規化優勢函數
+        adv_mean = np.mean(self.advantage_buf)
+        adv_std = np.std(self.advantage_buf)
+        self.advantage_buf = (self.advantage_buf - adv_mean) / (adv_std + 1e-8)
+        
+        data = dict(
+            obs=self.obs_buf,
+            action=self.action_buf,
+            reward=self.reward_buf,
+            value=self.value_buf,
+            logp=self.logp_buf,
+            advantage=self.advantage_buf,
+            return_=self.return_buf,
+            done=self.done_buf
+        )
+        
+        return {k: torch.as_tensor(v, dtype=torch.float32) for k, v in data.items()}
+    
+    def _discount_cumsum(self, x, discount):
+        """計算折扣累積和"""
+        return np.array([
+            np.sum(discount ** np.arange(len(x[i:])) * x[i:]) 
+            for i in range(len(x))
+        ])
+
+class RolloutBuffer:
+    """更簡潔的滾動緩衝區實現"""
+    def __init__(self, size, obs_dim, action_dim, device='cpu'):
+        self.size = size
+        self.device = device
+        self.reset()
+    
+    def reset(self):
+        self.observations = torch.zeros((self.size, obs_dim)).to(self.device)
+        self.actions = torch.zeros((self.size, action_dim)).to(self.device)
+        self.rewards = torch.zeros(self.size).to(self.device)
+        self.values = torch.zeros(self.size).to(self.device)
+        self.log_probs = torch.zeros(self.size).to(self.device)
+        self.dones = torch.zeros(self.size).to(self.device)
+        self.advantages = torch.zeros(self.size).to(self.device)
+        self.returns = torch.zeros(self.size).to(self.device)
+        self.ptr = 0
+    
+    def add(self, obs, action, reward, value, log_prob, done):
+        self.observations[self.ptr] = obs
+        self.actions[self.ptr] = action
+        self.rewards[self.ptr] = reward
+        self.values[self.ptr] = value
+        self.log_probs[self.ptr] = log_prob
+        self.dones[self.ptr] = done
+        self.ptr += 1
+    
+    def compute_returns_and_advantages(self, last_value, gamma=0.99, gae_lambda=0.95):
+        """計算回報和優勢函數"""
+        values = torch.cat([self.values, last_value.unsqueeze(0)])
+        
+        # 計算GAE
+        advantages = torch.zeros_like(self.rewards)
+        last_gae_lam = 0
+        
+        for t in reversed(range(self.size)):
+            if t == self.size - 1:
+                next_non_terminal = 1.0 - self.dones[t]
+                next_value = last_value
+            else:
+                next_non_terminal = 1.0 - self.dones[t]
+                next_value = values[t + 1]
+            
+            delta = self.rewards[t] + gamma * next_value * next_non_terminal - values[t]
+            advantages[t] = last_gae_lam = delta + gamma * gae_lambda * next_non_terminal * last_gae_lam
+        
+        self.advantages = advantages
+        self.returns = advantages + self.values
+    
+    def get_batch(self, batch_size):
+        """獲取批次數據"""
+        indices = torch.randperm(self.size)[:batch_size]
+        return (
+            self.observations[indices],
+            self.actions[indices],
+            self.log_probs[indices],
+            self.returns[indices],
+            self.advantages[indices],
+            self.values[indices]
+        )
+\end{lstlisting}
+
+\subsection{步驟5: PPO主要演算法}
+
+創建 \texttt{src/ppo.py}：
+
+\begin{lstlisting}[language=python]
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import numpy as np
+from .network import ActorCritic, ContinuousActorCritic
+from .buffer import PPOBuffer, RolloutBuffer
+
+class PPO:
+    def __init__(self, obs_dim, action_dim, config, device='cpu', continuous=False):
+        self.device = device
+        self.continuous = continuous
+        
+        # 超參數
+        self.lr = config['ppo']['lr']
+        self.gamma = config['ppo']['gamma']
+        self.gae_lambda = config['ppo']['gae_lambda']
+        self.clip_epsilon = config['ppo']['clip_epsilon']
+        self.entropy_coef = config['ppo']['entropy_coef']
+        self.value_loss_coef = config['ppo']['value_loss_coef']
+        self.max_grad_norm = config['ppo']['max_grad_norm']
+        
+        # 訓練參數
+        self.steps_per_update = config['training']['steps_per_update']
+        self.batch_size = config['training']['batch_size']
+        self.epochs = config['training']['epochs']
+        
+        # 網路架構
+        if continuous:
+            self.actor_critic = ContinuousActorCritic(
+                obs_dim, action_dim, 
+                config['network']['hidden_sizes'],
+                config['network']['activation']
+            ).to(device)
+        else:
+            self.actor_critic = ActorCritic(
+                obs_dim, action_dim,
+                config['network']['hidden_sizes'],
+                config['network']['activation']
+            ).to(device)
+        
+        # 優化器
+        self.optimizer = optim.Adam(self.actor_critic.parameters(), lr=self.lr)
+        
+        # 緩衝區
+        self.buffer = PPOBuffer(obs_dim, action_dim, self.steps_per_update, 
+                               self.gamma, self.gae_lambda)
+        
+        # 統計資料
+        self.training_stats = {
+            'policy_loss': [],
+            'value_loss': [],
+            'entropy': [],
+            'kl_divergence': [],
+            'clip_fraction': []
+        }
+    
+    def get_action(self, obs, deterministic=False):
+        """獲取動作"""
+        with torch.no_grad():
+            obs_tensor = torch.FloatTensor(obs).unsqueeze(0).to(self.device)
+            action, log_prob, value = self.actor_critic.get_action(obs_tensor, deterministic)
+        
+        return action.cpu().numpy()[0], log_prob.cpu().numpy()[0], value.cpu().numpy()[0]
+    
+    def store_transition(self, obs, action, reward, value, log_prob, done):
+        """儲存轉換"""
+        self.buffer.store(obs, action, reward, value, log_prob, done)
+    
+    def finish_episode(self, last_value=0):
+        """完成一個回合"""
+        self.buffer.finish_path(last_value)
+    
+    def update(self):
+        """更新策略"""
+        # 獲取緩衝區數據
+        data = self.buffer.get()
+        
+        # 轉換為tensor
+        obs = data['obs'].to(self.device)
+        actions = data['action'].to(self.device)
+        old_log_probs = data['logp'].to(self.device)
+        advantages = data['advantage'].to(self.device)
+        returns = data['return_'].to(self.device)
+        old_values = data['value'].to(self.device)
+        
+        # 多輪更新
+        for epoch in range(self.epochs):
+            # 創建批次索引
+            batch_indices = np.arange(len(obs))
+            np.random.shuffle(batch_indices)
+            
+            for start_idx in range(0, len(obs), self.batch_size):
+                end_idx = start_idx + self.batch_size
+                batch_idx = batch_indices[start_idx:end_idx]
+                
+                # 獲取批次數據
+                batch_obs = obs[batch_idx]
+                batch_actions = actions[batch_idx]
+                batch_old_log_probs = old_log_probs[batch_idx]
+                batch_advantages = advantages[batch_idx]
+                batch_returns = returns[batch_idx]
+                batch_old_values = old_values[batch_idx]
+                
+                # 前向傳播
+                if self.continuous:
+                    new_log_probs, values, entropy = self.actor_critic.evaluate_actions(
+                        batch_obs, batch_actions)
+                else:
+                    new_log_probs, values, entropy = self.actor_critic.evaluate_actions(
+                        batch_obs, batch_actions.long())
+                
+                # 計算重要性採樣比
+                ratio = torch.exp(new_log_probs - batch_old_log_probs)
+                
+                # 計算策略損失 (PPO-Clip)
+                surr1 = ratio * batch_advantages
+                surr2 = torch.clamp(ratio, 1 - self.clip_epsilon, 1 + self.clip_epsilon) * batch_advantages
+                policy_loss = -torch.min(surr1, surr2).mean()
+                
+                # 計算價值損失
+                if self.value_loss_coef > 0:
+                    values = values.squeeze()
+                    value_loss = nn.MSELoss()(values, batch_returns)
+                else:
+                    value_loss = 0
+                
+                # 計算熵損失
+                entropy_loss = -entropy.mean()
+                
+                # 總損失
+                total_loss = (policy_loss + 
+                             self.value_loss_coef * value_loss + 
+                             self.entropy_coef * entropy_loss)
+                
+                # 反向傳播
+                self.optimizer.zero_grad()
+                total_loss.backward()
+                
+                # 梯度裁剪
+                if self.max_grad_norm > 0:
+                    nn.utils.clip_grad_norm_(self.actor_critic.parameters(), self.max_grad_norm)
+                
+                self.optimizer.step()
+                
+                # 記錄統計資料
+                with torch.no_grad():
+                    kl_div = (batch_old_log_probs - new_log_probs).mean()
+                    clip_fraction = ((ratio - 1).abs() > self.clip_epsilon).float().mean()
+                
+                self.training_stats['policy_loss'].append(policy_loss.item())
+                self.training_stats['value_loss'].append(value_loss.item() if isinstance(value_loss, torch.Tensor) else value_loss)
+                self.training_stats['entropy'].append(entropy.mean().item())
+                self.training_stats['kl_divergence'].append(kl_div.item())
+                self.training_stats['clip_fraction'].append(clip_fraction.item())
+    
+    def get_stats(self):
+        """獲取訓練統計資料"""
+        if not self.training_stats['policy_loss']:
+            return {}
+        
+        stats = {}
+        for key, values in self.training_stats.items():
+            if values:
+                stats[f'train/{key}'] = np.mean(values[-10:])  # 最近10次的平均值
+        
+        return stats
+    
+    def save_model(self, path):
+        """保存模型"""
+        torch.save({
+            'actor_critic_state_dict': self.actor_critic.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'training_stats': self.training_stats
+        }, path)
+    
+    def load_model(self, path):
+        """載入模型"""
+        checkpoint = torch.load(path, map_location=self.device)
+        self.actor_critic.load_state_dict(checkpoint['actor_critic_state_dict'])
+        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        self.training_stats = checkpoint.get('training_stats', self.training_stats)
+\end{lstlisting}
+
+\subs

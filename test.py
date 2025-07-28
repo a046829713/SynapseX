@@ -1,7 +1,7 @@
 import torch
 import gymnasium as gym
 import numpy as np
-from model import MlpPolicy  # 請將 your_module 換成你定義網路的模組名稱
+from Brain.PPO2.lib.model import MlpPolicy  # 請將 your_module 換成你定義網路的模組名稱
 import time
 
 def test_trained_policy(env_name='CartPole-v1',
@@ -30,6 +30,7 @@ def test_trained_policy(env_name='CartPole-v1',
             action, _ = net.act(stochastic=False, obs = state_tensor)
 
             # 執行 action
+            print(action.item())
             next_state, reward, Terminated, Truncated, _ = env.step(action.item())
             done = Terminated or Truncated
             ep_reward += reward

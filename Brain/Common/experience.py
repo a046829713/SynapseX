@@ -37,8 +37,6 @@ class PrioritizedStratifiedReplayBuffer:
         """
         for _ in range(samples):
             entry = next(self.experience_source_iter)
-            print(entry)
-            time.sleep(100)
             if entry.info['instrument'] not in self.buffer:
                 self.buffer[entry.info['instrument']] = deque(maxlen=self.each_capacity)
             
@@ -58,13 +56,6 @@ class PrioritizedStratifiedReplayBuffer:
             remove the minum prioritized 
         """
         pass
-
-
-
-
-
-
-
 
 
 

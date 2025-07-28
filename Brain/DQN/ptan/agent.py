@@ -92,7 +92,8 @@ class DQNAgent(BaseAgent):
         # print("進入前info:",info)
 
         with torch.no_grad():
-            q_v = self.dqn_model(states)
+            q_v,_ = self.dqn_model(states)
+
 
         q = q_v.data.cpu().numpy()
         actions = self.action_selector(q)

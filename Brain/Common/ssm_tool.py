@@ -1,23 +1,250 @@
 # Copyright (c) 2023, Albert Gu, Tri Dao.
-
 import math
 from functools import partial
 import copy
+from typing import Optional
 import torch
-import torch.nn as nn
+from torch import nn, Tensor
 from torch.nn import functional as F
 from mamba_ssm.models.config_mamba import MambaConfig
 from mamba_ssm.modules.mamba_simple import Mamba
 from mamba_ssm.modules.mamba2 import Mamba2
 from mamba_ssm.modules.mha import MHA
-from mamba_ssm.modules.block import Block
 from mamba_ssm.utils.generation import GenerationMixin
 from mamba_ssm.utils.hf import load_config_hf, load_state_dict_hf
+from mamba_ssm.ops.triton.layer_norm import RMSNorm, layer_norm_fn, rms_norm_fn
+#
+# 步驟 1: 建立新的 MoELayer
+#
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.distributions.normal import Normal
+# from mamba_ssm.modules.block import Block
+import time
 
-try:
-    from mamba_ssm.ops.triton.layer_norm import RMSNorm, layer_norm_fn, rms_norm_fn
-except ImportError:
-    RMSNorm, layer_norm_fn, rms_norm_fn = None, None, None
+
+class Block(nn.Module):
+    def __init__(
+        self, dim, mixer_cls, mlp_cls, norm_cls=nn.LayerNorm, fused_add_norm=False, residual_in_fp32=False
+    ):
+        super().__init__()
+        self.residual_in_fp32 = residual_in_fp32
+        self.fused_add_norm = fused_add_norm
+        self.norm = norm_cls(dim)
+        self.mixer = mixer_cls(dim) # Mamba or MHA
+        print(self.mixer)
+        # mlp_cls 可以是 GatedMLP 也可以是 MoELayer
+        self.mlp = mlp_cls() if mlp_cls is not nn.Identity else nn.Identity()
+        print("Block build success.")
+
+        # <<< MODIFIED: 只有當 mlp 不是 Identity 時才創建 norm2 >>>
+        if not isinstance(self.mlp, nn.Identity):
+            self.norm2 = norm_cls(dim)
+        else:
+            self.norm2 = None # 如果沒有 mlp，就不需要 norm2
+        
+        if self.fused_add_norm:
+            assert RMSNorm is not None, "RMSNorm import fails"
+            assert isinstance(
+                self.norm, (nn.LayerNorm, RMSNorm)
+            ), "Only LayerNorm and RMSNorm are supported for fused_add_norm"
+    def forward(
+            self, hidden_states: Tensor, residual: Optional[Tensor] = None, inference_params=None, **mixer_kwargs
+    ):
+        # <<< MODIFIED: 初始化 aux_loss 為 None >>>
+        aux_loss = None
+
+        # --- 第一個子模組 (Mixer: Mamba/MHA) ---
+        if not self.fused_add_norm:
+            residual = (hidden_states + residual) if residual is not None else hidden_states
+            hidden_states = self.norm(residual.to(dtype=self.norm.weight.dtype))
+            if self.residual_in_fp32:
+                residual = residual.to(torch.float32)
+        else:
+            hidden_states, residual = layer_norm_fn(
+                hidden_states, self.norm.weight, self.norm.bias, residual=residual, prenorm=True,
+                residual_in_fp32=self.residual_in_fp32, eps=self.norm.eps,
+                is_rms_norm=isinstance(self.norm, RMSNorm)
+            )
+        hidden_states = self.mixer(hidden_states, inference_params=inference_params, **mixer_kwargs)
+
+        # --- 第二個子模組 (MLP: GatedMLP/MoE) ---
+        # <<< MODIFIED: 只有當 self.mlp 和 self.norm2 存在時才執行 >>>
+        if self.mlp is not None and self.norm2 is not None:
+            if not self.fused_add_norm:
+                residual = hidden_states + residual
+                hidden_states = self.norm2(residual.to(dtype=self.norm2.weight.dtype))
+                if self.residual_in_fp32:
+                    residual = residual.to(torch.float32)
+            else:
+                hidden_states, residual = layer_norm_fn(
+                    hidden_states, self.norm2.weight, self.norm2.bias, residual=residual, prenorm=True,
+                    residual_in_fp32=self.residual_in_fp32, eps=self.norm2.eps,
+                    is_rms_norm=isinstance(self.norm2, RMSNorm)
+                )
+
+            # <<< MODIFIED: 處理 MLP 的輸出 >>>
+            # 檢查 self.mlp 的輸出，如果是 tuple，則表示是 MoE 層
+            mlp_out = self.mlp(hidden_states)
+            if isinstance(mlp_out, tuple):
+                hidden_states, aux_loss = mlp_out
+            else:
+                hidden_states = mlp_out
+
+        # <<< MODIFIED: 回傳 hidden_states, residual 和 aux_loss >>>
+        return hidden_states, residual, aux_loss
+
+    def allocate_inference_cache(self, batch_size, max_seqlen, dtype=None, **kwargs):
+        return self.mixer.allocate_inference_cache(batch_size, max_seqlen, dtype=dtype, **kwargs)
+
+
+
+
+
+
+
+class MoELayer(nn.Module):
+    def __init__(
+        self,
+        d_model: int,
+        num_experts: int,
+        top_k: int,
+        gated_mlp_cls: nn.Module, # 將 GatedMLP 作為參數傳入
+        **gated_mlp_kwargs
+    ):
+        """
+        一個 Mixture of Experts 層。
+
+        參數:
+          - d_model: 輸入和輸出的維度。
+          - num_experts: 專家的總數量。
+          - top_k: 每次為每個 token 選擇 top_k 個專家。
+          - gated_mlp_cls: 用來創建專家的類別 (例如 GatedMLP)。
+          - gated_mlp_kwargs: 創建專家時需要傳入的參數。
+        """
+        super().__init__()
+        self.d_model = d_model
+        self.num_experts = num_experts
+        self.top_k = top_k
+
+        # 1. 建立專家網路
+        # 每個專家都是一個 GatedMLP 實例
+        self.experts = nn.ModuleList([
+            gated_mlp_cls(in_features=d_model, **gated_mlp_kwargs) for _ in range(num_experts)
+        ])
+
+        # 2. 建立門控網路
+        # 一個簡單的線性層，輸出每個專家的 logits
+        self.gate = nn.Linear(d_model, num_experts, bias=False)
+        
+        # 3. 負載平衡損失相關的噪音參數 (可選但建議)
+        self.noise_epsilon = 1e-2
+        self.register_buffer('mean', torch.tensor([0.0]))
+        self.register_buffer('std', torch.tensor([1.0]))
+
+
+    def _compute_load_balancing_loss(self, gate_logits, num_tokens):
+        """
+        計算輔助的負載平衡損失 (參考 Switch Transformers 和 Mixtral 的實現)。
+        這個損失有助於確保所有專家都得到充分的訓練。
+        """
+        # gate_logits: [num_tokens, num_experts]
+        top_logits, top_indices = gate_logits.topk(self.top_k, dim=1)
+        
+        # 將 logits 轉換為機率分佈
+        gates_softmax = F.softmax(gate_logits, dim=1) # [num_tokens, num_experts]
+        
+        # 計算每個專家被選擇的頻率 (f_i)
+        # top_indices: [num_tokens, top_k]
+        # F.one_hot 會產生 [num_tokens, top_k, num_experts] 的張量
+        # .sum(dim=1) 後得到 [num_tokens, num_experts]，表示每個 token 選擇了哪些專家
+        temp_mask = F.one_hot(top_indices, self.num_experts).sum(dim=1)
+        
+        # f_i: 每個專家處理的 token 比例
+        f_i = temp_mask.float().mean(dim=0) # [num_experts]
+        
+        # P_i: 門控網路輸出權重的平均值
+        P_i = gates_softmax.mean(dim=0) # [num_experts]
+        
+        # Loss = (f_i * P_i).sum()
+        # 乘以專家數量的平方是一個常用的縮放因子
+        loss = (f_i * P_i).sum() * (self.num_experts ** 2)
+        return loss
+
+
+    def forward(self, x: torch.Tensor):
+        """
+        前向傳播。
+
+        參數:
+          - x: 輸入張量，形狀為 [batch_size, seq_len, d_model]
+
+        回傳:
+          - final_output: 處理後的輸出張量，形狀同 x。
+          - aux_loss: 輔助的負載平衡損失。
+        """
+        batch_size, seq_len, d_model = x.shape
+
+        # 將輸入 reshape 成 token 列表，方便處理
+        x_flat = x.view(-1, d_model) # [B * L, D]
+        num_tokens = x_flat.shape[0]
+
+        
+        # torch.Size([300, 8])
+        gate_logits = self.gate(x_flat)
+        
+        # 1. 透過門控網路計算 logits
+        # 增加一些噪音可以改善負載平衡 (Jittering)
+        if self.training:
+            normal_dist = Normal(self.mean, self.std)
+            noise = normal_dist.sample(gate_logits.shape).squeeze() * self.noise_epsilon
+            gate_logits = gate_logits + noise
+
+            
+        # 2. 選擇 top-k 的專家並計算權重
+        top_k_logits, top_k_indices = gate_logits.topk(self.top_k, dim=1)
+
+        top_k_weights = F.softmax(top_k_logits, dim=1, dtype=torch.float).to(x.dtype) # [B * L, top_k]
+        
+        # 3. 計算輔助損失
+        aux_loss = self._compute_load_balancing_loss(gate_logits, num_tokens)
+
+        # 4. 將 token 分配給專家並計算輸出
+        final_output = torch.zeros_like(x_flat)
+        # 創建一個扁平化的索引，方便後面用 `scatter_add_`
+        flat_top_k_indices = top_k_indices.flatten() # [B * L * top_k]
+
+        # 將輸入 x_flat 擴展，以匹配每個 token 的 top_k 個選擇
+        # x_flat -> [B*L, D]
+        # top_k_weights -> [B*L, top_k]
+        # y -> [B*L, top_k, D]
+        y = (x_flat.unsqueeze(1) * top_k_weights.unsqueeze(2)).view(-1, d_model)
+
+        # 初始化一個 expert_outputs 張量
+        expert_outputs = torch.zeros_like(y)
+        
+        # 使用 for 循環遍歷專家 (雖然效率不高，但易於理解)
+        # 在實際應用中，會使用更高效的 dispatch/combine 操作
+        for i in range(self.num_experts):
+            # 找到所有應該由第 i 個專家處理的 token
+            mask = (flat_top_k_indices == i)
+            if mask.any():
+                # 將這些 token 餵給專家
+                expert_input = y[mask]
+                expert_outputs[mask] = self.experts[i](expert_input)
+
+        # 將所有專家的輸出加總起來
+        # y -> [B*L*top_k, D]
+        # final_output -> [B*L, D]
+        final_output = final_output.scatter_add_(0, top_k_indices.view(-1, 1).expand(-1, d_model), expert_outputs)
+
+        return final_output.view(batch_size, seq_len, d_model), aux_loss
+
+
+
+
+
 
 
 
@@ -82,6 +309,7 @@ def create_block(
     fused_add_norm=False,
     layer_idx=None,
     dropout=None,
+    moe_cfg=None,
     device=None,
     dtype=None,
 ):
@@ -98,7 +326,6 @@ def create_block(
       4. 產生 MLP (如 d_intermediate > 0) 或 Identity。
       5. 將上述元件包裝成 Block。
     """
-    
     if ssm_cfg is None:
         ssm_cfg = {}
     if attn_layer_idx is None:
@@ -133,15 +360,36 @@ def create_block(
         nn.LayerNorm if not rms_norm else RMSNorm, eps=norm_epsilon, **factory_kwargs
     )
     
+    print("開始創建create_block")
     # 若 d_intermediate 為 0，則不需要 MLP，直接用 Identity
     if d_intermediate == 0:
-        mlp_cls = nn.Identity
+        mlp_cls = nn.Identity    
+    elif moe_cfg and moe_cfg.get("num_experts", 0) > 0:
+        # 如果 moe_cfg 存在且指定了專家數量，則使用 MoELayer
+        print(f"Layer {layer_idx}: Using MoE with {moe_cfg['num_experts']} experts.")
+        print("開始創建MoELayer1")
+        # 建立 MoELayer
+        mlp_cls = partial(
+            MoELayer,
+            d_model=d_model,
+            num_experts=moe_cfg['num_experts'],
+            top_k=moe_cfg.get('top_k', 2), # top_k 預設為 2
+            gated_mlp_cls=GatedMLP,
+            hidden_features=d_intermediate,
+            out_features=d_model,
+            dropout = dropout,
+            **factory_kwargs
+        )
+        print("開始創建MoELayer2")
     else:
         
         mlp_cls = partial(
             GatedMLP, hidden_features=d_intermediate, out_features=d_model, dropout = dropout, **factory_kwargs
         )
 
+
+    print(mlp_cls)
+    print("開始創建Block")
     # 建立一個 Block，並把上面定義好的 mixer, mlp, norm 全部放進去
     block = Block(
         d_model,
@@ -207,6 +455,7 @@ class MixerModel(nn.Module):
         initializer_cfg=None,
         fused_add_norm=True,
         residual_in_fp32=False,
+        moe_cfg=None,
         device=None,
         dtype=None,
         dropout=None
@@ -234,7 +483,7 @@ class MixerModel(nn.Module):
             if layer_norm_fn is None or rms_norm_fn is None:
                 raise ImportError("Failed to import Triton LayerNorm / RMSNorm kernels")
         
-
+        print("開始創建layer1:")
         # 3. 建立 n_layer 個 Block (SSM/MHA + MLP + Norm)
         self.layers = nn.ModuleList(
             [
@@ -250,6 +499,7 @@ class MixerModel(nn.Module):
                     fused_add_norm=fused_add_norm,
                     layer_idx=i,
                     dropout=dropout,
+                    moe_cfg=moe_cfg,
                     **factory_kwargs,
                 )
                 for i in range(n_layer)
@@ -291,14 +541,24 @@ class MixerModel(nn.Module):
         hidden_states = x
         residual = None
 
+        # 【修改點】
+        # 初始化一個列表來收集所有層的輔助損失
+        aux_losses = []
+
+
         # 2. 逐層 forward
         for layer in self.layers:
-            hidden_states, residual = layer(
+            # Block 的 forward 需要被修改以回傳 aux_loss
+            # 這一步驟的修改取決於你的 Block 類別的具體實現
+            # 假設 Block 的 forward 現在回傳 (hidden_states, residual, aux_loss)
+            hidden_states, residual, aux_loss = layer(
                 hidden_states, 
                 residual, 
                 inference_params=inference_params, 
                 **mixer_kwargs
             )
+            if aux_loss is not None:
+                aux_losses.append(aux_loss)
 
         # 3. 最終再做一次 Norm
         if not self.fused_add_norm:
@@ -318,4 +578,5 @@ class MixerModel(nn.Module):
                 is_rms_norm=isinstance(self.norm_f, RMSNorm)
             )
 
-        return hidden_states
+        total_aux_loss = torch.stack(aux_losses).mean() if aux_losses else None
+        return hidden_states, total_aux_loss

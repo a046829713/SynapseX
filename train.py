@@ -1,54 +1,9 @@
-import torch
-import torch.nn as nn
-import torch.optim as optim
-import gymnasium as gym
-import numpy as np
-from collections import deque, namedtuple
-import time
-import os
-from model import MlpPolicy
 
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-# device = torch.device("cpu")
 
 
-Transition = namedtuple('Transition',
-                        ['state', 'action', 'logp', 'reward', 'next_state', 'done', 'value'])
 
-class RolloutBuffer:
-    def __init__(self, gamma=0.99, lam=0.95):
-        self.gamma = gamma
-        self.lam = lam
-        self.buffer = []
 
-    def store(self, *args):
-        self.buffer.append(Transition(*args))
-
-    def compute_gae(self, last_value):
-        rewards, values, dones = [], [], []
-        for t in self.buffer:
-            rewards.append(t.reward)
-            values.append(t.value.item())
-            dones.append(t.done)
-        
-        
-        values = values + [last_value]
-        gae, returns = 0, []
-        for step in reversed(range(len(rewards))):
-            delta = rewards[step] + self.gamma * values[step+1] * (1 - dones[step]) - values[step]
-            gae = delta + self.gamma * self.lam * (1 - dones[step]) * gae
-            returns.insert(0, gae + values[step])
-        
-        # 把 advantages 與 returns 放回 transitions
-        advantages = np.array(returns) - np.array(values[:-1])
-        for idx, tr in enumerate(self.buffer):
-            self.buffer[idx] = tr._replace(reward=returns[idx], value=advantages[idx])
-        
-        return self.buffer
-
-    def clear(self):
-        self.buffer = []
 
 
 
@@ -133,51 +88,5 @@ def save_model(model: torch.nn.Module,
 # 範例使用：
 # save_model(net, optimizer, 'ppo_cartpole.pth', epoch=100, extra={'reward_mean': 195.0})
 
-
-def train(env_name='CartPole-v1', total_timesteps=100000):
-    env = gym.make(env_name)
-    net = MlpPolicy(env.observation_space, env.action_space).to(device)
-    optimizer = optim.Adam(net.parameters(), lr=3e-4)
-    buffer = RolloutBuffer()
-
-    state = env.reset()[0]
-    
-    episode_reward = 0
-    timesteps = 0
-
-    while timesteps < total_timesteps:
-        # collect rollout
-        for _ in range(2048):
-            state_tensor = torch.tensor(state, dtype=torch.float32 ,device=device)
-
-            # In data collection we don't need computational graph
-            with torch.no_grad():
-               out = net(state_tensor)
-
-            next_state, reward, Terminated, Truncated, info= env.step(out.action.item())
-            episode_reward += reward            
-            done = Terminated or Truncated            
-            buffer.store(state, out.action,  out.log_prob, reward, next_state, done, out.value)
-
-            state = next_state
-            timesteps += 1
-
-            if done:
-                print(f"Episode return: {episode_reward:.2f}")
-                state, episode_reward = env.reset()[0], 0
-
-        # GAE 與 PPO 更新
-        with torch.no_grad():
-            out = net(torch.as_tensor(state, dtype=torch.float32, device=device))
-        
-        
-        transitions = buffer.compute_gae(out.value.item())
-        ppo_update(net, optimizer, transitions)
-        buffer.clear()
-    
-
-    save_model(net)
-
-
-
-train()
+# "LunarLander-v3"
+# 'CartPole-v1'

@@ -8,7 +8,7 @@ import time
 from einops import rearrange
 from Brain.Common.ssm_tool import MixerModel,GatedMLP
 from torch.nn import functional as F
-
+from typing import Optional
 
 # class TransformerDuelingModel(nn.Module):
 #     def __init__(self,
@@ -412,7 +412,8 @@ class mambaDuelingModel(nn.Module):
                  num_actions: int,
                  seq_dim: int = 300,
                  dropout: float = 0.1,
-                 mode='full'):
+                 mode='full',
+                 moe_cfg: Optional[dict] = None):
 
         super().__init__()
         self.dean = DAIN_Layer(mode=mode, input_dim=d_model)
@@ -442,12 +443,13 @@ class mambaDuelingModel(nn.Module):
             nn.Dropout(dropout),
             nn.Linear(256, num_actions)
         )
-
+        print("開始創建MixerModel1：")
         self.mixer = MixerModel(
             d_model= d_model,
             n_layer=nlayers,
             d_intermediate=1,
-            dropout=dropout
+            dropout=dropout,
+            moe_cfg=moe_cfg
         )
         
 
@@ -459,7 +461,12 @@ class mambaDuelingModel(nn.Module):
         src = src.transpose(1, 2)        
         src = self.dean(src) # [B, seq_len, d_model]
         src = src.transpose(1, 2)
-        src = self.mixer(src)
+        
+
+        src, aux_loss = self.mixer(src)
+
+
+
         src = src.view(src.size(0), -1)
 
         # 狀態值和優勢值
@@ -467,7 +474,7 @@ class mambaDuelingModel(nn.Module):
         advantage = self.fc_adv(src)   # [B, num_actions]
 
         q_values = value + (advantage - advantage.mean(dim=1, keepdim=True))
-        return q_values
+        return q_values, aux_loss
 
 
 

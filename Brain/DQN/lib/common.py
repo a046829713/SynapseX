@@ -139,55 +139,56 @@ def turn_to_tensor(infos,device):
     output_tensor = torch.from_numpy(output_array).to(device)
     return output_tensor 
 
-def calc_loss(batch, net, tgt_net, gamma, device="cpu"):
+def calc_loss(batch, net, tgt_net, gamma, moe_loss_coeff=0.01, device="cpu"):
     """
-        計算 DQN 的 MSE loss，並同時計算每筆 transition 的 TD‐error。
-
-        Returns:
-            loss: torch.Tensor            # 均方誤差損失  
-            td_errors: torch.Tensor      # shape=(batch_size,)
-
-
-    state_action_values like this : tensor([ 0.0645,  0.0453,  0.0322,  0.0556, -0.0476, -0.0432,  0.0252,  0.0906,
-         0.0539,  0.0750,  0.0675,  0.0596, -0.0412,  0.0456,  0.0526, -0.0150,
-         0.0530,  0.0434,  0.0388, -0.0372,  0.0480,  0.0358,  0.0743,  0.0275,
-         0.0687, -0.0173,  0.0859,  0.0522, -0.0125, -0.0301,  0.0224,  0.0628],
-       device='cuda:0', grad_fn=<SqueezeBackward1>)
+    計算 DQN 的 MSE loss，並同時計算每筆 transition 的 TD‐error，並整合 MoE 的輔助損失 (auxiliary loss)。
     """
-    states, actions, rewards, dones, next_states, infos, last_infos = unpack_batch(batch)
-    states_v = torch.tensor(states).to(device)
-    next_states_v = torch.tensor(next_states).to(device)
-    actions_v = torch.tensor(actions).to(device)
-    rewards_v = torch.tensor(rewards).to(device)
-    done_mask = torch.tensor(dones, dtype=torch.bool).to(device)
-    infos = turn_to_tensor(infos,device=device)
-    last_infos = turn_to_tensor(last_infos,device=device)
+    states, actions, rewards, dones, next_states, _, _ = unpack_batch(batch)
+    states_v = torch.tensor(states, device=device, dtype=torch.float32)
+    next_states_v = torch.tensor(next_states, device=device, dtype=torch.float32)
+    actions_v = torch.tensor(actions, device=device, dtype=torch.long)
+    rewards_v = torch.tensor(rewards, device=device, dtype=torch.float32)
+    done_mask = torch.tensor(dones, device=device, dtype=torch.bool)
+
+    # --- 線上網路 (net) ---
+    # 1. 從 MoE 模型獲取 Q 值和輔助損失
+    q_values, aux_loss = net(states_v)
+
+    # 2. 獲取實際採取動作的 Q 值: Q(s,a)
+    state_action_values = q_values.gather(1, actions_v.unsqueeze(-1)).squeeze(-1)
+
+    # ---目標網路 (tgt_net) & Double DQN ---
+    with torch.no_grad():
+        # 3. 使用線上網路 `net` 選擇下一狀態的最佳動作 a_max
+        next_q_values, _ = net(next_states_v)
+        next_actions = next_q_values.max(1)[1]
+
+        # 4. 使用目標網路 `tgt_net` 評估 a_max 的 Q 值: Q_target(s', a_max)
+        next_state_q_values, _ = tgt_net(next_states_v)
+        next_state_values = next_state_q_values.gather(1, next_actions.unsqueeze(-1)).squeeze(-1)
+        
+        # 5. 對於終止狀態，其未來價值為 0
+        next_state_values[done_mask] = 0.0
+
+        # 6. 計算 TD 目標 (y)
+        q_targets = rewards_v + gamma * next_state_values
 
 
-    # 1) Q(s,a)  —— current network
-    state_action_values = net(states_v).gather(
-        1, actions_v.unsqueeze(-1)).squeeze(-1)
+    # --- 計算總損失 ---
+    # 7. 計算 DQN Loss (MSE)
+    dqn_loss = nn.MSELoss()(state_action_values, q_targets)
     
+    # 8. 加上 MoE 的輔助損失
+    if aux_loss is not None:
+        total_loss = dqn_loss + moe_loss_coeff * aux_loss
+    else:
+        total_loss = dqn_loss
 
-    # 2) max_a' Q_target(s',a')  —— double DQN
-    next_state_actions = net(next_states_v).max(1)[1]
+    # 9. 計算 TD-error (用於 PER)
+    with torch.no_grad():
+        td_errors = torch.abs(q_targets - state_action_values)
 
-    next_state_values = tgt_net(next_states_v).gather(
-        1, next_state_actions.unsqueeze(-1)).squeeze(-1)
-    
-    next_state_values[done_mask] = 0.0
-
-
-    # 3) build TD target: y = r + γ·max_a' Q_target(s',a')
-    expected_values = rewards_v + gamma * next_state_values.detach()
-
-
-    # 4) TD‐errors = y - Q(s,a)
-    td_errors = expected_values - state_action_values         # shape=[B]
-
-    # detach 單純的tensor 沒有grad_fn
-    expected_state_action_values = next_state_values.detach() * gamma + rewards_v 
-    return nn.MSELoss()(state_action_values, expected_state_action_values), td_errors
+    return total_loss, td_errors
 
 
 def update_eval_states(buffer, STATES_TO_EVALUATE):
