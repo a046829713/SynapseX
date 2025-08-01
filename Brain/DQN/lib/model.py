@@ -443,7 +443,7 @@ class mambaDuelingModel(nn.Module):
             nn.Dropout(dropout),
             nn.Linear(256, num_actions)
         )
-        print("開始創建MixerModel1：")
+
         self.mixer = MixerModel(
             d_model= d_model,
             n_layer=nlayers,

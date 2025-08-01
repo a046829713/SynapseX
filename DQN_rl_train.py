@@ -152,7 +152,7 @@ class RL_prepare(ABC):
         elif self.keyword == "Mamba":
             # 新增專家模式
             moe_config = {
-                "num_experts": 8, # 8 個專家
+                "num_experts": 16, # 8 個專家
                 "top_k": 2        # 每次選擇 2 個
             }   
 
@@ -164,8 +164,6 @@ class RL_prepare(ABC):
                 dropout=0.3,
                 moe_cfg= moe_config 
             ).to(self.device)
-
-            print(self.net)
 
         elif self.keyword == "Mamba2":
             self.net = model.mamba2DuelingModel(
@@ -327,7 +325,7 @@ class RL_Train(RL_prepare):
 
                     self.step_idx += 1
                     self.buffer.populate(1)
-
+                    print(self.step_idx)
                     # [(-2.5305491551459296, 10)]
                     # 跑了一輪之後,清空原本的數據,並且取得獎勵
                     new_rewards = self.exp_source.pop_rewards_steps()
