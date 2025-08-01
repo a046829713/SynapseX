@@ -11,3 +11,4 @@ PyMySQL==1.1.1
 matplotlib
 tqdm
 python-binance # python-binance     1.0.29
+st-moe-pytorch==0.1.8
