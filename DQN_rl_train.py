@@ -325,7 +325,6 @@ class RL_Train(RL_prepare):
 
                     self.step_idx += 1
                     self.buffer.populate(1)
-                    print(self.step_idx)
                     # [(-2.5305491551459296, 10)]
                     # 跑了一輪之後,清空原本的數據,並且取得獎勵
                     new_rewards = self.exp_source.pop_rewards_steps()

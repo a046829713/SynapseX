@@ -25,6 +25,12 @@ import time
 import torch
 from st_moe_pytorch import MoE
 from st_moe_pytorch import SparseMoEBlock
+from utils.Debug_tool import debug
+from soft_moe_pytorch import SoftMoE
+
+
+
+
 
 class Block(nn.Module):
     def __init__(
@@ -51,6 +57,7 @@ class Block(nn.Module):
                 self.norm, (nn.LayerNorm, RMSNorm)
             ), "Only LayerNorm and RMSNorm are supported for fused_add_norm"
 
+    @debug.record_time_add
     def forward(
             self, hidden_states: Tensor, residual: Optional[Tensor] = None, inference_params=None, **mixer_kwargs
     ):
@@ -70,6 +77,7 @@ class Block(nn.Module):
                 is_rms_norm=isinstance(self.norm, RMSNorm)
             )
         hidden_states = self.mixer(hidden_states, inference_params=inference_params, **mixer_kwargs)
+
         # --- 第二個子模組 (MLP: GatedMLP/MoE) ---
         # <<< MODIFIED: 只有當 self.mlp 和 self.norm2 存在時才執行 >>>
         if self.mlp is not None and self.norm2 is not None:
@@ -218,27 +226,19 @@ def create_block(
     # 若 d_intermediate 為 0，則不需要 MLP，直接用 Identity
     if d_intermediate == 0:
         mlp_cls = nn.Identity    
+
     elif moe_cfg and moe_cfg.get("num_experts", 0) > 0:
-        mlp_cls = partial(
-            SparseMoEBlock , # main block
-            MoE(
-                dim = d_model,
-                num_experts = moe_cfg.get("num_experts", 16), # increase the experts (# parameters) of your model without increasing computation
-                gating_top_n = moe_cfg.get("top_k", 2), # default to top 2 gating, but can also be more (3 was tested in the paper with a lower threshold)
-                threshold_train = 0.2,  # at what threshold to accept a token to be routed to second expert and beyond - 0.2 was optimal for 2 expert routing, and apparently should be lower for 3
-                threshold_eval = 0.2,
-                capacity_factor_train = 1.25,   # experts have fixed capacity per batch. we need some extra capacity in case gating is not perfectly balanced.
-                capacity_factor_eval = 2.,      # capacity_factor_* should be set to a value >=1
-                balance_loss_coef = 1e-2,       # multiplier on the auxiliary expert balancing auxiliary loss
-                router_z_loss_coef = 1e-3,      # loss weight for router z-loss
-            ),
-            add_ff_before = True,
-            add_ff_after = True
+        mlp_cls = partial(            
+            SoftMoE,
+            dim = d_model, # # max sequence length (will automatically calculate number of slots as seq_len // num_experts) - you can also set num_slots directly
+            num_experts = moe_cfg.get("num_experts"), # # number of experts - (they suggest number of experts should be high enough that each of them get only 1 slot. wonder if that is the weakness of the paper?)
+            seq_len = 1024     
         )
+
     else:
         
         mlp_cls = partial(
-            GatedMLP, hidden_features=d_intermediate, out_features=d_model, dropout = dropout, **factory_kwargs
+            GatedMLP, in_features = d_model, hidden_features=d_intermediate, out_features=d_model, dropout = dropout, **factory_kwargs
         )
 
     # 建立一個 Block，並把上面定義好的 mixer, mlp, norm 全部放進去
@@ -429,4 +429,5 @@ class MixerModel(nn.Module):
             )
 
         total_aux_loss = torch.stack(aux_losses).mean() if aux_losses else None
+        
         return hidden_states, total_aux_loss

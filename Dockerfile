@@ -25,7 +25,7 @@ RUN pip3 install mamba_ssm-2.2.4+cu12torch2.5cxx11abiFALSE-cp310-cp310-linux_x86
 RUN pip3 install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu124
 
 
-RUN pip3 install causal-conv1d>=1.4.0 --no-build-isolation
+RUN pip3 install causal-conv1d==1.5.0.post8 --no-build-isolation
 
 # 5. 複製專案程式碼
 COPY . /SynapseX
