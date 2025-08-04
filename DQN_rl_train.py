@@ -94,7 +94,7 @@ class RL_prepare(ABC):
         self.TARGET_NET_SYNC = 1000
         self.CHECKPOINT_EVERY_STEP = 20000  
         self.VALIDATION_EVERY_STEP = 100000
-        self.EPSILON_STEPS = 1000000 * 30
+        self.EPSILON_STEPS = 1000000 * 30 if len(self.symbolNames) > 30 else 1000000 * len(self.symbolNames)
         self.EVAL_EVERY_STEP = 10000  # 每一萬步驗證一次
         self.NUM_EVAL_EPISODES = 10  # 每次评估的样本数
         
