@@ -10,5 +10,4 @@ numba==0.60.0
 PyMySQL==1.1.1
 matplotlib
 tqdm
-python-binance # python-binance     1.0.29
-soft-moe-pytorch==0.1.9        
+python-binance # python-binance     1.0.29    
