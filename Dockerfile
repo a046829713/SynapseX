@@ -26,7 +26,7 @@ RUN pip3 install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 --index-url 
 
 
 RUN pip3 install causal-conv1d==1.5.0.post8 --no-build-isolation
-
+RUN pip3 install soft-moe-pytorch==0.1.9
 # 5. 複製專案程式碼
 COPY . /SynapseX
 COPY ssd_combined.py /usr/local/lib/python3.10/dist-packages/mamba_ssm/ops/triton/ssd_combined.py
