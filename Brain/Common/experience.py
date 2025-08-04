@@ -8,7 +8,7 @@ import torch
 import random
 from collections import namedtuple, deque
 import numpy as np
-
+from utils.Debug_tool import debug
 
 
 class PrioritizedStratifiedReplayBuffer:
@@ -59,16 +59,23 @@ class PrioritizedStratifiedReplayBuffer:
 
 
 
+
+
 class SequentialExperienceReplayBuffer:
-    def __init__(self, experience_source, buffer_size,replay_initial_size:int):
+    def __init__(self,
+                  experience_source,
+                  buffer_size,
+                  replay_initial_size:int,
+                  ):
         """
             Initialize the buffer with a source, capacity, and symbol count.
-
+            :param batch_size: 總的批次大小。
             _count (int) : count the times.
         """
         assert isinstance(experience_source, (ExperienceSource, type(None)))
         assert isinstance(buffer_size, int)
         
+
 
         self.experience_source_iter = None if experience_source is None else iter(
             experience_source)
@@ -84,6 +91,14 @@ class SequentialExperienceReplayBuffer:
         self._del_critical_len = 1000000
 
 
+    @property
+    def each_num_len_enough(self):         
+        if self._count > self.replay_initial_size:
+            return True
+        else:
+            return False
+
+
     def __len__(self):
         """
         Total number of experiences in the buffer.
@@ -97,12 +112,7 @@ class SequentialExperienceReplayBuffer:
 
         return { key:len(self.buffer[key]) for key in self.buffer}
 
-    def each_num_len_enough(self): 
-        if self._count > self.replay_initial_size:
-            return True
-        else:
-            return False
-    
+        
     def get_random_symbol(self):
         return random.choice([ symbolName for symbolName,data in self.buffer.items() if len(data) > self.replay_initial_size])
 
@@ -128,7 +138,7 @@ class SequentialExperienceReplayBuffer:
     
     def populate(self, samples):
         """
-        將樣本填入緩衝區中
+            將樣本填入緩衝區中
         """
         for _ in range(samples):
             entry = next(self.experience_source_iter)
@@ -162,14 +172,84 @@ class SequentialExperienceReplayBuffer:
             'capacity': self.capacity,
         }
 
-    def load_state(self, state):
-        """
-        從保存的狀態加載緩衝區。
-        """
-        self.buffer = state['buffer']  # 直接還原 dict of deque
-        self.capacity = state['capacity']
+    
 
+
+
+class MultipleSequentialExperienceReplayBuffer(SequentialExperienceReplayBuffer):
+    def __init__(self, experience_source, buffer_size, replay_initial_size, batch_size, num_symbols_to_sample):
+        super().__init__(experience_source, buffer_size, replay_initial_size)
+        """
+            :param num_symbols_to_sample: 要從多少個不同的商品中抽樣。
         
+        """
+    
+        # mixer symbol Area
+        # 確保 batch_size 可以被均分
+        assert batch_size % num_symbols_to_sample == 0 , "batch_size 必須可以被 num_symbols_to_sample 整除。"
+        self.samples_per_symbol = batch_size // num_symbols_to_sample
+        self.num_symbols_to_sample = num_symbols_to_sample
+
+
+    def each_num_len_enough(self): 
+        """
+            須確定取樣的時候已經超過所需要的資料
+        """
+        self.available_symbols_len = [
+            symbolName for symbolName, data in self.buffer.items() 
+            if len(data) >= self.replay_initial_size
+        ]
+        return len(self.available_symbols_len) > self.num_symbols_to_sample
+
+
+    def _sample(self,
+                symbol:str,
+                batch_size):
+        """
+            Sample a batch of sequential experiencesl.
+        
+        """
+        symbol  =self.get_random_symbol()
+        data = self.buffer[symbol]
+        start = random.randint(0, len(data) - batch_size)
+        batch = list(itertools.islice(data, start, start + batch_size))
+        offset = batch[0].info['offset']
+        if all(exp.info['offset'] == offset + i for i, exp in enumerate(batch)):
+            if symbol not in self.sample_count_buffer:
+                self.sample_count_buffer[symbol] = 1
+            else:
+                 self.sample_count_buffer[symbol] += 1
+            return batch
+        
+        return self._sample(symbol, batch_size)
+
+    def mixer_sample(self):
+        """
+            從多個隨機選擇的商品中抽樣，構建成一個混合批次。
+            :return: 一個包含混合經驗的列表。
+        """
+        final_batch = [] 
+
+        # 2. 隨機選取指定數量的商品 (不重複)
+        selected_symbols = random.sample(self.available_symbols_len, self.num_symbols_to_sample)
+        
+        # 3. 從每個選中的商品中抽取樣本
+        for symbol in selected_symbols:
+            final_batch.extend(self._sample(symbol, batch_size=self.samples_per_symbol))
+    
+        return final_batch
+    
+    
+    
+    
+    
+
+
+
+
+
+
+
 
 
 class ExperienceReplayBuffer:

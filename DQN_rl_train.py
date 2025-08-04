@@ -11,7 +11,7 @@ import time
 from Brain.DQN.lib import model
 from abc import ABC
 from Brain.DQN.lib.EfficientnetV2 import EfficientnetV2SmallDuelingModel
-from Brain.Common.experience import SequentialExperienceReplayBuffer,PrioritizedStratifiedReplayBuffer
+from Brain.Common.experience import MultipleSequentialExperienceReplayBuffer
 import torch.nn as nn
 import traceback
 
@@ -61,7 +61,7 @@ class RL_prepare(ABC):
         
         # symbolNames = ['AAVEUSDT-F-30-Min-Fake0', 'AAVEUSDT-F-30-Min-Fake1', 'AAVEUSDT-F-30-Min-Fake2', 'AAVEUSDT-F-30-Min-Fake3', 'AAVEUSDT-F-30-Min-Fake4', 'AAVEUSDT-F-30-Min-Fake5', 'AAVEUSDT-F-30-Min-Fake6', 'AAVEUSDT-F-30-Min-Fake7', 'AAVEUSDT-F-30-Min-Fake8', 'AAVEUSDT-F-30-Min-Fake9', 'AAVEUSDT-F-30-Min', 'ADAUSDT-F-30-Min-Fake0', 'ADAUSDT-F-30-Min-Fake1', 'ADAUSDT-F-30-Min-Fake2', 'ADAUSDT-F-30-Min-Fake3', 'ADAUSDT-F-30-Min-Fake4', 'ADAUSDT-F-30-Min-Fake5', 'ADAUSDT-F-30-Min-Fake6', 'ADAUSDT-F-30-Min-Fake7', 'ADAUSDT-F-30-Min-Fake8', 'ADAUSDT-F-30-Min-Fake9', 'ADAUSDT-F-30-Min', 'AGLDUSDT-F-30-Min-Fake0', 'AGLDUSDT-F-30-Min-Fake1', 'AGLDUSDT-F-30-Min-Fake2', 'AGLDUSDT-F-30-Min-Fake3', 'AGLDUSDT-F-30-Min-Fake4', 'AGLDUSDT-F-30-Min-Fake5', 'AGLDUSDT-F-30-Min-Fake6', 'AGLDUSDT-F-30-Min-Fake7', 'AGLDUSDT-F-30-Min-Fake8', 'AGLDUSDT-F-30-Min-Fake9', 'AGLDUSDT-F-30-Min', 'ALGOUSDT-F-30-Min-Fake0', 'ALGOUSDT-F-30-Min-Fake1', 'ALGOUSDT-F-30-Min-Fake2', 'ALGOUSDT-F-30-Min-Fake3', 'ALGOUSDT-F-30-Min-Fake4', 'ALGOUSDT-F-30-Min-Fake5', 'ALGOUSDT-F-30-Min-Fake6', 'ALGOUSDT-F-30-Min-Fake7', 'ALGOUSDT-F-30-Min-Fake8', 'ALGOUSDT-F-30-Min-Fake9', 'ALGOUSDT-F-30-Min', 'AVAXUSDT-F-30-Min-Fake0', 'AVAXUSDT-F-30-Min-Fake1', 'AVAXUSDT-F-30-Min-Fake2', 'AVAXUSDT-F-30-Min-Fake3', 'AVAXUSDT-F-30-Min-Fake4', 'AVAXUSDT-F-30-Min-Fake5', 'AVAXUSDT-F-30-Min-Fake6', 'AVAXUSDT-F-30-Min-Fake7', 'AVAXUSDT-F-30-Min-Fake8', 'AVAXUSDT-F-30-Min-Fake9', 'AVAXUSDT-F-30-Min', 'BNBUSDT-F-30-Min-Fake0', 'BNBUSDT-F-30-Min-Fake1', 'BNBUSDT-F-30-Min-Fake2', 'BNBUSDT-F-30-Min-Fake3', 'BNBUSDT-F-30-Min-Fake4', 'BNBUSDT-F-30-Min-Fake5', 'BNBUSDT-F-30-Min-Fake6', 'BNBUSDT-F-30-Min-Fake7', 'BNBUSDT-F-30-Min-Fake8', 'BNBUSDT-F-30-Min-Fake9', 'BNBUSDT-F-30-Min', 'BTCUSDT-F-30-Min-Fake0', 'BTCUSDT-F-30-Min-Fake1', 'BTCUSDT-F-30-Min-Fake2', 'BTCUSDT-F-30-Min-Fake3', 'BTCUSDT-F-30-Min-Fake4', 'BTCUSDT-F-30-Min-Fake5', 'BTCUSDT-F-30-Min-Fake6', 'BTCUSDT-F-30-Min-Fake7', 'BTCUSDT-F-30-Min-Fake8', 'BTCUSDT-F-30-Min-Fake9', 'BTCUSDT-F-30-Min', 'CRVUSDT-F-30-Min-Fake0', 'CRVUSDT-F-30-Min-Fake1', 'CRVUSDT-F-30-Min-Fake2', 'CRVUSDT-F-30-Min-Fake3', 'CRVUSDT-F-30-Min-Fake4', 'CRVUSDT-F-30-Min-Fake5', 'CRVUSDT-F-30-Min-Fake6', 'CRVUSDT-F-30-Min-Fake7', 'CRVUSDT-F-30-Min-Fake8', 'CRVUSDT-F-30-Min-Fake9', 'CRVUSDT-F-30-Min', 'DOGEUSDT-F-30-Min-Fake0', 'DOGEUSDT-F-30-Min-Fake1', 'DOGEUSDT-F-30-Min-Fake2', 'DOGEUSDT-F-30-Min-Fake3', 'DOGEUSDT-F-30-Min-Fake4', 'DOGEUSDT-F-30-Min-Fake5', 'DOGEUSDT-F-30-Min-Fake6', 'DOGEUSDT-F-30-Min-Fake7', 'DOGEUSDT-F-30-Min-Fake8', 'DOGEUSDT-F-30-Min-Fake9', 'DOGEUSDT-F-30-Min', 'DOTUSDT-F-30-Min-Fake0', 'DOTUSDT-F-30-Min-Fake1', 'DOTUSDT-F-30-Min-Fake2', 'DOTUSDT-F-30-Min-Fake3', 'DOTUSDT-F-30-Min-Fake4', 'DOTUSDT-F-30-Min-Fake5', 'DOTUSDT-F-30-Min-Fake6', 'DOTUSDT-F-30-Min-Fake7', 'DOTUSDT-F-30-Min-Fake8', 'DOTUSDT-F-30-Min-Fake9', 'DOTUSDT-F-30-Min', 'ENAUSDT-F-30-Min-Fake0', 'ENAUSDT-F-30-Min-Fake1', 'ENAUSDT-F-30-Min-Fake2', 'ENAUSDT-F-30-Min-Fake3', 'ENAUSDT-F-30-Min-Fake4', 'ENAUSDT-F-30-Min-Fake5', 'ENAUSDT-F-30-Min-Fake6', 'ENAUSDT-F-30-Min-Fake7', 'ENAUSDT-F-30-Min-Fake8', 'ENAUSDT-F-30-Min-Fake9', 'ENAUSDT-F-30-Min', 'ETHUSDT-F-30-Min-Fake0', 'ETHUSDT-F-30-Min-Fake1', 'ETHUSDT-F-30-Min-Fake2', 'ETHUSDT-F-30-Min-Fake3', 'ETHUSDT-F-30-Min-Fake4', 'ETHUSDT-F-30-Min-Fake5', 'ETHUSDT-F-30-Min-Fake6', 'ETHUSDT-F-30-Min-Fake7', 'ETHUSDT-F-30-Min-Fake8', 'ETHUSDT-F-30-Min-Fake9', 'ETHUSDT-F-30-Min', 'FILUSDT-F-30-Min-Fake0', 'FILUSDT-F-30-Min-Fake1', 'FILUSDT-F-30-Min-Fake2', 'FILUSDT-F-30-Min-Fake3', 'FILUSDT-F-30-Min-Fake4', 'FILUSDT-F-30-Min-Fake5', 'FILUSDT-F-30-Min-Fake6', 'FILUSDT-F-30-Min-Fake7', 'FILUSDT-F-30-Min-Fake8', 'FILUSDT-F-30-Min-Fake9', 'FILUSDT-F-30-Min', 'GALAUSDT-F-30-Min-Fake0', 'GALAUSDT-F-30-Min-Fake1', 'GALAUSDT-F-30-Min-Fake2', 'GALAUSDT-F-30-Min-Fake3', 'GALAUSDT-F-30-Min-Fake4', 'GALAUSDT-F-30-Min-Fake5', 'GALAUSDT-F-30-Min-Fake6', 'GALAUSDT-F-30-Min-Fake7', 'GALAUSDT-F-30-Min-Fake8', 'GALAUSDT-F-30-Min-Fake9', 'GALAUSDT-F-30-Min', 'HBARUSDT-F-30-Min-Fake0', 'HBARUSDT-F-30-Min-Fake1', 'HBARUSDT-F-30-Min-Fake2', 'HBARUSDT-F-30-Min-Fake3', 'HBARUSDT-F-30-Min-Fake4', 'HBARUSDT-F-30-Min-Fake5', 'HBARUSDT-F-30-Min-Fake6', 'HBARUSDT-F-30-Min-Fake7', 'HBARUSDT-F-30-Min-Fake8', 'HBARUSDT-F-30-Min-Fake9', 'HBARUSDT-F-30-Min', 'JUPUSDT-F-30-Min-Fake0', 'JUPUSDT-F-30-Min-Fake1', 'JUPUSDT-F-30-Min-Fake2', 'JUPUSDT-F-30-Min-Fake3', 'JUPUSDT-F-30-Min-Fake4', 'JUPUSDT-F-30-Min-Fake5', 'JUPUSDT-F-30-Min-Fake6', 'JUPUSDT-F-30-Min-Fake7', 'JUPUSDT-F-30-Min-Fake8', 'JUPUSDT-F-30-Min-Fake9', 'JUPUSDT-F-30-Min', 'LINKUSDT-F-30-Min-Fake0', 'LINKUSDT-F-30-Min-Fake1', 'LINKUSDT-F-30-Min-Fake2', 'LINKUSDT-F-30-Min-Fake3', 'LINKUSDT-F-30-Min-Fake4', 'LINKUSDT-F-30-Min-Fake5', 'LINKUSDT-F-30-Min-Fake6', 'LINKUSDT-F-30-Min-Fake7', 'LINKUSDT-F-30-Min-Fake8', 'LINKUSDT-F-30-Min-Fake9', 'LINKUSDT-F-30-Min', 'LTCUSDT-F-30-Min-Fake0', 'LTCUSDT-F-30-Min-Fake1', 'LTCUSDT-F-30-Min-Fake2', 'LTCUSDT-F-30-Min-Fake3', 'LTCUSDT-F-30-Min-Fake4', 'LTCUSDT-F-30-Min-Fake5', 'LTCUSDT-F-30-Min-Fake6', 'LTCUSDT-F-30-Min-Fake7', 'LTCUSDT-F-30-Min-Fake8', 'LTCUSDT-F-30-Min-Fake9', 'LTCUSDT-F-30-Min', 'NEARUSDT-F-30-Min-Fake0', 'NEARUSDT-F-30-Min-Fake1', 'NEARUSDT-F-30-Min-Fake2', 'NEARUSDT-F-30-Min-Fake3', 'NEARUSDT-F-30-Min-Fake4', 'NEARUSDT-F-30-Min-Fake5', 'NEARUSDT-F-30-Min-Fake6', 'NEARUSDT-F-30-Min-Fake7', 'NEARUSDT-F-30-Min-Fake8', 'NEARUSDT-F-30-Min-Fake9', 'NEARUSDT-F-30-Min', 'ONDOUSDT-F-30-Min-Fake0', 'ONDOUSDT-F-30-Min-Fake1', 'ONDOUSDT-F-30-Min-Fake2', 'ONDOUSDT-F-30-Min-Fake3', 'ONDOUSDT-F-30-Min-Fake4', 'ONDOUSDT-F-30-Min-Fake5', 'ONDOUSDT-F-30-Min-Fake6', 'ONDOUSDT-F-30-Min-Fake7', 'ONDOUSDT-F-30-Min-Fake8', 'ONDOUSDT-F-30-Min-Fake9', 'ONDOUSDT-F-30-Min', 'POPCATUSDT-F-30-Min-Fake0', 'POPCATUSDT-F-30-Min-Fake1', 'POPCATUSDT-F-30-Min-Fake2', 'POPCATUSDT-F-30-Min-Fake3', 'POPCATUSDT-F-30-Min-Fake4', 'POPCATUSDT-F-30-Min-Fake5', 'POPCATUSDT-F-30-Min-Fake6', 'POPCATUSDT-F-30-Min-Fake7', 'POPCATUSDT-F-30-Min-Fake8', 'POPCATUSDT-F-30-Min-Fake9', 'POPCATUSDT-F-30-Min', 'SOLUSDT-F-30-Min-Fake0', 'SOLUSDT-F-30-Min-Fake1', 'SOLUSDT-F-30-Min-Fake2', 'SOLUSDT-F-30-Min-Fake3', 'SOLUSDT-F-30-Min-Fake4', 'SOLUSDT-F-30-Min-Fake5', 'SOLUSDT-F-30-Min-Fake6', 'SOLUSDT-F-30-Min-Fake7', 'SOLUSDT-F-30-Min-Fake8', 'SOLUSDT-F-30-Min-Fake9', 'SOLUSDT-F-30-Min', 'SUIUSDT-F-30-Min-Fake0', 'SUIUSDT-F-30-Min-Fake1', 'SUIUSDT-F-30-Min-Fake2', 'SUIUSDT-F-30-Min-Fake3', 'SUIUSDT-F-30-Min-Fake4', 'SUIUSDT-F-30-Min-Fake5', 'SUIUSDT-F-30-Min-Fake6', 'SUIUSDT-F-30-Min-Fake7', 'SUIUSDT-F-30-Min-Fake8', 'SUIUSDT-F-30-Min-Fake9', 'SUIUSDT-F-30-Min', 'TIAUSDT-F-30-Min-Fake0', 'TIAUSDT-F-30-Min-Fake1', 'TIAUSDT-F-30-Min-Fake2', 'TIAUSDT-F-30-Min-Fake3', 'TIAUSDT-F-30-Min-Fake4', 'TIAUSDT-F-30-Min-Fake5', 'TIAUSDT-F-30-Min-Fake6', 'TIAUSDT-F-30-Min-Fake7', 'TIAUSDT-F-30-Min-Fake8', 'TIAUSDT-F-30-Min-Fake9', 'TIAUSDT-F-30-Min', 'TRXUSDT-F-30-Min-Fake0', 'TRXUSDT-F-30-Min-Fake1', 'TRXUSDT-F-30-Min-Fake2', 'TRXUSDT-F-30-Min-Fake3', 'TRXUSDT-F-30-Min-Fake4', 'TRXUSDT-F-30-Min-Fake5', 'TRXUSDT-F-30-Min-Fake6', 'TRXUSDT-F-30-Min-Fake7', 'TRXUSDT-F-30-Min-Fake8', 'TRXUSDT-F-30-Min-Fake9', 'TRXUSDT-F-30-Min', 'WIFUSDT-F-30-Min-Fake0', 'WIFUSDT-F-30-Min-Fake1', 'WIFUSDT-F-30-Min-Fake2', 'WIFUSDT-F-30-Min-Fake3', 'WIFUSDT-F-30-Min-Fake4', 'WIFUSDT-F-30-Min-Fake5', 'WIFUSDT-F-30-Min-Fake6', 'WIFUSDT-F-30-Min-Fake7', 'WIFUSDT-F-30-Min-Fake8', 'WIFUSDT-F-30-Min-Fake9', 'WIFUSDT-F-30-Min', 'WLDUSDT-F-30-Min-Fake0', 'WLDUSDT-F-30-Min-Fake1', 'WLDUSDT-F-30-Min-Fake2', 'WLDUSDT-F-30-Min-Fake3', 'WLDUSDT-F-30-Min-Fake4', 'WLDUSDT-F-30-Min-Fake5', 'WLDUSDT-F-30-Min-Fake6', 'WLDUSDT-F-30-Min-Fake7', 'WLDUSDT-F-30-Min-Fake8', 'WLDUSDT-F-30-Min-Fake9', 'WLDUSDT-F-30-Min', 'XLMUSDT-F-30-Min-Fake0', 'XLMUSDT-F-30-Min-Fake1', 'XLMUSDT-F-30-Min-Fake2', 'XLMUSDT-F-30-Min-Fake3', 'XLMUSDT-F-30-Min-Fake4', 'XLMUSDT-F-30-Min-Fake5', 'XLMUSDT-F-30-Min-Fake6', 'XLMUSDT-F-30-Min-Fake7', 'XLMUSDT-F-30-Min-Fake8', 'XLMUSDT-F-30-Min-Fake9', 'XLMUSDT-F-30-Min', 'XRPUSDT-F-30-Min-Fake0', 'XRPUSDT-F-30-Min-Fake1', 'XRPUSDT-F-30-Min-Fake2', 'XRPUSDT-F-30-Min-Fake3', 'XRPUSDT-F-30-Min-Fake4', 'XRPUSDT-F-30-Min-Fake5', 'XRPUSDT-F-30-Min-Fake6', 'XRPUSDT-F-30-Min-Fake7', 'XRPUSDT-F-30-Min-Fake8', 'XRPUSDT-F-30-Min-Fake9', 'XRPUSDT-F-30-Min', 'ZENUSDT-F-30-Min-Fake0', 'ZENUSDT-F-30-Min-Fake1', 'ZENUSDT-F-30-Min-Fake2', 'ZENUSDT-F-30-Min-Fake3', 'ZENUSDT-F-30-Min-Fake4', 'ZENUSDT-F-30-Min-Fake5', 'ZENUSDT-F-30-Min-Fake6', 'ZENUSDT-F-30-Min-Fake7', 'ZENUSDT-F-30-Min-Fake8', 'ZENUSDT-F-30-Min-Fake9', 'ZENUSDT-F-30-Min']
         # 
-        symbolNames = ['BTCUSDT-F-30-Min']
+        symbolNames = ['BTCUSDT-F-30-Min','AAVEUSDT-F-30-Min','BNBUSDT-F-30-Min','ENSUSDT-F-30-Min','KSMUSDT-F-30-Min']
         
         self.symbolNames = list(set(symbolNames))
         print(len(self.symbolNames))
@@ -101,7 +101,7 @@ class RL_prepare(ABC):
         
         
         self.BATCH_SIZE = 128  # 每次要從buffer提取的資料筆數,用來給神經網絡更新權重
-        self.PIECE_BATCH_SIZE =32
+        # self.PIECE_BATCH_SIZE =32
         self.REPLAY_SIZE = 1000000
         self.EACH_REPLAY_SIZE = 50000
 
@@ -279,8 +279,13 @@ class RL_Train(RL_prepare):
         self.exp_source = ptan.experience.ExperienceSourceFirstLast(
             self.train_env, self.agent, self.GAMMA, steps_count=self.REWARD_STEPS)
 
-        self.buffer = SequentialExperienceReplayBuffer(
-            self.exp_source, self.EACH_REPLAY_SIZE,replay_initial_size=self.REPLAY_INITIAL)
+        self.buffer = MultipleSequentialExperienceReplayBuffer(
+            self.exp_source,
+            self.EACH_REPLAY_SIZE,
+            replay_initial_size=self.REPLAY_INITIAL,
+            batch_size=self.BATCH_SIZE,
+            num_symbols_to_sample=4
+        )
 
         # self.buffer = PrioritizedStratifiedReplayBuffer(
         #     self.exp_source, batch_size=self.BATCH_SIZE ,each_symbol_size=self.PIECE_BATCH_SIZE,
@@ -349,10 +354,9 @@ class RL_Train(RL_prepare):
                     if not self.buffer.each_num_len_enough():
                         continue
                     
-
                     
                     self.optimizer.zero_grad()
-                    batch = self.buffer.sample(self.BATCH_SIZE)
+                    batch = self.buffer.mixer_sample()
 
                     loss_v,_ = common.calc_loss(
                         batch, self.net, self.tgt_net.target_model, self.GAMMA ** self.REWARD_STEPS, device=self.device)
