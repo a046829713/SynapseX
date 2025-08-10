@@ -18,7 +18,7 @@ class Reward():
         self.closeReturn_weight = 1 - self.tradeReturn_weight
         self.wrongTrade_weight = 1
         self.trendTrade_weight = 0.5
-        self.drawdown_penalty_weight = 0.001
+        self.drawdown_penalty_weight = 0.1
 
     def tradeReturn(self, last_value: float, previous_value: float) -> float:
         """
@@ -276,6 +276,26 @@ class State:
         drawdown_penalty_reward =  self.reward_function.drawdown_penalty(current_drawdown)
         # print("DD 獎勵值:",drawdown_penalty_reward)
         reward += drawdown_penalty_reward
+
+
+        
+        # ===== 新增獎勵/懲罰機制 =====
+        holding_shaping_reward = 0.0
+        holding_shaping_weight = 0.5  # 可調參數
+
+        if self.have_position:
+            if opencash_diff > 0:
+                # 1. 【激勵抱住獲利】: 如果有浮盈，給予正獎勵
+                holding_shaping_reward = opencash_diff * holding_shaping_weight
+            else:
+                # 2. 【懲罰持有虧損】: 如果有浮虧，懲罰會隨持有時間加劇
+                # opencash_diff 是負數, trade_bar 是正數, 所以結果是負的懲罰
+                time_penalty_weight = 0.05 # 可調參數
+                holding_shaping_reward = opencash_diff * self.trade_bar * time_penalty_weight
+        
+        reward += holding_shaping_reward
+        # =============================
+
 
         self._offset += 1
         self.game_steps += 1  # 本次遊戲次數
