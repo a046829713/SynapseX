@@ -23,7 +23,7 @@ from torch.distributions.normal import Normal
 # from mamba_ssm.modules.block import Block
 import time
 import torch
-from utils.Debug_tool import debug
+
 from soft_moe_pytorch import SoftMoE
 
 
@@ -55,7 +55,6 @@ class Block(nn.Module):
                 self.norm, (nn.LayerNorm, RMSNorm)
             ), "Only LayerNorm and RMSNorm are supported for fused_add_norm"
 
-    @debug.record_time_add
     def forward(
             self, hidden_states: Tensor, residual: Optional[Tensor] = None, inference_params=None, **mixer_kwargs
     ):

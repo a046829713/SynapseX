@@ -29,6 +29,11 @@ class Datatransformer:
         df.set_index("Datetime", inplace=True, drop=False)
         df = self.drop_colunms(df)
 
+        print(df)
+        time.sleep(100)
+
+
+
         # 採用biance 向前機制
         new_df = pd.DataFrame()
         new_df['Open'] = df['Open'].resample(

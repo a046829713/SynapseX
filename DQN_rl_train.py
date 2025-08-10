@@ -11,9 +11,10 @@ import time
 from Brain.DQN.lib import model
 from abc import ABC
 from Brain.DQN.lib.EfficientnetV2 import EfficientnetV2SmallDuelingModel
-from Brain.Common.experience import MultipleSequentialExperienceReplayBuffer
+from Brain.Common.experience import PrioritizedStratifiedReplayBuffer
 import torch.nn as nn
 import traceback
+from utils.Debug_tool import debug
 
 # import builtins
 # import inspect
@@ -95,12 +96,14 @@ class RL_prepare(ABC):
         self.CHECKPOINT_EVERY_STEP = 20000  
         self.VALIDATION_EVERY_STEP = 100000
         self.EPSILON_STEPS = 1000000 * 30 if len(self.symbolNames) > 30 else 1000000 * len(self.symbolNames)
+        self.beta_annealing_steps = self.EPSILON_STEPS
+        
         self.EVAL_EVERY_STEP = 10000  # 每一萬步驗證一次
         self.NUM_EVAL_EPISODES = 10  # 每次评估的样本数
         
         
         
-        self.BATCH_SIZE = 128  # 每次要從buffer提取的資料筆數,用來給神經網絡更新權重
+        self.BATCH_SIZE = 32  # 每次要從buffer提取的資料筆數,用來給神經網絡更新權重
         # self.PIECE_BATCH_SIZE =32
         self.REPLAY_SIZE = 1000000
         self.EACH_REPLAY_SIZE = 50000
@@ -153,7 +156,6 @@ class RL_prepare(ABC):
             # 新增專家模式
             moe_config = {
                 "num_experts": 16, # 8 個專家
-                "top_k": 2        # 每次選擇 2 個
             }   
 
             self.net = model.mambaDuelingModel(
@@ -279,19 +281,23 @@ class RL_Train(RL_prepare):
         self.exp_source = ptan.experience.ExperienceSourceFirstLast(
             self.train_env, self.agent, self.GAMMA, steps_count=self.REWARD_STEPS)
 
-        self.buffer = MultipleSequentialExperienceReplayBuffer(
-            self.exp_source,
-            self.EACH_REPLAY_SIZE,
-            replay_initial_size=self.REPLAY_INITIAL,
-            batch_size=self.BATCH_SIZE,
-            num_symbols_to_sample=4
-        )
-
-        # self.buffer = PrioritizedStratifiedReplayBuffer(
-        #     self.exp_source, batch_size=self.BATCH_SIZE ,each_symbol_size=self.PIECE_BATCH_SIZE,
-        #     capacity = self.REPLAY_SIZE,each_capacity=self.EACH_REPLAY_SIZE
+        # self.buffer = MultipleSequentialExperienceReplayBuffer(
+        #     self.exp_source,
+        #     self.EACH_REPLAY_SIZE,
+        #     replay_initial_size=self.REPLAY_INITIAL,
+        #     batch_size=self.BATCH_SIZE,
+        #     num_symbols_to_sample=4
         # )
 
+        self.buffer = PrioritizedStratifiedReplayBuffer(
+            self.exp_source,
+            batch_size=self.BATCH_SIZE ,
+            capacity = self.REPLAY_SIZE,
+            each_capacity=self.EACH_REPLAY_SIZE,
+            beta_start= 0.4,
+            beta_annealing_steps= self.beta_annealing_steps
+
+        )
 
 
 
@@ -351,17 +357,19 @@ class RL_Train(RL_prepare):
                         self.selector.epsilon = max(
                             self.EPSILON_STOP, self.EPSILON_START - self.step_idx / self.EPSILON_STEPS)
 
-                    if not self.buffer.each_num_len_enough():
+                    if not self.buffer.is_ready():
                         continue
                     
                     
                     self.optimizer.zero_grad()
-                    batch = self.buffer.mixer_sample()
+                    batch_exp, batch_indices, batch_weights = self.buffer.sample()
 
-                    loss_v,_ = common.calc_loss(
-                        batch, self.net, self.tgt_net.target_model, self.GAMMA ** self.REWARD_STEPS, device=self.device)
+                    loss_v, td_errors = common.calc_loss(
+                        batch_exp, batch_weights, self.net, self.tgt_net.target_model, self.GAMMA ** self.REWARD_STEPS, device=self.device)
 
                     loss_v.backward()
+
+                    self.buffer.update_priorities(batch_indices, td_errors)
 
                     if self.step_idx % self.checkgrad_times == 0:
                         

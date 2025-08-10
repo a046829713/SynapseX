@@ -11,55 +11,217 @@ import numpy as np
 from utils.Debug_tool import debug
 
 
+# SumTree 是實現 PER 的核心資料結構
+# 它能讓我們在 O(log N) 的時間複雜度內完成抽樣與更新
+class SumTree:
+    def __init__(self, capacity: int):
+        self.capacity = capacity
+        
+        # 樹狀結構，使用一個陣列來表示。父節點索引為 (i-1)//2
+        # 樹的大小為 2 * capacity - 1
+        self.tree = np.zeros(2 * capacity - 1)
+        # data 儲存的是經驗在 deque 中的索引
+        self.data = np.zeros(capacity, dtype=object) 
+        
+        self.write_idx = 0 # 當前寫入的位置
+        self.n_entries = 0 # 當前儲存的條目數量
+
+    @property
+    def total_priority(self):
+        return self.tree[0]
+
+    def _propagate(self, idx, change):
+        """向上傳播優先級的變化"""
+        parent_idx = (idx - 1) // 2
+        self.tree[parent_idx] += change
+        if parent_idx != 0:
+            self._propagate(parent_idx, change)
+
+    def _retrieve(self, idx, s):
+        """根據抽樣值 s 查找對應的葉節點"""
+        left_child_idx = 2 * idx + 1
+        right_child_idx = left_child_idx + 1
+
+        if left_child_idx >= len(self.tree):
+            return idx
+
+        if s <= self.tree[left_child_idx]:
+            return self._retrieve(left_child_idx, s)
+        else:
+            return self._retrieve(right_child_idx, s - self.tree[left_child_idx])
+    
+    def add(self, priority, data_idx):
+        """
+            添加新的經驗及其優先級
+        """
+        tree_idx = self.write_idx + self.capacity - 1
+        self.data[self.write_idx] = data_idx        
+        self.update(tree_idx, priority)        
+        self.write_idx = (self.write_idx + 1) % self.capacity
+        if self.n_entries < self.capacity:
+            self.n_entries += 1
+
+    def update(self, tree_idx, priority):
+        """更新指定索引的優先級"""
+        change = priority - self.tree[tree_idx]
+        self.tree[tree_idx] = priority
+        self._propagate(tree_idx, change)
+
+    def get_leaf(self, s):
+        """根據抽樣值 s 獲取葉節點索引、優先級和對應的數據"""
+        idx = self._retrieve(0, s)
+        data_idx = idx - self.capacity + 1
+        return idx, self.tree[idx], self.data[data_idx]
+
+
+
 class PrioritizedStratifiedReplayBuffer:
-    def __init__(self, experience_source, batch_size:int, each_symbol_size:int, capacity:int,each_capacity:int):
+    # PER 的超參數
+    epsilon = 0.01  # 避免優先級為0
+    alpha = 0.6     # [0~1] 決定優先級的使用程度，0:均勻抽樣, 1:完全按優先級抽樣
+   
+
+    def __init__(self, experience_source, batch_size:int, capacity:int, each_capacity:int,beta_start: float,
+                 beta_annealing_steps:int):
         """
             batch_size (int): batch_size input model.
+            capacity (int): 整個緩衝區的總容量上限。
+            each_capacity (int): 每個 symbol (層) 的容量上限。
+
+            We also save SumTree with every symbol.
+
+            beta [0~1] 重要性抽樣的校正程度，初始值，會線性增加到1
         """
         assert isinstance(experience_source, (ExperienceSource, type(None)))
-        assert batch_size % each_symbol_size == 0
         assert isinstance(batch_size, int)
         self.experience_source_iter = None if experience_source is None else iter(
             experience_source)
         
         self.batch_size = batch_size
-        self.symbol_len = self.batch_size / each_symbol_size
-
-        self.symbols = []
-        self.buffer ={}
+        # 分層結構
+        self.symbols = [] # 儲存所有 symbol 的名稱
+        self.buffer = {}  # key: symbol, value: deque(maxlen=each_capacity)
         self.capacity = capacity
         self.each_capacity = each_capacity
+        self.max_priority = 1.0 # 新經驗的初始優先級
+        # 優先級結構
+        self.priorities = {} # key: symbol, value: SumTree(each_capacity)
+        
+        
+        self.beta = 0.4   
+        if beta_annealing_steps > 0:
+            self.beta_increment_per_sampling = (1.0 - beta_start) / beta_annealing_steps
+        else:
+            self.beta_increment_per_sampling = 0 # 如果步數為0，則不增加
+        
+    def __len__(self):
+        # 長度現在由 SumTree 中的 n_entries 決定，這更準確
+        return sum(tree.n_entries for tree in self.priorities.values())
 
+    def is_ready(self):
+        """檢查緩衝區中的樣本是否足夠開始訓練"""
+        return len(self) >= self.batch_size
+        # return False
 
-    def add(self, samples, td_error):
+    def populate(self, samples):
         """
-            將樣本填入緩衝區中
+            only inference with agent,
+            the agent depands epsilon to decide random action.
+
+
         """
         for _ in range(samples):
             entry = next(self.experience_source_iter)
-            if entry.info['instrument'] not in self.buffer:
-                self.buffer[entry.info['instrument']] = deque(maxlen=self.each_capacity)
+            symbol = entry.info['instrument']
             
-            self.buffer[entry.info['instrument']].append(entry)
+            if symbol not in self.buffer:
+                if len(self) >= self.capacity:
+                    self.drop_symbol()
 
+                self.symbols.append(symbol)
+                self.buffer[symbol] = [None] * self.each_capacity
+                self.priorities[symbol] = SumTree(self.each_capacity)
+                
+            symbol_sum_tree = self.priorities[symbol]
+            # 這就是 data 在 buffer 中的索引
+            data_idx = symbol_sum_tree.write_idx
+            # 在 buffer 和 sum_tree 中添加數據
+            self.buffer[symbol][data_idx] = entry
+            symbol_sum_tree.add(self.max_priority, data_idx)
     
-    def choose_symbols(self)->list:
-        pass
-
-
-    def sample(self,batch_size:int):
-        pass
-
-    
-    def dropsymbol(self):
+    def sample(self):
         """
-            remove the minum prioritized 
+            從緩衝區中抽樣一個批次的數據。
+            返回: (批次經驗, 對應的索引(用於更新優先級), 重要性抽樣權重)
         """
-        pass
+        batch = []
+        indices = []
+        weights = np.empty(self.batch_size, dtype=np.float32)
+        
+        # 1. 分層抽樣: 隨機選擇 batch_size 個 symbols (可重複)
+        # 這種策略能讓樣本多的 symbol 有更高機率被選中
+        total_len = len(self)
+        symbol_probs = [self.priorities[s].n_entries / total_len for s in self.symbols]
+        # 確保 symbol_probs 的和約等於 1，避免浮點數誤差
+        symbol_probs = np.array(symbol_probs)
+        symbol_probs /= symbol_probs.sum()
+        
+        chosen_symbols = random.choices(self.symbols, weights=symbol_probs, k=self.batch_size)
+        
+        # 2. 優先級抽樣: 從每個選中的 symbol 中抽取一個樣本
+        for i, symbol in enumerate(chosen_symbols):
+            p_total = self.priorities[symbol].total_priority
+            s = random.uniform(0, p_total)
+            tree_idx, priority, data_idx = self.priorities[symbol].get_leaf(s)
+            
+            experience = self.buffer[symbol][data_idx]
+            batch.append(experience)
+            indices.append({'symbol': symbol, 'tree_idx': tree_idx})
+            
+            # 3. 計算重要性抽樣 (IS) 權重
+            # P(i) = priority / total_priority_of_buffer
+            prob = priority / p_total
+            # 這裡的 N 是該層的樣本數，而不是總樣本數
+            weights[i] = np.power(self.priorities[symbol].n_entries * prob, -self.beta)
 
+        # 更新 beta
+        self.beta = np.min([1., self.beta + self.beta_increment_per_sampling])
 
+        # 標準化權重
+        if weights.max() > 0:
+            weights /= weights.max()
+        
+        return batch, indices, weights
 
+    def drop_symbol(self):
+        """
+        當總容量超過上限時，移除一個 symbol 的所有相關數據。
+        """
+        # 策略：移除最久沒有被更新的 symbol (最簡單的策略是移除最先加入的)
+        if not self.symbols:
+            return
+        
+        symbol_to_drop = self.symbols.pop(0)
+        print(f"總容量超過 {self.capacity}，移除 Symbol: {symbol_to_drop}")
+        del self.buffer[symbol_to_drop]
+        del self.priorities[symbol_to_drop]
 
+    def update_priorities(self, indices: list, td_errors: np.ndarray):
+        """
+            在模型訓練後，使用新的 TD-Error 更新經驗的優先級。
+            indices (list): sample() 方法返回的索引列表。
+            td_errors (np.ndarray): 對應每個經驗的 TD-Error 絕對值。
+        """
+        priorities = np.power(np.abs(td_errors) + self.epsilon, self.alpha)
+        
+        for i, idx_info in enumerate(indices):
+            symbol = idx_info['symbol']
+            tree_idx = idx_info['tree_idx']
+            priority = priorities[i]
+            
+            self.priorities[symbol].update(tree_idx, priority)
+            # 更新記錄到的最大優先級
+            self.max_priority = max(self.max_priority, priority)
 
 class SequentialExperienceReplayBuffer:
     def __init__(self,
