@@ -18,7 +18,7 @@ class Reward():
         self.closeReturn_weight = 1 - self.tradeReturn_weight
         self.wrongTrade_weight = 1
         self.trendTrade_weight = 0.5
-        self.drawdown_penalty_weight = 0.1
+        self.drawdown_penalty_weight = 0.01
 
     def tradeReturn(self, last_value: float, previous_value: float) -> float:
         """
@@ -290,7 +290,7 @@ class State:
             else:
                 # 2. 【懲罰持有虧損】: 如果有浮虧，懲罰會隨持有時間加劇
                 # opencash_diff 是負數, trade_bar 是正數, 所以結果是負的懲罰
-                time_penalty_weight = 0.05 # 可調參數
+                time_penalty_weight = 0.001 # 可調參數
                 holding_shaping_reward = opencash_diff * self.trade_bar * time_penalty_weight
         
         reward += holding_shaping_reward

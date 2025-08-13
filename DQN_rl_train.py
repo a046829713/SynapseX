@@ -372,8 +372,8 @@ class RL_Train(RL_prepare):
                     self.buffer.update_priorities(batch_indices, td_errors)
 
                     if self.step_idx % self.checkgrad_times == 0:
-                        
-                        self.checkgrad()
+                        pass
+                        # self.checkgrad()
                         # self.checkwhight()
 
                     self.optimizer.step()
