@@ -4,60 +4,28 @@ import time
 import numpy as np
 from Brain.Common.DataFeature_tool import VolatilityCalculator
 
+Prices = collections.namedtuple('Prices', field_names=[
+    'open',
+    'high',
+    'low',
+    'close',
+    'log_open',
+    'log_high',
+    'log_low',
+    'log_close',
+    'log_volume',
+    'log_quote_av',
+    'log_trades',
+    'log_tb_base_av',
+    'log_tb_quote_av',
+])        
 
 
-class Resume():
-    def __init__(self,symmbol_data:pd.DataFrame):
-        # vol_df = VolatilityCalculator(annualization_factor= 365).calculate(symmbol_data,price_col="Close")
-        
-        # print(vol_df)
-        # time.sleep(100) 
-      
-        # 波動性特徵 (Volatility): 商品有多活躍？
 
-        # volatility_90d: 近90天的年化波動率。
-
-        # 趨勢/均值回歸特徵 (Trend / Mean-Reversion): 商品是傾向於一路上漲/下跌，還是喜歡來回震盪？
-
-        # hurst_exponent: 赫斯特指數。 > 0.5 表示趨勢性，< 0.5 表示均值回歸性，≈ 0.5 表示隨機遊走。
-
-        # 市場相關性特徵 (Market Correlation): 商品與大盤的關係如何？
-
-        # beta_90d: 相對於某個基準（例如比特幣指數或S&P 500）的Beta值，衡量其系統性風險。
-
-        # 流動性特徵 (Liquidity): 商品的交易熱度如何？
-
-        # avg_dollar_volume_90d: 近90天的平均每日成交額。
-
-        # 類別特徵 (Categorical): 商品屬於哪個大類？
-
-        # asset_class: 例如，加密貨幣=0, 股票=1, 外匯=2...
-        pass
-
-        
-
-
-# 去極值 中性化 標準化
 
 class OriginalDataFrature():
     def __init__(self, formal: bool = False) -> None:
         self.formal = formal
-        self.PricesObject = collections.namedtuple('Prices', field_names=[
-            'open',
-            'high',
-            'low',
-            'close',
-            'log_open',
-            'log_high',
-            'log_low',
-            'log_close',
-            'log_volume',
-            'log_quote_av',
-            'log_trades',
-            'log_tb_base_av',
-            'log_tb_quote_av',
-        ])
-        
 
     def cleanData(self, df: pd.DataFrame) -> pd.DataFrame:
         df = df.replace([np.inf, -np.inf], np.nan)  # 将 Inf 替换为 NaN
@@ -106,7 +74,7 @@ class OriginalDataFrature():
 
             log_np_data = np.log(np_data + 1.0)
 
-            return self.PricesObject(
+            return Prices(
                 open=np_data[:, 0],
                 high=np_data[:, 1],
                 low=np_data[:, 2],
@@ -121,3 +89,36 @@ class OriginalDataFrature():
                 log_tb_base_av=log_np_data[:, 7],
                 log_tb_quote_av=log_np_data[:, 8],
             )
+
+
+class Resume():
+    def __init__(self,symmbol_data:pd.DataFrame):
+        # vol_df = VolatilityCalculator(annualization_factor= 365).calculate(symmbol_data,price_col="Close")
+        
+        # print(vol_df)
+        # time.sleep(100) 
+      
+        # 波動性特徵 (Volatility): 商品有多活躍？
+
+        # volatility_90d: 近90天的年化波動率。
+
+        # 趨勢/均值回歸特徵 (Trend / Mean-Reversion): 商品是傾向於一路上漲/下跌，還是喜歡來回震盪？
+
+        # hurst_exponent: 赫斯特指數。 > 0.5 表示趨勢性，< 0.5 表示均值回歸性，≈ 0.5 表示隨機遊走。
+
+        # 市場相關性特徵 (Market Correlation): 商品與大盤的關係如何？
+
+        # beta_90d: 相對於某個基準（例如比特幣指數或S&P 500）的Beta值，衡量其系統性風險。
+
+        # 流動性特徵 (Liquidity): 商品的交易熱度如何？
+
+        # avg_dollar_volume_90d: 近90天的平均每日成交額。
+
+        # 類別特徵 (Categorical): 商品屬於哪個大類？
+
+        # asset_class: 例如，加密貨幣=0, 股票=1, 外匯=2...
+        pass
+
+
+
+# 去極值 中性化 標準化

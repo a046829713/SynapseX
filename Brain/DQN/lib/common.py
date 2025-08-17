@@ -139,7 +139,7 @@ def turn_to_tensor(infos,device):
     output_tensor = torch.from_numpy(output_array).to(device)
     return output_tensor 
 
-def calc_loss(batch, batch_weights, net, tgt_net, gamma, moe_loss_coeff=0.01, device="cpu"):
+def calc_loss(batch, net, tgt_net, gamma, moe_loss_coeff=0.01, device="cpu"):
     """
         計算 DQN 的 MSE loss，並同時計算每筆 transition 的 TD‐error，並整合 MoE 的輔助損失 (auxiliary loss)。
     """
@@ -149,7 +149,7 @@ def calc_loss(batch, batch_weights, net, tgt_net, gamma, moe_loss_coeff=0.01, de
     actions_v = torch.tensor(actions, device=device, dtype=torch.long)
     rewards_v = torch.tensor(rewards, device=device, dtype=torch.float32)
     done_mask = torch.tensor(dones, device=device, dtype=torch.bool)
-    weights_v = torch.tensor(batch_weights, device=device, dtype=torch.float32)
+    # weights_v = torch.tensor(batch_weights, device=device, dtype=torch.float32)
 
 
     # --- 線上網路 (net) ---
@@ -179,14 +179,16 @@ def calc_loss(batch, batch_weights, net, tgt_net, gamma, moe_loss_coeff=0.01, de
 
     # [修改] 手動計算加權的 MSE Loss，取代 nn.MSELoss()
     # 1. 計算每個樣本的平方誤差
-    squared_errors = (state_action_values - q_targets).pow(2)
+    # squared_errors = (state_action_values - q_targets).pow(2)
 
     # 2. 將平方誤差乘以其對應的重要性抽樣權重
-    weighted_squared_errors = weights_v * squared_errors
+    # weighted_squared_errors = weights_v * squared_errors
     
     # 3. 計算加權損失的平均值作為最終的 DQN Loss
-    dqn_loss = weighted_squared_errors.mean()
+    # dqn_loss = weighted_squared_errors.mean()
     
+
+    dqn_loss = nn.MSELoss()(state_action_values, q_targets)
     # 8. 加上 MoE 的輔助損失
     if aux_loss is not None:
         total_loss = dqn_loss + moe_loss_coeff * aux_loss

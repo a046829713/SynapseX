@@ -11,7 +11,7 @@ import time
 from Brain.DQN.lib import model
 from abc import ABC
 from Brain.DQN.lib.EfficientnetV2 import EfficientnetV2SmallDuelingModel
-from Brain.Common.experience import PrioritizedStratifiedReplayBuffer
+from Brain.Common.experience import SequentialExperienceReplayBuffer
 import torch.nn as nn
 import traceback
 from utils.Debug_tool import debug
@@ -281,6 +281,12 @@ class RL_Train(RL_prepare):
         self.exp_source = ptan.experience.ExperienceSourceFirstLast(
             self.train_env, self.agent, self.GAMMA, steps_count=self.REWARD_STEPS)
 
+
+        self.buffer = SequentialExperienceReplayBuffer(
+            self.exp_source,
+            self.EACH_REPLAY_SIZE,
+            self.REPLAY_INITIAL
+        )
         # self.buffer = MultipleSequentialExperienceReplayBuffer(
         #     self.exp_source,
         #     self.EACH_REPLAY_SIZE,
@@ -289,15 +295,15 @@ class RL_Train(RL_prepare):
         #     num_symbols_to_sample=4
         # )
 
-        self.buffer = PrioritizedStratifiedReplayBuffer(
-            self.exp_source,
-            batch_size=self.BATCH_SIZE ,
-            capacity = self.REPLAY_SIZE,
-            each_capacity=self.EACH_REPLAY_SIZE,
-            beta_start= 0.4,
-            beta_annealing_steps= self.beta_annealing_steps
+        # self.buffer = PrioritizedStratifiedReplayBuffer(
+        #     self.exp_source,
+        #     batch_size=self.BATCH_SIZE ,
+        #     capacity = self.REPLAY_SIZE,
+        #     each_capacity=self.EACH_REPLAY_SIZE,
+        #     beta_start= 0.4,
+        #     beta_annealing_steps= self.beta_annealing_steps
 
-        )
+        # )
 
 
 
@@ -362,14 +368,15 @@ class RL_Train(RL_prepare):
                     
                     
                     self.optimizer.zero_grad()
-                    batch_exp, batch_indices, batch_weights = self.buffer.sample()
+                    # batch_exp, batch_indices, batch_weights = self.buffer.sample()
+                    batch_exp = self.buffer.sample(self.BATCH_SIZE)
 
                     loss_v, td_errors = common.calc_loss(
-                        batch_exp, batch_weights, self.net, self.tgt_net.target_model, self.GAMMA ** self.REWARD_STEPS, device=self.device)
+                        batch_exp, self.net, self.tgt_net.target_model, self.GAMMA ** self.REWARD_STEPS, device=self.device)
 
                     loss_v.backward()
 
-                    self.buffer.update_priorities(batch_indices, td_errors)
+                    # self.buffer.update_priorities(batch_indices, td_errors)
 
                     if self.step_idx % self.checkgrad_times == 0:
                         pass

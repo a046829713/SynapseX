@@ -194,7 +194,6 @@ class ExperienceSourceFirstLast(ExperienceSource):
     這是一個圍繞ExperienceSource的包裝器（wrapper），
     用於在我們只需要初始和最終狀態時，防止在重播緩衝區（replay buffer）
     中儲存完整的軌跡。對於每一個軌跡片段，它會計算折扣獎勵，並且只輸出第一個和最後一個狀態，以及在初始狀態中採取的行動。
-
     如果在劇集結束時我們有部分軌跡，那麼last_state將為None。
 
     """
