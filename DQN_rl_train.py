@@ -154,9 +154,9 @@ class RL_prepare(ABC):
         
         elif self.keyword == "Mamba":
             # 新增專家模式
-            moe_config = {
-                "num_experts": 16, # 8 個專家
-            }   
+            # moe_config = {
+            #     "num_experts": 16, # 8 個專家
+            # }   
 
             self.net = model.mambaDuelingModel(
                 d_model=engine_info['input_size'],
@@ -164,7 +164,7 @@ class RL_prepare(ABC):
                 num_actions=self.train_env.action_space.n,  # 假设有5种可能的动作
                 seq_dim=self.BARS_COUNT,
                 dropout=0.3,
-                moe_cfg= moe_config 
+                moe_cfg= None 
             ).to(self.device)
 
         elif self.keyword == "Mamba2":

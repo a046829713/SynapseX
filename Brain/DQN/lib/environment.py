@@ -281,7 +281,7 @@ class State:
         
         # ===== 新增獎勵/懲罰機制 =====
         holding_shaping_reward = 0.0
-        holding_shaping_weight = 0.5  # 可調參數
+        holding_shaping_weight = 0.01  # 可調參數
 
         if self.have_position:
             if opencash_diff > 0:
