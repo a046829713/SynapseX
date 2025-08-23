@@ -160,7 +160,6 @@ class RL_prepare(ABC):
             ssm_cfg = {
                 "expand":4
             }
-
             self.net = model.mambaDuelingModel(
                 d_model=engine_info['input_size'],
                 nlayers=6,
