@@ -413,7 +413,9 @@ class mambaDuelingModel(nn.Module):
                  seq_dim: int = 300,
                  dropout: float = 0.1,
                  mode='full',
-                 moe_cfg: Optional[dict] = None):
+                 ssm_cfg: Optional[dict] = None,
+                 moe_cfg: Optional[dict] = None
+                 ):
 
         super().__init__()
         self.dean = DAIN_Layer(mode=mode, input_dim=d_model)
@@ -444,11 +446,14 @@ class mambaDuelingModel(nn.Module):
             nn.Linear(256, num_actions)
         )
 
+
+
         self.mixer = MixerModel(
             d_model= d_model,
             n_layer=nlayers,
-            d_intermediate=1,
+            d_intermediate=256,
             dropout=dropout,
+            ssm_cfg= ssm_cfg,
             moe_cfg=moe_cfg
         )
         

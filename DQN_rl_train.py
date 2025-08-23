@@ -157,13 +157,17 @@ class RL_prepare(ABC):
             # moe_config = {
             #     "num_experts": 16, # 8 個專家
             # }   
+            ssm_cfg = {
+                "expand":4
+            }
 
             self.net = model.mambaDuelingModel(
                 d_model=engine_info['input_size'],
-                nlayers=4,
+                nlayers=6,
                 num_actions=self.train_env.action_space.n,  # 假设有5种可能的动作
                 seq_dim=self.BARS_COUNT,
                 dropout=0.3,
+                ssm_cfg=ssm_cfg,
                 moe_cfg= None 
             ).to(self.device)
 
