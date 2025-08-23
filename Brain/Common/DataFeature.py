@@ -49,7 +49,7 @@ class OriginalDataFrature():
         out_dict = {}
         for symbolName in symbolNames:
             df = pd.read_csv(
-                f'Brain/simulation/data/{symbolName}.csv')
+                f'Brain/simulation/train_data/{symbolName}.csv')
             df.set_index('Datetime', inplace=True)
             self.df = self.cleanData(df)
             # 使用 PyTorch Tensor 的方法
