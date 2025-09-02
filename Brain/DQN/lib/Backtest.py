@@ -51,6 +51,7 @@ class Strategy(object):
         if self.formal:
             raise InvalidModeError()
 
+        
         self.df = pd.read_csv(local_data_path)
         self.df.set_index("Datetime", inplace=True)
 
@@ -103,13 +104,19 @@ class RL_evaluate():
         print(engine_info)
         # 準備模型
         # input_size, hidden_size, output_size, num_layers=1
+        ssm_cfg = {
+            "expand":4
+        }
+
         net = model.mambaDuelingModel(
-                d_model=engine_info['input_size'],
-                nlayers=4,
-                num_actions=self.evaluate_env.action_space.n,  # 假设有5种可能的动作
-                seq_dim=self.BARS_COUNT,
-                dropout=0.3,  # 适度的dropout以防过拟合
-            ).to(self.device)
+            d_model=engine_info['input_size'],
+            nlayers=6,
+            num_actions=self.evaluate_env.action_space.n,  # 假设有5种可能的动作
+            seq_dim=self.BARS_COUNT,
+            dropout=0.3,
+            ssm_cfg=ssm_cfg,
+            moe_cfg= None 
+        ).to(self.device)
         
         checkpoint = torch.load(
             model_path, map_location=self.device, weights_only=True)
@@ -131,7 +138,7 @@ class RL_evaluate():
 
         with torch.no_grad():
             while not done:
-                action = self.agent(state)
+                action,_ = self.agent(state)
                 action_idx = action.max(dim=1)[1].item()
                 record_orders.append(self._parser_order(action_idx))
                 _state, reward, done, info = self.evaluate_env.step(action_idx)

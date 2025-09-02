@@ -16,7 +16,7 @@ class StrategyBuilder:
             settings = AppSetting.RL_test_setting()
         self.settings = settings
 
-    def create_strategy(self, model_path: str, symbol: str) -> Strategy:
+    def create_strategy(self, model_path: str, symbol_file_name: str) -> Strategy:
         # 以下程式碼為解析 model_path 的邏輯
         # 假設路徑格式: 'Brain\DQN\Meta\Meta-300B-30K.pt'
         # 以 '-' 進行分割，取得資訊
@@ -35,7 +35,7 @@ class StrategyBuilder:
         # 建立 Strategy 實例
         strategy = Strategy(
             strategytype=strategytype,
-            symbol_name=symbol,
+            symbol_name=symbol_file_name.split('-')[0],
             freq_time=int(data_len),
             model_feature_len=int(feature_len),
             fee=self.settings['BACKTEST_DEFAULT_COMMISSION_PERC'],
@@ -44,7 +44,7 @@ class StrategyBuilder:
         )
 
         # 載入資料
-        data_path = os.path.join("Brain","simulation","data",f"{symbol}-F-{data_len}-Min.csv")
+        data_path = os.path.join("Brain","simulation","test_data",symbol_file_name)
         strategy.load_data(local_data_path=data_path)
 
         return strategy
@@ -62,6 +62,7 @@ class BacktestRunner:
     def run(self, ifplot: bool = True):
         # 使用 RL_evaluate 對策略進行評估
         re_evaluate = RL_evaluate(self.strategy)
+        
         # 使用 Backtest 對策略執行回測
         backtest_info = Backtest(
             re_evaluate, self.strategy).order_becktest(ifplot=ifplot)
@@ -72,14 +73,15 @@ class BacktestRunner:
 # 範例使用方式
 if __name__ == "__main__":
     builder = StrategyBuilder()
-    # test_symbols = ['BTCUSDT']
-    test_symbols = ['ARUSDT', 'BCHUSDT', 'COMPUSDT', 'DASHUSDT', 'DEFIUSDT', 'EGLDUSDT', 'ENSUSDT', 'ETCUSDT', 'GMXUSDT', 'ILVUSDT', 'INJUSDT', 'KSMUSDT', 'MKRUSDT', 'MOVEUSDT', 'QNTUSDT', 'SSVUSDT', 'TRBUSDT', 'XMRUSDT', 'YFIUSDT', 'ZECUSDT']
+    
+    
+    test_symbols = os.listdir(os.path.join(os.getcwd() , "Brain","simulation","test_data"))
 
 
     for test_symbol in test_symbols:
         # 建立策略
         strategy = builder.create_strategy(
-            os.path.join("Brain","DQN","Meta","Meta-300B-30K.pt"), symbol=test_symbol)
+            os.path.join("Brain","DQN","Meta","Meta-300B-30K.pt"), symbol_file_name=test_symbol)
 
         # 執行回測
         runner = BacktestRunner(strategy)

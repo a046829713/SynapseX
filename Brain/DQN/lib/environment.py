@@ -165,6 +165,14 @@ class RewardHelp():
         return equity_peak, _current_drawdown
 
 
+    def Caculate_max_profit_this_trade(self,max_profit_this_trade:float, havePostion: bool, action: Actions):
+        if not havePostion and action == Actions.Buy:
+            return 0.0
+        return max_profit_this_trade
+
+        
+
+
 class State:
     def __init__(self, init_prices: collections.namedtuple, bars_count, commission_perc, model_train, default_slippage):
         assert isinstance(bars_count, int)
@@ -211,6 +219,7 @@ class State:
         self.total_loss = 0.0
 
         self.beforeBar = 50
+        self.max_profit_this_trade = 0.0
 
     def step(self, action: Actions):
         """
@@ -259,6 +268,11 @@ class State:
         self.trade_bar = self.reward_help.Caculatetrade_bar(self.trade_bar, self.have_position, action=action)
         self.equity_peak = self.reward_help.CaculateEquity_peak_before(self.equity_peak, self.have_position, action=action)
 
+
+        # if markpostion change we need to change
+        self.max_profit_this_trade= self.reward_help.Caculate_max_profit_this_trade(self.max_profit_this_trade, self.have_position, action=action)
+
+
         # last change make sure everything is caculate done.
         self.have_position = self.reward_help.CaculatePostion(self.have_position, action=action)
 
@@ -271,6 +285,7 @@ class State:
         tradeReturn_reward =  self.reward_function.tradeReturn(last_value=self.canusecash, previous_value=last_can_use_cash)
         # print("整體交易獎勵值:",tradeReturn_reward)
         reward += tradeReturn_reward
+        
         self.equity_peak, current_drawdown = self.reward_help.CaculateEquity_peak_after(self.equity_peak, self.have_position, canUseCash=self.canusecash)
         
         drawdown_penalty_reward =  self.reward_function.drawdown_penalty(current_drawdown)
@@ -278,15 +293,20 @@ class State:
         reward += drawdown_penalty_reward
 
 
-        
+
         # ===== 新增獎勵/懲罰機制 =====
         holding_shaping_reward = 0.0
         holding_shaping_weight = 0.01  # 可調參數
 
+
+
         if self.have_position:
-            if opencash_diff > 0:
-                # 1. 【激勵抱住獲利】: 如果有浮盈，給予正獎勵
-                holding_shaping_reward = opencash_diff * holding_shaping_weight
+            if opencash_diff > self.max_profit_this_trade:
+                # 只有在利潤創下新高時才給予獎勵
+                new_profit_reward = (opencash_diff - self.max_profit_this_trade) * holding_shaping_weight
+                reward += new_profit_reward
+                # 更新本次交易的最高利潤紀錄
+                self.max_profit_this_trade = opencash_diff
             else:
                 # 2. 【懲罰持有虧損】: 如果有浮虧，懲罰會隨持有時間加劇
                 # opencash_diff 是負數, trade_bar 是正數, 所以結果是負的懲罰

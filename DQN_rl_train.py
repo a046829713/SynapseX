@@ -64,6 +64,7 @@ class RL_prepare(ABC):
         # 
         symbolNames = os.listdir(os.path.join(os.getcwd() ,'Brain','simulation',"train_data"))
         self.symbolNames = list(set([i.replace(".csv",'') for i in symbolNames]))
+        self.symbolNames =['BTCUSDT-F-30-Min']
         print(len(self.symbolNames))
         print("There are symbolNames:", self.symbolNames)
 
