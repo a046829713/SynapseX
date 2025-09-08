@@ -239,8 +239,7 @@ class Datatransformer:
                         out_list.append(
                             [symbolname.split('-')[0].upper(), mom_num.iloc[-1]])
 
-        sort_example = sorted(out_list, key=lambda x: x[1], reverse=True)
-        
+        sort_example = sorted(out_list, key=lambda x: x[1], reverse=True)        
         return [eachrow[0] for eachrow in sort_example[:max_symbols]]
     
     def get_volume_top_filter_symobl(self, all_symbols, max_symbols: int, last_sum_day:int = 10):
