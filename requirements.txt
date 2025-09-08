@@ -11,4 +11,4 @@ PyMySQL==1.1.1
 matplotlib
 tqdm
 python-binance # python-binance     1.0.29 
-# pip install soft-moe-pytorch   
+soft-moe-pytorch==0.1.9

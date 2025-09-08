@@ -85,7 +85,7 @@ class debug():
                 countMap[func.__name__].update({'use_count':1})
                 countMap[func.__name__].update({'FPS':0})
             
-            if debug._counts % 1000 == 0:
+            if debug._counts % 1 == 0:
                 print(countMap) 
                 print('*'*120)
             return result

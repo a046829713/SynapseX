@@ -233,7 +233,7 @@ class Datatransformer:
             # 不想要太新的商品
             if len(data) > 365:
                 # 價格太低的商品不要
-                if data.iloc[-1]['Close'] > 20:
+                if data.iloc[-1]['Close'] > 1:
                     mom_num = self.momentum(data['Close'], 30)
                     if mom_num.iloc[-1] > 0:
                         out_list.append(

@@ -87,7 +87,10 @@ class EngineBase():
             for each_data in self.last_order_info[1:]:
                 symbol = each_data[0]
                 weight = each_data[1]
-                shares = value * weight * leverage /  last_df[last_df.index == symbol]['close'].iloc[0]
+
+                limit_total_percent = 0.25 if  weight * leverage > 0.25 else weight * leverage
+                print("二次限制：",limit_total_percent)
+                shares = value *  limit_total_percent /  last_df[last_df.index == symbol]['close'].iloc[0]
                 if key in out_map:
                     out_map[key].update({symbol: [1, shares]})
                 else:

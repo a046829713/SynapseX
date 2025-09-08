@@ -4,7 +4,7 @@ import gymnasium as gym
 import numpy as np
 import collections
 from typing import Optional
-
+from Brain.Common.DataFeature import OriginalDataFrature
 
 class Actions(enum.Enum):
     Hold = 0
@@ -410,26 +410,44 @@ class State_time_step(State):
 
 
 class Env(gym.Env):
-    def __init__(self, prices, state, random_ofs_on_reset):
-        self._prices = prices
-        self._state = state
+    def __init__(self, config, random_ofs_on_reset):
+        self.config = config
+        self.unique_symbols = self.config.UNIQUE_SYMBOLS
         self.action_space = gym.spaces.Discrete(n=len(Actions))
+        
         self.random_ofs_on_reset = random_ofs_on_reset
 
-    def reset(self):
-        self._instrument = np.random.choice(list(self._prices.keys()))
+        random_symbol = np.random.choice(self.unique_symbols)
+        self.all_data = OriginalDataFrature(formal=False).get_train_net_work_data_by_path([random_symbol]) 
+
+        state_params = {
+            "init_prices": self.all_data[random_symbol],
+            "bars_count": self.config.BARS_COUNT,
+            "commission_perc": self.config.MODEL_DEFAULT_COMMISSION_PERC,
+            "model_train": True,
+            "default_slippage": self.config.DEFAULT_SLIPPAGE,
+        }
+        self._state = State_time_step(**state_params)
+        
+
+    def reset(self, symbol: str = None):
+        if symbol is None:
+            # 如果沒有指定 symbol，則隨機選擇一個
+            self._instrument = np.random.choice(self.unique_symbols)
+        else:
+            # 如果指定了 symbol，則使用它
+            self._instrument = symbol
+
+        self._prices = OriginalDataFrature(formal=False).get_train_net_work_data_by_path([self._instrument])
         prices = self._prices[self._instrument]
 
         if self.random_ofs_on_reset:
-            offset = np.random.choice(
-                prices.high.shape[0]-self._state.bars_count*10) + self._state.bars_count
+            offset = np.random.choice(prices.high.shape[0] - self._state.bars_count * 10) + self._state.bars_count
         else:
             offset = self._state.bars_count
 
-        print("目前商品:",self._instrument,"目前步數:", offset)
-
+        print(f"Actor resetting environment with symbol: {self._instrument} at offset: {offset}")
         self._state.reset(prices, offset)
-
         return self._state.encode()
 
     def step(self, action_idx):
@@ -445,14 +463,9 @@ class Env(gym.Env):
 
         return obs, reward, done, info
 
-    def render(self, mode='human', close=False):
-        pass
-
-    def close(self):
-        pass
-
     def engine_info(self):
         if self._state.__class__ == State_time_step:
             return {
                 "input_size": self._state.shape[1],
+                "action_space_n": self.action_space.n
             }

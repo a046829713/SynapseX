@@ -8,3 +8,13 @@
 4.完成虛擬現貨
 5.完成PPO 
 6.PER 修改至可用
+7.Moe
+8.下單模型修改
+9. order percent change
+
+
+1.aimed to the Mamba MLP overfitting problem, we should add the dropout layer.
+re: It is work, but need more experiment.
+20250906: i change MLP to Soft Moe
+
+2.i want to try change the reward function, i want to know if do not consider the in time reward, only provider the eventually reward.

@@ -3,6 +3,7 @@ import collections
 import time
 import numpy as np
 from Brain.Common.DataFeature_tool import VolatilityCalculator
+from utils.Debug_tool import debug
 
 Prices = collections.namedtuple('Prices', field_names=[
     'open',
@@ -41,7 +42,8 @@ class OriginalDataFrature():
         self.df = df
         out_dict.update({symbol: self.load_relative()})
         return out_dict
-
+    
+    
     def get_train_net_work_data_by_path(self, symbolNames: list) -> dict:
         """
             用來取得類神經網絡所需要的資料

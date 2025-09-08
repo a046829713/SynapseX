@@ -10,17 +10,14 @@ from collections import namedtuple
 from Brain.DQN.lib import environment, common, model
 from Brain.DQN.lib.environment import State_time_step
 from Brain.Common.DataFeature import OriginalDataFrature
-from Brain.Common.experience import PrioritizedStratifiedReplayBuffer
 from Brain.DQN import ptan
 import os
 import numpy as np
 import torch.optim as optim
-from queue import Empty
+from queue import Empty, Full
 from collections import deque
-
-REWARD_STEPS = 2  # N-step
-GAMMA = 0.99
-NUM_ACTORS = 4
+from Brain.Common.experience import ACSequentialExperienceReplayBuffer
+import itertools
 
 # 定義 Actor 發送的經驗元組，使其更清晰
 Transition = namedtuple("Transition", ("state", "action", "reward", "done"))
@@ -31,12 +28,85 @@ ExperienceFirstLast = namedtuple(
     ("state", "action", "reward", "last_state", "info", "last_info"),
 )
 
+class MetricsTracker:
+    """
+    一個用於在主程序中追蹤和報告指標的類別。
+    """
+    def __init__(self, report_interval_seconds=1.0):
+        self.start_time = time.time()
+        self.last_report_time = self.start_time
+        self.report_interval = report_interval_seconds
+        
+        # 來自 Actor 的指標
+        self.total_episodes = 0
+        self.rewards_deque = deque(maxlen=100)  # 儲存最近100個episodes的獎勵
+        
+        # 來自 Learner 的指標
+        self.learner_step_idx = 0
+        self.epsilon = 0.0
+        self.loss = float('nan')
+        self.steps_per_sec = 0.0
+        
+        self._last_learner_step_for_speed = 0
+        self._last_time_for_speed = self.start_time
+
+    def update(self, message):
+        """根據從佇列收到的消息更新指標"""
+        msg_type, *data = message
+        if msg_type == "train_step":
+            step_idx, loss, epsilon = data
+            self.learner_step_idx = step_idx
+            self.loss = loss
+            self.epsilon = epsilon
+        elif msg_type == "episode_done":
+            _, total_reward, _ = data  # actor_id, total_reward, episode_steps
+            self.total_episodes += 1
+            self.rewards_deque.append(total_reward)
+
+    def should_report(self):
+        """判斷是否到了該報告的時間"""
+        return time.time() - self.last_report_time > self.report_interval
+
+    def report(self):
+        """打印格式化的報告到控制台"""
+        self.last_report_time = time.time()
+        
+        # 計算訓練速度
+        current_time = time.time()
+        time_delta = current_time - self._last_time_for_speed
+        steps_delta = self.learner_step_idx - self._last_learner_step_for_speed
+        
+        if time_delta > 0:
+            self.steps_per_sec = steps_delta / time_delta
+        
+        self._last_learner_step_for_speed = self.learner_step_idx
+        self._last_time_for_speed = current_time
+
+        # 計算平均獎勵
+        mean_reward = 0.0
+        if self.rewards_deque:
+            mean_reward = np.mean(list(self.rewards_deque))
+
+        # 格式化輸出
+        elapsed_time = datetime.fromtimestamp(current_time) - datetime.fromtimestamp(self.start_time)
+        
+        report_str = (
+            f"Time: {str(elapsed_time).split('.')[0]} | "
+            f"Steps: {self.learner_step_idx} | "
+            f"Speed: {self.steps_per_sec:7.2f} steps/s | "
+            f"Eps: {self.epsilon:.3f} | "
+            f"Loss: {self.loss:8.4f} | "
+            f"Episodes: {self.total_episodes} | "
+            f"Mean Reward (100): {mean_reward:8.3f}"
+        )
+        
+        print(f"{report_str}")
 
 @dataclass
 class RLConfig:
     KEYWORD: str = "Mamba"
     DEVICE: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    SAVES_PATH: str = "saves"
+    SAVES_TAG: str = "saves"
     BARS_COUNT: int = 300
     GAMMA: float = 0.99
     REWARD_STEPS: int = 2
@@ -47,17 +117,14 @@ class RLConfig:
     BATCH_SIZE: int = 32
     REPLAY_SIZE: int = 1_000_000
     EACH_REPLAY_SIZE: int = 50_000
-    REPLAY_INITIAL: int = 10000
+    REPLAY_INITIAL: int = 1000
     EPSILON_START: float = 0.9
     EPSILON_STOP: float = 0.1
     EPSILON_STEPS_FACTOR: int = 1_000_000
     TARGET_NET_SYNC: int = 1000
     CHECKPOINT_EVERY_STEP: int = 20_000
     BETA_START: float = 0.4
-
-    def __post_init__(self):
-        self.EPSILON_STEPS = 1000
-        self.BETA_ANNEALING_STEPS = 1000
+    UNIQUE_SYMBOLS: list[str] = None
 
     def update_steps_by_symbols(self, num_symbols: int):
         self.EPSILON_STEPS = (
@@ -65,10 +132,20 @@ class RLConfig:
             if num_symbols > 30
             else self.EPSILON_STEPS_FACTOR * num_symbols
         )
-        self.BETA_ANNEALING_STEPS = self.EPSILON_STEPS
+        
+    def create_saves_path(self):
+        saves_path = os.path.join(
+            self.SAVES_TAG,
+            datetime.strftime(datetime.now(), "%Y%m%d-%H%M%S")
+            + "-"
+            + str(self.BARS_COUNT)
+            + "k-",
+        )
+        os.makedirs(saves_path, exist_ok=True)
+        self.SAVES_PATH = saves_path
 
 
-# --- Learner Process (重大修改) ---
+
 class LearnerProcess(mp.Process):
     def __init__(
         self,
@@ -78,454 +155,328 @@ class LearnerProcess(mp.Process):
         state_queue: mp.Queue,
         action_queues: list[mp.Queue],
         experience_queue: mp.Queue,
+        metrics_queue: mp.Queue,
         num_actors: int,
     ):
         super().__init__(daemon=True)
         self.config = config
         self.engine_info = engine_info
-        # ... (省略與之前相似的初始化) ...
         self.state_queue = state_queue
         self.action_queues = action_queues
         self.experience_queue = experience_queue
         self.num_actors = num_actors
+        self.metrics_queue = metrics_queue
+
+    def _prepare_optimizer(self, base_lr=1e-4):
+        """
+        建立 Adam 優化器，以下功能：
+        1. `dean` 的三個特殊層 (`mean_layer`, `scaling_layer`, `gating_layer`) 使用獨立的學習率且不做 weight decay。
+        2. `LayerNorm` 層和所有 `bias` 參數不做 weight decay。
+        3. 其餘參數正常做 weight decay。
+        """
+        # 存放不同參數組
+        decay_params = []
+        no_decay_params = []
+        
+        # 獲取 dean 特殊層的參數 ID，以便後續排除
+        dean_params_ids = set()
+        if hasattr(self.net, 'dean'):
+            dean_params_ids.update(id(p) for p in self.net.dean.parameters())
+
+        for name, param in self.net.named_parameters():
+            if not param.requires_grad:
+                continue
+
+            # 如果是 dean 層的參數，跳過，因為它們會被單獨處理
+            if id(param) in dean_params_ids:
+                continue
+
+            # LayerNorm 層和 bias 不做 weight decay
+            # 透過 name 來判斷，比 isinstance 更可靠
+            if "norm" in name or name.endswith(".bias"):
+                no_decay_params.append(param)
+            else:
+                decay_params.append(param)
+
+        # 建立參數組
+        param_groups = [
+            {
+                'params': decay_params,
+                'lr': self.config.LEARNING_RATE,
+                'weight_decay': self.config.LAMBDA_L2
+            },
+            {
+                'params': no_decay_params,
+                'lr': self.config.LEARNING_RATE,
+                'weight_decay': 0.0
+            }
+        ]
+
+        # 為 dean 的特殊層添加獨立的參數組
+        if hasattr(self.net, 'dean'):
+            param_groups.extend([
+                {'params': list(self.net.dean.mean_layer.parameters()),
+                 'lr': base_lr * self.net.dean.mean_lr, 'weight_decay': 0.0},
+                {'params': list(self.net.dean.scaling_layer.parameters()),
+                 'lr': base_lr * self.net.dean.scale_lr, 'weight_decay': 0.0},
+                {'params': list(self.net.dean.gating_layer.parameters()),
+                 'lr': base_lr * self.net.dean.gate_lr, 'weight_decay': 0.0},
+            ])
+
+        # 用 Adam 建立優化器
+        self.optimizer = optim.Adam(param_groups)
+        print("optimzer create.")
 
     def _prepare_learner_components(self):
-        # ... (這部分與之前 LearnerProcess 創建 model, tgt_net, optimizer 的程式碼相同)
-        # 為了簡潔，這裡直接複製貼上
         action_space_n = self.engine_info["action_space_n"]
         input_size = self.engine_info["input_size"]
         if self.config.KEYWORD == "Mamba":
             moe_config = {"num_experts": 16}
+
+            ssm_cfg = {
+                "expand":4
+            }
             self.net = model.mambaDuelingModel(
                 d_model=input_size,
-                nlayers=4,
+                nlayers=6,
                 num_actions=action_space_n,
                 seq_dim=self.config.BARS_COUNT,
                 dropout=0.3,
+                ssm_cfg=ssm_cfg,
                 moe_cfg=moe_config,
             ).to(self.config.DEVICE)
         else:
             raise ValueError(f"Unknown model KEYWORD: {self.config.KEYWORD}")
 
         self.tgt_net = ptan.agent.TargetNet(self.net)
-        self.optimizer = optim.Adam(self.net.parameters(), lr=self.config.LEARNING_RATE)
-        print(f"Learner model created on {self.config.DEVICE}")
-
-        # 為了讓 PrioritizedStratifiedReplayBuffer 工作，我們需要一個能 pop_rewards_steps 的物件
-        # 我們創建一個簡單的類來模擬這個行為
-        class ExperienceBufferWrapper:
-            def __init__(self, learner_process):
-                self.learner_process = learner_process
-                self.rewards_steps = deque(
-                    maxlen=self.learner_process.config.REPLAY_SIZE
-                )
-
-            def __iter__(self):
-                # 這個 wrapper 不直接產生經驗，經驗來自 queue
-                return self
-
-            def __next__(self):
-                # 從 experience_queue 獲取數據並處理
-                try:
-                    actor_id, transition_history, reward, last_state = (
-                        self.learner_process.experience_queue.get_nowait()
-                    )
-                    # 將收到的原始數據轉換為 ptan 需要的 ExperienceFirstLast 格式
-                    first_exp = transition_history[0]
-                    exp = ExperienceFirstLast(
-                        state=first_exp.state,
-                        action=first_exp.action,
-                        reward=reward,
-                        last_state=last_state,
-                    )
-                    self.rewards_steps.append((reward, 0.0))  # (reward, loss)
-                    return exp
-                except Empty:
-                    raise StopIteration
-
-            def pop_rewards_steps(self):
-                # ptan.buffer.populate 會呼叫這個
-                r = list(self.rewards_steps)
-                self.rewards_steps.clear()
-                return r if r else None
-
-        self.exp_wrapper = ExperienceBufferWrapper(self)
-        self.buffer = PrioritizedStratifiedReplayBuffer(
-            experience_source=self.exp_wrapper,
-            batch_size=self.config.BATCH_SIZE,
-            capacity=self.config.REPLAY_SIZE,
-            each_capacity=self.config.EACH_REPLAY_SIZE,
-            beta_start=self.config.BETA_START,
-            beta_annealing_steps=self.config.BETA_ANNEALING_STEPS,
-        )
+        self._prepare_optimizer()
+        self._prepare_buffer()
+        
 
     def _handle_inference_batch(self):
         """處理批次推理"""
-        if self.state_queue.qsize() < self.num_actors:
-            return  # 等待所有 actor 都提交請求，以達到最大批次效率
+        q_size = self.state_queue.qsize()
+        if q_size == 0:
+            return
 
-        batch = [self.state_queue.get() for _ in range(self.num_actors)]
+        batch = [self.state_queue.get() for _ in range(q_size)]
         actor_ids, states = zip(*batch)
 
         states_v = torch.from_numpy(np.array(states, dtype=np.float32))
         states_v = states_v.to(self.config.DEVICE)
 
         with torch.no_grad():
-            q_values = self.net(states_v)
+            q_values,_ = self.net(states_v)
 
-        # 這裡我們需要 epsilon-greedy 策略來選擇動作
-        # Learner 統一管理 epsilon
-        epsilon = max(
+        # 這裡我們需要 epsilon-greedy 策略來選擇動作 Learner 統一管理 epsilon
+        self.epsilon = max(
             self.config.EPSILON_STOP,
             self.config.EPSILON_START - self.step_idx / self.config.EPSILON_STEPS,
         )
 
         actions = []
-        if np.random.random() < epsilon:
+        if np.random.random() < self.epsilon:
             # 所有 actor 隨機動作
-            actions = [
-                np.random.randint(0, self.engine_info["action_space_n"])
-                for _ in range(self.num_actors)
-            ]
+            actions = np.random.randint(
+                0, self.engine_info["action_space_n"], size=len(actor_ids)
+            )
         else:
             # 所有 actor 貪婪動作
             actions = q_values.max(dim=1)[1].cpu().numpy()
 
+        
         for actor_id, action in zip(actor_ids, actions):
             self.action_queues[actor_id].put(action.item())
+        
+
+    def _prepare_buffer(self):
+        self.buffer = ACSequentialExperienceReplayBuffer(
+            self.experience_queue,
+            del_critical_len =self.config.REPLAY_SIZE,
+            capacity = self.config.EACH_REPLAY_SIZE,
+            replay_initial_size = self.config.REPLAY_INITIAL,            
+        )
+
+    def save_checkpoint(self, state, filename):
+        # 保存檢查點的函數
+        torch.save(state, filename)
 
     def run(self):
         print("--- Learner Process Started ---")
         self._prepare_learner_components()
         self.step_idx = 0
 
-        saves_path = os.path.join(
-            self.config.SAVES_PATH,
-            datetime.strftime(datetime.now(), "%Y%m%d-%H%M%S")
-            + "-"
-            + str(self.config.BARS_COUNT)
-            + "k-",
-        )
-        os.makedirs(saves_path, exist_ok=True)
-
         while True:
             # 優先處理推理請求，因為 Actors 正在等待
             self._handle_inference_batch()
 
             # 填充經驗緩衝區
-            self.buffer.populate(self.num_actors)  # 嘗試填充 N 筆經驗
+            self.buffer.populate()
 
             if not self.buffer.is_ready():
-                time.sleep(0.01)  # 避免空轉
                 continue
 
             # 執行訓練
             self.step_idx += 1
-            self.optimizer.zero_grad()
-            batch_exp, batch_indices, batch_weights = self.buffer.sample()
+            self.optimizer.zero_grad()            
+            batch_exp = self.buffer.sample(self.config.BATCH_SIZE)
+
             loss_v, td_errors = common.calc_loss(
-                batch_exp,
-                batch_weights,
-                self.net,
-                self.tgt_net.target_model,
-                self.config.GAMMA**self.config.REWARD_STEPS,
-                device=self.config.DEVICE,
-            )
+                batch_exp, self.net, self.tgt_net.target_model, self.config.GAMMA ** self.config.REWARD_STEPS, device=self.config.DEVICE)
+
             loss_v.backward()
             self.optimizer.step()
-            self.buffer.update_priorities(batch_indices, td_errors)
+            
 
-            if self.step_idx % self.config.TARGET_NET_SYNC == 0:
-                self.tgt_net.sync()
-
-            if self.step_idx % self.config.CHECKPOINT_EVERY_STEP == 0:
-                # ... 儲存 checkpoint ...
-                pass
-
-
-# --- Learner Process (重大修改) ---
-class LearnerProcess(mp.Process):
-    def __init__(
-        self,
-        config: RLConfig,
-        engine_info: dict,
-        symbol_count: int,
-        state_queue: mp.Queue,
-        action_queues: list[mp.Queue],
-        experience_queue: mp.Queue,
-        num_actors: int,
-    ):
-        super().__init__(daemon=True)
-        self.config = config
-        self.engine_info = engine_info
-        # ... (省略與之前相似的初始化) ...
-        self.state_queue = state_queue
-        self.action_queues = action_queues
-        self.experience_queue = experience_queue
-        self.num_actors = num_actors
-
-    def _prepare_learner_components(self):
-        # ... (這部分與之前 LearnerProcess 創建 model, tgt_net, optimizer 的程式碼相同)
-        # 為了簡潔，這裡直接複製貼上
-        action_space_n = self.engine_info["action_space_n"]
-        input_size = self.engine_info["input_size"]
-        if self.config.KEYWORD == "Mamba":
-            moe_config = {"num_experts": 16}
-            self.net = model.mambaDuelingModel(
-                d_model=input_size,
-                nlayers=4,
-                num_actions=action_space_n,
-                seq_dim=self.config.BARS_COUNT,
-                dropout=0.3,
-                moe_cfg=moe_config,
-            ).to(self.config.DEVICE)
-        else:
-            raise ValueError(f"Unknown model KEYWORD: {self.config.KEYWORD}")
-
-        self.tgt_net = ptan.agent.TargetNet(self.net)
-        self.optimizer = optim.Adam(self.net.parameters(), lr=self.config.LEARNING_RATE)
-        print(f"Learner model created on {self.config.DEVICE}")
-
-        # 為了讓 PrioritizedStratifiedReplayBuffer 工作，我們需要一個能 pop_rewards_steps 的物件
-        # 我們創建一個簡單的類來模擬這個行為
-        class ExperienceBufferWrapper:
-            def __init__(self, learner_process):
-                self.learner_process = learner_process
-                self.rewards_steps = deque(
-                    maxlen=self.learner_process.config.REPLAY_SIZE
-                )
-
-            def __iter__(self):
-                # 這個 wrapper 不直接產生經驗，經驗來自 queue
-                return self
-
-            def __next__(self):
-                # 從 experience_queue 獲取數據並處理
+            if self.step_idx % 100 == 0:
                 try:
-                    actor_id, transition_history, reward, last_state = (
-                        self.learner_process.experience_queue.get_nowait()
+                    # 使用 non-blocking put 避免佇列滿時卡住 Learner
+                    self.metrics_queue.put_nowait(
+                        ("train_step", self.step_idx, loss_v.item(), self.epsilon)
                     )
-                    # 將收到的原始數據轉換為 ptan 需要的 ExperienceFirstLast 格式
-                    first_exp = transition_history[0]
-                    exp = ExperienceFirstLast(
-                        state=first_exp.state,
-                        action=first_exp.action,
-                        reward=reward,
-                        last_state=last_state,
-                    )
-                    self.rewards_steps.append((reward, 0.0))  # (reward, loss)
-                    return exp
-                except Empty:
-                    raise StopIteration
-
-            def pop_rewards_steps(self):
-                # ptan.buffer.populate 會呼叫這個
-                r = list(self.rewards_steps)
-                self.rewards_steps.clear()
-                return r if r else None
-
-        self.exp_wrapper = ExperienceBufferWrapper(self)
-        self.buffer = PrioritizedStratifiedReplayBuffer(
-            experience_source=self.exp_wrapper,
-            batch_size=self.config.BATCH_SIZE,
-            capacity=self.config.REPLAY_SIZE,
-            each_capacity=self.config.EACH_REPLAY_SIZE,
-            beta_start=self.config.BETA_START,
-            beta_annealing_steps=self.config.BETA_ANNEALING_STEPS,
-        )
-
-    def _handle_inference_batch(self):
-        """處理批次推理"""
-        if self.state_queue.qsize() < self.num_actors:
-            return  # 等待所有 actor 都提交請求，以達到最大批次效率
-
-        batch = [self.state_queue.get() for _ in range(self.num_actors)]
-        actor_ids, states = zip(*batch)
-
-        states_v = torch.from_numpy(np.array(states, dtype=np.float32))
-        states_v = states_v.to(self.config.DEVICE)
-
-        with torch.no_grad():
-            q_values = self.net(states_v)
-
-        # 這裡我們需要 epsilon-greedy 策略來選擇動作
-        # Learner 統一管理 epsilon
-        epsilon = max(
-            self.config.EPSILON_STOP,
-            self.config.EPSILON_START - self.step_idx / self.config.EPSILON_STEPS,
-        )
-
-        actions = []
-        if np.random.random() < epsilon:
-            # 所有 actor 隨機動作
-            actions = [
-                np.random.randint(0, self.engine_info["action_space_n"])
-                for _ in range(self.num_actors)
-            ]
-        else:
-            # 所有 actor 貪婪動作
-            actions = q_values.max(dim=1)[1].cpu().numpy()
-
-        for actor_id, action in zip(actor_ids, actions):
-            self.action_queues[actor_id].put(action.item())
-
-    def run(self):
-        print("--- Learner Process Started ---")
-        self._prepare_learner_components()
-        self.step_idx = 0
-
-        saves_path = os.path.join(
-            self.config.SAVES_PATH,
-            datetime.strftime(datetime.now(), "%Y%m%d-%H%M%S")
-            + "-"
-            + str(self.config.BARS_COUNT)
-            + "k-",
-        )
-        os.makedirs(saves_path, exist_ok=True)
-
-        while True:
-            # 優先處理推理請求，因為 Actors 正在等待
-            self._handle_inference_batch()
-
-            # 填充經驗緩衝區
-            self.buffer.populate(self.num_actors)  # 嘗試填充 N 筆經驗
-
-            if not self.buffer.is_ready():
-                time.sleep(0.01)  # 避免空轉
-                continue
-
-            # 執行訓練
-            self.step_idx += 1
-            self.optimizer.zero_grad()
-            batch_exp, batch_indices, batch_weights = self.buffer.sample()
-            loss_v, td_errors = common.calc_loss(
-                batch_exp,
-                batch_weights,
-                self.net,
-                self.tgt_net.target_model,
-                self.config.GAMMA**self.config.REWARD_STEPS,
-                device=self.config.DEVICE,
-            )
-            loss_v.backward()
-            self.optimizer.step()
-            self.buffer.update_priorities(batch_indices, td_errors)
+                except Full:
+                    pass # 如果佇列滿了，就跳過這次發送，不影響訓練
 
             if self.step_idx % self.config.TARGET_NET_SYNC == 0:
                 self.tgt_net.sync()
 
             if self.step_idx % self.config.CHECKPOINT_EVERY_STEP == 0:
-                # ... 儲存 checkpoint ...
-                pass
-
+                idx = self.step_idx // self.config.CHECKPOINT_EVERY_STEP
+                checkpoint = {
+                    'step_idx': self.step_idx,
+                    'model_state_dict': self.net.state_dict(),                            
+                    'tgt_net_state_dict': self.tgt_net.target_model.state_dict(),                            
+                    'optimizer_state_dict': self.optimizer.state_dict(),
+                }
+                self.save_checkpoint(checkpoint, os.path.join(
+                    self.config.SAVES_PATH, f"checkpoint-{idx}.pt"))
 
 class ActorProcess(mp.Process):
     def __init__(
         self,
         actor_id: int,
         config: RLConfig,
-        all_data: dict,
         state_queue: mp.Queue,
+        task_queue: mp.Queue,
         action_queue: mp.Queue,
         experience_queue: mp.Queue,
+        metrics_queue: mp.Queue,
     ):
         super().__init__(daemon=True)
         self.actor_id = actor_id
         self.config = config
-        self.all_data = all_data
         self.state_queue = state_queue
+        self.task_queue = task_queue
         self.action_queue = action_queue
         self.experience_queue = experience_queue
+        self.metrics_queue = metrics_queue
 
     def _prepare_actor_components(self):
         """
             Actor 現在只創建環境
         """
-        state_params = {
-            "init_prices": self.all_data[np.random.choice(list(self.all_data.keys()))],
-            "bars_count": self.config.BARS_COUNT,
-            "commission_perc": self.config.MODEL_DEFAULT_COMMISSION_PERC,
-            "model_train": True,
-            "default_slippage": self.config.DEFAULT_SLIPPAGE,
-        }
-        state = State_time_step(**state_params)
         self.env = environment.Env(
-            prices=self.all_data, state=state, random_ofs_on_reset=True
+            config=self.config, random_ofs_on_reset=True
         )
+
         print(f"Actor {self.actor_id} ready.")
 
     def run(self):
         """
         need caculate the N-Step Reward.
         """
+        print(f"--- Actor {self.actor_id} Process Started ---")
         self._prepare_actor_components()
-        state = self.env.reset()
-
-        # 每個 Actor 維護一個小型的 n-step 緩衝區
-        n_step_buffer = deque(maxlen=REWARD_STEPS)
 
         while True:
-            # 1. 將狀態發送給 Learner 請求動作
-            self.state_queue.put((self.actor_id, state))
+            # 1. 從中央協調者獲取一個任務（商品）
+            symbol = self.task_queue.get()
+            if symbol is None:  # 收到結束信號
+                print(f"Actor {self.actor_id} received shutdown signal.")
+                break
 
-            # 2. 阻塞等待，直到收到 Learner 回傳的動作
-            # action = self.action_queue.get()
-            print("random action")
-            action = np.random.randint(0, 2)
+            # 2. 使用獲取到的商品重置環境
+            state = self.env.reset(symbol=symbol)
+            n_step_buffer = deque(maxlen=self.config.REWARD_STEPS)
+            done = False
+            total_reward = 0.0
+            episode_steps = 0
 
-            # 3. 在環境中執行動作
-            next_state, reward, done, info = self.env.step(action)
+            # 3. 執行一個完整的 episode
+            while not done:
+                # 3.1. 將狀態發送給 Learner 請求動作
+                self.state_queue.put((self.actor_id, state))
 
-            n_step_buffer.append((state, action, reward))
+                # 3.2. 阻塞等待，直到收到 Learner 回傳的動作
+                action = self.action_queue.get()
 
-            # 只有當緩衝區滿了，我們才能計算出第一個 transition 的 n-step reward
-            if len(n_step_buffer) == REWARD_STEPS or done:
-                total_reward = 0.0
-                for transition in reversed(n_step_buffer):
-                    # transition: (s, a, r)
-                    reward_in_step = transition[2]
-                    total_reward = reward_in_step + GAMMA * total_reward
+                # 3.3. 在環境中執行動作
+                next_state, reward, done, info = self.env.step(action)
+                total_reward += reward
+                episode_steps += 1
+                n_step_buffer.append((state, action, reward))
 
-                # 獲取這個 n-step 軌跡的 đầu (s_t, a_t) 和 cuối (s_{t+n}, d_{t+n})
-                first_state, first_action, _ = n_step_buffer[0]
-                last_state = None if done else next_state
-
-                # 濃縮後的經驗元組
-                # (初始狀態, 初始動作, N步獎勵, N步後的狀態, N步後是否終止)
-                # 將處理好的 n-step 經驗發送到隊列
-                self.experience_queue.put(
-                    ExperienceFirstLast(
-                        first_state, first_action, total_reward, last_state, info, done
-                    )
-                )
-
-            # 更新 state
-            state = next_state
-
-            # 5. 處理 Episode 結束的情況
-            if done:
-                # 將 buffer 中剩餘的 transition 全部處理掉
-                while len(n_step_buffer) > 1: # 處理到只剩最後一個
-                    # 移除最舊的 transition
-                    n_step_buffer.popleft()
-                    
-                    # 重新計算這個較短軌跡的 return
+                # 3.4. 計算 N-Step Reward 並發送經驗
+                if len(n_step_buffer) == self.config.REWARD_STEPS or (done and len(n_step_buffer) > 0):
                     total_reward = 0.0
                     for transition in reversed(n_step_buffer):
-                        total_reward = transition[2] + GAMMA * total_reward
-                    
+                        reward_in_step = transition[2]
+                        total_reward = reward_in_step + self.config.GAMMA * total_reward
+
                     first_state, first_action, _ = n_step_buffer[0]
-                    # last_state 依然是 None，因為 episode 已經結束
-                    last_state = None
+                    last_state = None if done else next_state
 
                     self.experience_queue.put(
                         ExperienceFirstLast(
                             first_state, first_action, total_reward, last_state, info, done
                         )
                     )
-                
-                # 清空 buffer 並重置環境
-                n_step_buffer.clear()
-                state = self.env.reset()
+
+                state = next_state
+
+                # 3.5. 如果 episode 結束，處理剩餘的 n-step transitions
+                if done:
+                    try:
+                        self.metrics_queue.put_nowait(
+                            ("episode_done", self.actor_id, total_reward, episode_steps)
+                        )
+                    except Full:
+                        pass # 如果佇列滿了，就跳過
+                    
+                    while len(n_step_buffer) > 1:
+                        n_step_buffer.popleft()
+                        total_reward = 0.0
+                        for transition in reversed(n_step_buffer):
+                            total_reward = transition[2] + self.config.GAMMA * total_reward
+                        first_state, first_action, _ = n_step_buffer[0]
+                        self.experience_queue.put(
+                            ExperienceFirstLast(
+                                first_state, first_action, total_reward, None, info, done
+                            )
+                        )
+
+
+class SymbolProcess(mp.Process):
+    def __init__(self, task_queue: mp.Queue, symbols: list[str], shutdown_event):
+        """
+            這個 Process 專門負責向任務佇列中循環、無限地提供商品名稱。
+        """
+        super().__init__(daemon=True)
+        self.task_queue = task_queue
+        self.symbols = symbols
+        self.shutdown_event = shutdown_event
+
+    def run(self):
+        print("--- Symbol Process Started ---")
+        # 使用 itertools.cycle 實現無限循環
+        for symbol in itertools.cycle(self.symbols):
+            if self.shutdown_event.is_set():
+                print("Symbol Process received shutdown signal.")
+                break
+            # put 會阻塞，直到佇列中有可用空間，這可以自然地調節任務生成速度
+            self.task_queue.put(symbol)
+        print("--- Symbol Process Exited ---")
+
 
 # --- 主執行流程 (重大修改) ---
 NUM_ACTORS = 4
@@ -543,63 +494,115 @@ def main():
 
     unique_symbols = list(set(symbolNames))
     config.update_steps_by_symbols(len(unique_symbols))
-    all_data = OriginalDataFrature().get_train_net_work_data_by_path(unique_symbols)
+    config.create_saves_path()
+    config.UNIQUE_SYMBOLS = unique_symbols
+    
 
     # 創建一個臨時環境以獲取 `engine_info`
-    # temp_env_state = State_time_step(
-    #     init_prices=all_data[np.random.choice(list(all_data.keys()))],
-    #     bars_count=config.BARS_COUNT,
-    #     commission_perc=config.MODEL_DEFAULT_COMMISSION_PERC,
-    #     model_train=True,
-    #     default_slippage=config.DEFAULT_SLIPPAGE
-    # )
-
-    # temp_env = environment.Env(prices=all_data, state=temp_env_state)
-    # engine_info = temp_env.engine_info()
-    # del temp_env, temp_env_state
+    temp_env = environment.Env(
+            config=config, random_ofs_on_reset=True
+    )
+    engine_info = temp_env.engine_info()
+    del temp_env
 
     # 建立新的 IPC Queues
     state_queue = mp.Queue(maxsize=NUM_ACTORS)
     action_queues = [mp.Queue(maxsize=1) for _ in range(NUM_ACTORS)]
     experience_queue = mp.Queue(maxsize=NUM_ACTORS * 5)
 
-    # # 啟動 Learner Process
-    # learner_proc = LearnerProcess(
-    #     config,
-    #     engine_info,
-    #     len(unique_symbols),
-    #     state_queue,
-    #     action_queues,
-    #     experience_queue,
-    #     NUM_ACTORS,
-    # )
-    # learner_proc.start()
+
+
+    metrics_queue = mp.Queue()
+
+    # 建立一個事件來通知子行程關閉
+    shutdown_event = mp.Event()
+
+    # 建立任務佇列，並由 SymbolProcess 負責填充
+    # 佇列大小可以限制，防止 SymbolProcess 產生過多任務塞爆記憶體
+    task_queue = mp.Queue(maxsize=NUM_ACTORS * 2)
+
+    # 啟動 SymbolProcess
+    symbol_proc = SymbolProcess(task_queue, config.UNIQUE_SYMBOLS, shutdown_event)
+    symbol_proc.start()
+
+    # 啟動 Learner Process
+    learner_proc = LearnerProcess(
+        config,
+        engine_info,
+        len(unique_symbols),
+        state_queue,
+        action_queues,
+        experience_queue,
+        metrics_queue,
+        NUM_ACTORS,
+    )
+    learner_proc.start()
 
     # 啟動 Actor Processes
     actor_procs = []
 
     for i in range(NUM_ACTORS):
-        print("目前序列：", i)
         actor = ActorProcess(
-            i, config, all_data, state_queue, action_queues[i], experience_queue
+            i, config, state_queue, task_queue, action_queues[i], experience_queue, metrics_queue
         )
 
         actor.start()
         actor_procs.append(actor)
 
-    time.sleep(100)
-    print(f"--- {NUM_ACTORS} Actors and 1 Learner have been started. ---")
+    print(
+        f"--- {NUM_ACTORS} Actors, 1 Learner, and 1 SymbolProvider have been started. ---"
+    )
+    print("--- Press Ctrl+C to stop the training. ---")
 
-    # # 主行程可以做一些監控工作，或者直接等待
-    # try:
-    #     learner_proc.join()
-    #     for actor in actor_procs:
-    #         actor.join()
-    # except KeyboardInterrupt:
-    #     print("--- Main Process: Shutting down all processes. ---")
-    #     learner_proc.terminate()
-    #     for actor in actor_procs:
-    #         actor.terminate()
+
+    tracker = MetricsTracker()
+    try:
+        while True:
+            # 從佇列中獲取所有可用的指標訊息
+            while not metrics_queue.empty():
+                try:
+                    message = metrics_queue.get_nowait()
+                    tracker.update(message)
+                except Empty:
+                    break
+            
+            # 定期打印報告
+            if tracker.should_report():
+                tracker.report()
+
+            time.sleep(0.1)  # 稍微等待，避免CPU佔用過高
+
+    except KeyboardInterrupt:
+        print("\n--- Main Process: Shutting down all processes. ---")
+
+        # 1. 設置關閉事件，通知 SymbolProvider 停止
+        shutdown_event.set()
+
+        # 2. 發送停止信號給所有 Actor
+        print("Sending shutdown signal to actors...")
+        for _ in range(NUM_ACTORS):
+            try:
+                # 使用非阻塞的 put 避免佇列滿時卡住
+                task_queue.put(None, timeout=1)
+            except Full:
+                pass # Actor 可能已經終止
+
+        # 3. 給予 Actor 一些時間來正常結束
+        print("Waiting for actors to terminate gracefully (30s timeout)...")
+        for actor in actor_procs:
+            actor.join(timeout=30)
+
+        # 4. 強制終止仍然在運行的行程
+        print("Forcibly terminating any remaining processes...")
+        if learner_proc.is_alive():
+            learner_proc.terminate()
+        if symbol_proc.is_alive():
+            symbol_proc.terminate()
+        for actor in actor_procs:
+            if actor.is_alive():
+                actor.terminate()
+        
+        print("--- All processes have been shut down. ---")
 
 
 if __name__ == "__main__":

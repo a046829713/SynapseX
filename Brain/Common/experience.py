@@ -4,12 +4,12 @@ import itertools
 from collections import deque
 import time
 from Brain.DQN.ptan.experience import ExperienceSource
-import torch
+import torch.multiprocessing as mp
 import random
 from collections import namedtuple, deque
 import numpy as np
 from utils.Debug_tool import debug
-
+from queue import Empty
 
 # SumTree 是實現 PER 的核心資料結構
 # 它能讓我們在 O(log N) 的時間複雜度內完成抽樣與更新
@@ -468,3 +468,117 @@ class ExperienceReplayBuffer:
         for _ in range(samples):
             entry = next(self.experience_source_iter)
             self._add(entry)
+
+
+
+
+
+class ACSequentialExperienceReplayBuffer:
+    def __init__(
+        self,
+        experience_queue:mp.Queue,
+        del_critical_len:int,
+        capacity:int,
+        replay_initial_size: int,
+    ):
+        """
+            This is split train model. so the data come from Queue.
+
+        """
+        self.experience_queue = experience_queue
+
+
+        # 用來儲存所有商品的空間
+        self.buffer = {}
+        self.sample_count_buffer = {}
+        self.capacity = capacity
+        self.replay_initial_size = replay_initial_size
+        assert (
+            self.capacity > replay_initial_size
+        ), "The capacity is smaller than init_size, please change the capacity"
+
+        self._count = 0
+        self._del_critical_len = del_critical_len
+
+    def is_ready(self):
+        if  [
+                symbolName
+                for symbolName, data in self.buffer.items()
+                if len(data) > self.replay_initial_size
+            ]:
+            return True
+        else:
+            return False
+
+    def __len__(self):
+        """
+        Total number of experiences in the buffer.
+        """
+        return sum(len(deq) for deq in self.buffer.values())
+
+    def get_random_symbol(self):
+        return random.choice(
+            [
+                symbolName
+                for symbolName, data in self.buffer.items()
+                if len(data) > self.replay_initial_size
+            ]
+        )
+
+    def sample(self, batch_size):
+        """
+        Sample a batch of sequential experiences from a random symbol.
+
+        """
+        symbol = self.get_random_symbol()
+        data = self.buffer[symbol]
+        start = random.randint(0, len(data) - batch_size)
+        batch = list(itertools.islice(data, start, start + batch_size))
+        offset = batch[0].info["offset"]
+
+        if all(exp.info["offset"] == offset + i for i, exp in enumerate(batch)):
+            if symbol not in self.sample_count_buffer:
+                self.sample_count_buffer[symbol] = 1
+            else:
+                self.sample_count_buffer[symbol] += 1
+            return batch
+        
+        return self.sample(batch_size)
+
+    def populate(self):
+        """
+            Populate buffer with all available experiences from the queue without blocking.
+            The `num_actors` argument is kept for API consistency but not used in the new logic.
+        """
+        items_added = 0
+        while not self.experience_queue.empty():
+            try:
+                entry = self.experience_queue.get_nowait()
+                if entry.info["instrument"] not in self.buffer:
+                    self.buffer[entry.info["instrument"]] = deque(maxlen=self.capacity)
+
+                self.buffer[entry.info["instrument"]].append(entry)
+                items_added += 1
+            except Empty:
+                break
+        
+        if items_added > 0:
+            self._count += items_added
+
+        if self.__len__() > self._del_critical_len:
+            self.dropsymbol()
+
+    def dropsymbol(self):
+        best_name = max(self.sample_count_buffer, key=self.sample_count_buffer.get)
+        self.buffer.pop(best_name)
+        self.sample_count_buffer.pop(best_name)
+
+    def get_state(self):
+        """
+        保存緩衝區的當前狀態。
+        返回一個字典，包含緩衝區數據和其他屬性。
+        """
+        return {
+            "buffer": self.buffer,  # 直接保存 dict of deque
+            "capacity": self.capacity,
+        }
