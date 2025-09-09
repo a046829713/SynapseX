@@ -5,13 +5,15 @@ import pandas as pd
 import time
 
 class DB_operate():
+    def __init__(self):
+        self._router = router.Router()
+
     def get_db_data(self, text_msg: str) -> list:
         """
             專門用於select from
         """
         try:
-            self.userconn = router.Router().mysql_conn
-            with self.userconn as conn:
+            with self._router.mysql_conn as conn:
 
                 result = conn.execute(
                     text(text_msg)
@@ -30,8 +32,7 @@ class DB_operate():
             None
         """
         try:
-            self.userconn = router.Router().mysql_conn
-            with self.userconn as conn:
+            with self._router.mysql_conn as conn:
                 conn.execute(text(text_msg))
                 conn.commit()  # 在这里调用commit来确保更改被保存
         except:
@@ -43,8 +44,7 @@ class DB_operate():
             symbol_name: 'btcusdt-f'
         """
         try:
-            self.userconn = router.Router().mysql_conn
-            with self.userconn as conn:
+            with self._router.mysql_conn as conn:
                 return pd.read_sql(text_msg, con=conn)
         except:
             Debug_tool.debug.print_info()
@@ -56,8 +56,7 @@ class DB_operate():
             symbol_name or tablename: 'btcusdt-f'
         """
         try:
-            self.userconn = router.Router().mysql_conn
-            with self.userconn as conn:
+            with self._router.mysql_conn as conn:
                 df.to_sql(symbol_name, con=conn,
                           if_exists=exists, index=if_index)
                 conn.commit()
@@ -160,7 +159,3 @@ class SqlSentense():
                     PRIMARY KEY(`ID`));
             """
         return sql_query
-
-
-
-
