@@ -4,7 +4,6 @@ import torch
 import torch.optim as optim
 from datetime import datetime
 import time
-from dataclasses import dataclass
 import torch.multiprocessing as mp
 from collections import namedtuple
 from Brain.DQN.lib import environment, common, model
@@ -18,6 +17,8 @@ from queue import Empty, Full
 from collections import deque
 from Brain.Common.experience import ACSequentialExperienceReplayBuffer
 import itertools
+from utils.AppSetting import RLConfig
+
 
 # 定義 Actor 發送的經驗元組，使其更清晰
 Transition = namedtuple("Transition", ("state", "action", "reward", "done"))
@@ -102,47 +103,7 @@ class MetricsTracker:
         
         print(f"{report_str}")
 
-@dataclass
-class RLConfig:
-    KEYWORD: str = "Mamba"
-    DEVICE: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    SAVES_TAG: str = "saves"
-    BARS_COUNT: int = 300
-    GAMMA: float = 0.99
-    REWARD_STEPS: int = 2
-    MODEL_DEFAULT_COMMISSION_PERC: float = 0.0045
-    DEFAULT_SLIPPAGE: float = 0.0025
-    LEARNING_RATE: float = 0.00005
-    LAMBDA_L2: float = 0.0
-    BATCH_SIZE: int = 32
-    REPLAY_SIZE: int = 1_000_000
-    EACH_REPLAY_SIZE: int = 50_000
-    REPLAY_INITIAL: int = 1000
-    EPSILON_START: float = 0.9
-    EPSILON_STOP: float = 0.1
-    EPSILON_STEPS_FACTOR: int = 1_000_000
-    TARGET_NET_SYNC: int = 1000
-    CHECKPOINT_EVERY_STEP: int = 20_000
-    BETA_START: float = 0.4
-    UNIQUE_SYMBOLS: list[str] = None
 
-    def update_steps_by_symbols(self, num_symbols: int):
-        self.EPSILON_STEPS = (
-            self.EPSILON_STEPS_FACTOR * 30
-            if num_symbols > 30
-            else self.EPSILON_STEPS_FACTOR * num_symbols
-        )
-        
-    def create_saves_path(self):
-        saves_path = os.path.join(
-            self.SAVES_TAG,
-            datetime.strftime(datetime.now(), "%Y%m%d-%H%M%S")
-            + "-"
-            + str(self.BARS_COUNT)
-            + "k-",
-        )
-        os.makedirs(saves_path, exist_ok=True)
-        self.SAVES_PATH = saves_path
 
 
 
@@ -274,17 +235,18 @@ class LearnerProcess(mp.Process):
             self.config.EPSILON_START - self.step_idx / self.config.EPSILON_STEPS,
         )
 
-        actions = []
-        if np.random.random() < self.epsilon:
-            # 所有 actor 隨機動作
-            actions = np.random.randint(
-                0, self.engine_info["action_space_n"], size=len(actor_ids)
-            )
-        else:
-            # 所有 actor 貪婪動作
-            actions = q_values.max(dim=1)[1].cpu().numpy()
-
+        greedy_actions = q_values.max(dim=1)[1].cpu().numpy()
         
+        # 2. 產生隨機動作
+        num_actions = len(actor_ids)
+        random_actions = np.random.randint(
+            0, self.engine_info["action_space_n"], size=num_actions
+        )
+        
+        # 3. 決定哪些狀態要進行探索
+        should_explore = np.random.random(size=num_actions) < self.epsilon
+        actions = np.where(should_explore, random_actions, greedy_actions)
+
         for actor_id, action in zip(actor_ids, actions):
             self.action_queues[actor_id].put(action.item())
         
@@ -555,7 +517,7 @@ def main():
     print("--- Press Ctrl+C to stop the training. ---")
 
 
-    tracker = MetricsTracker()
+    tracker = MetricsTracker(report_interval_seconds=30.0)
     try:
         while True:
             # 從佇列中獲取所有可用的指標訊息
@@ -570,7 +532,7 @@ def main():
             if tracker.should_report():
                 tracker.report()
 
-            time.sleep(0.1)  # 稍微等待，避免CPU佔用過高
+            time.sleep(1)  # 稍微等待，避免CPU佔用過高
 
     except KeyboardInterrupt:
         print("\n--- Main Process: Shutting down all processes. ---")

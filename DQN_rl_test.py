@@ -42,10 +42,9 @@ class StrategyBuilder:
             slippage=self.settings['DEFAULT_SLIPPAGE'],
             model_count_path=model_path
         )
+        strategy.symbol_file_name = symbol_file_name
+        
 
-        # 載入資料
-        data_path = os.path.join("Brain","simulation","test_data",symbol_file_name)
-        strategy.load_data(local_data_path=data_path)
 
         return strategy
 
@@ -73,8 +72,6 @@ class BacktestRunner:
 # 範例使用方式
 if __name__ == "__main__":
     builder = StrategyBuilder()
-    
-    
     test_symbols = os.listdir(os.path.join(os.getcwd() , "Brain","simulation","test_data"))
 
 

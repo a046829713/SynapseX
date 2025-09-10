@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import quantstats as qs
 from pathlib import Path
 import time
-
+from utils.AppSetting import RLConfig
 
 
 class Strategy(object):
@@ -79,19 +79,9 @@ class RL_evaluate():
 
         self.hyperparameters(strategy)
 
-        data = OriginalDataFrature().get_train_net_work_data_by_pd(symbol=strategy.symbol_name,
-                                                           df=strategy.df)
-        # 準備神經網絡的狀態
-        state = State_time_step(
-            data[list(data.keys())[0]],
-            bars_count=self.BARS_COUNT,
-                                commission_perc=self.MODEL_DEFAULT_COMMISSION_PERC,
-                                model_train=False,
-                                default_slippage = self.DEFAULT_SLIPPAGE
-                                )
-        # 製作環境
-        self.evaluate_env = environment.Env(
-            prices=data, state=state, random_ofs_on_reset=False)
+        config = RLConfig()
+        config.UNIQUE_SYMBOLS = [strategy.symbol_file_name.split('.')[0]]
+        self.evaluate_env = environment.Env(config=config ,random_ofs_on_reset=False)
 
         self.agent = self.load_model(
             model_path=strategy.model_count_path)

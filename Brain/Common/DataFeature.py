@@ -4,6 +4,9 @@ import time
 import numpy as np
 from Brain.Common.DataFeature_tool import VolatilityCalculator
 from utils.Debug_tool import debug
+from Brain.Common.Error import InvalidModeError
+
+
 
 Prices = collections.namedtuple('Prices', field_names=[
     'open',
@@ -25,9 +28,9 @@ Prices = collections.namedtuple('Prices', field_names=[
 
 
 class OriginalDataFrature():
-    def __init__(self, formal: bool = False) -> None:
-        self.formal = formal
-
+    def __init__(self,) -> None:
+        pass
+    
     def cleanData(self, df: pd.DataFrame) -> pd.DataFrame:
         df = df.replace([np.inf, -np.inf], np.nan)  # 将 Inf 替换为 NaN
         df = df.ffill(axis=0)
@@ -44,14 +47,14 @@ class OriginalDataFrature():
         return out_dict
     
     
-    def get_train_net_work_data_by_path(self, symbolNames: list) -> dict:
+    def get_train_net_work_data_by_path(self, symbolNames: list, typeName = 'train_data') -> dict:
         """
             用來取得類神經網絡所需要的資料
         """
         out_dict = {}
         for symbolName in symbolNames:
             df = pd.read_csv(
-                f'Brain/simulation/train_data/{symbolName}.csv')
+                f'Brain/simulation/{typeName}/{symbolName}.csv')
             df.set_index('Datetime', inplace=True)
             self.df = self.cleanData(df)
             # 使用 PyTorch Tensor 的方法
