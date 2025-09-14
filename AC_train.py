@@ -206,8 +206,6 @@ class LearnerProcess(mp.Process):
                 ssm_cfg=ssm_cfg,
                 moe_cfg=moe_config,
             ).to(self.config.DEVICE)
-            print(self.net)
-            time.sleep(100)
         else:
             raise ValueError(f"Unknown model KEYWORD: {self.config.KEYWORD}")
 
