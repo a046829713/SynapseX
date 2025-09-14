@@ -412,6 +412,7 @@ class mambaDuelingModel(nn.Module):
                  num_actions: int,
                  seq_dim: int = 300,
                  dropout: float = 0.1,
+                 hidden_size: int = 96,
                  mode='full',
                  ssm_cfg: Optional[dict] = None,
                  moe_cfg: Optional[dict] = None
@@ -422,7 +423,7 @@ class mambaDuelingModel(nn.Module):
 
         # 狀態值網絡
         self.fc_val = nn.Sequential(
-            nn.Linear(seq_dim * d_model, 512),
+            nn.Linear(seq_dim * hidden_size, 512),
             nn.LayerNorm(512),
             nn.ReLU(),
             nn.Dropout(dropout),
@@ -435,7 +436,7 @@ class mambaDuelingModel(nn.Module):
 
         # 優勢網絡
         self.fc_adv = nn.Sequential(
-            nn.Linear(seq_dim * d_model, 512),
+            nn.Linear(seq_dim * hidden_size, 512),
             nn.LayerNorm(512),
             nn.ReLU(),
             nn.Dropout(dropout),
@@ -446,10 +447,16 @@ class mambaDuelingModel(nn.Module):
             nn.Linear(256, num_actions)
         )
 
-
+        # 將資料映射至hidden_size維度
+        self.feature_embedding = nn.Sequential(
+            nn.Linear(d_model, hidden_size),
+            nn.ReLU(),
+            nn.Linear(hidden_size, hidden_size),
+            nn.Tanh()
+        )
 
         self.mixer = MixerModel(
-            d_model= d_model,
+            d_model= hidden_size,
             n_layer=nlayers,
             d_intermediate=256,
             dropout=dropout,
@@ -465,13 +472,9 @@ class mambaDuelingModel(nn.Module):
         # src = rearrange(src,'b l d -> b d l')        
         src = src.transpose(1, 2)        
         src = self.dean(src) # [B, seq_len, d_model]
-        src = src.transpose(1, 2)
-        
-
-        src, aux_loss = self.mixer(src)
-
-
-
+        src = src.transpose(1, 2)  
+        src = self.feature_embedding(src)
+        src, aux_loss = self.mixer(src) # 現在 src 的維度是 [B, seq_len, hidden_size]
         src = src.view(src.size(0), -1)
 
         # 狀態值和優勢值

@@ -209,10 +209,13 @@ class LearnerProcess(mp.Process):
         else:
             raise ValueError(f"Unknown model KEYWORD: {self.config.KEYWORD}")
 
+        print(f"net create current parameter size:{self.count_parameters()}")
         self.tgt_net = ptan.agent.TargetNet(self.net)
         self._prepare_optimizer()
         self._prepare_buffer()
-        
+    
+    def count_parameters(self):
+        return sum(p.numel() for p in self.net.parameters() if p.requires_grad)
 
     def _handle_inference_batch(self):
         """處理批次推理"""
