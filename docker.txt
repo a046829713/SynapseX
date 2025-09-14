@@ -1,14 +1,18 @@
-docker run -it --rm --gpus all --name RLTrain my-deeplearning:latest python3 DQN_rl_train.py
+docker run -it --rm --gpus all --name RLTrain my-deeplearning:latest python3 AC_train.py
 
 
-docker run -it --rm --gpus all --name RLTrain -v "C:/Users/Louis/Desktop/workSpace/docker_volumes/saves:/SynapseX/saves" louis0619/my-deeplearning:latest python3 DQN_rl_train.py
-docker run -it --rm --gpus all --name RLTrain -v "C:/Users/Louis/Desktop/workSpace/docker_volumes/saves:/SynapseX/saves" my-deeplearning:latest python3 DQN_rl_train.py
+docker run -it --rm --gpus all --name RLTrain -v "C:/Users/Louis/Desktop/workSpace/docker_volumes/saves:/SynapseX/saves" louis0619/my-deeplearning:latest python3 AC_train.py
+docker run -it --rm --gpus all --name RLTrain -v "C:/Users/Louis/Desktop/workSpace/docker_volumes/saves:/SynapseX/saves" my-deeplearning:latest python3 AC_train.py
 
 
 docker build -t my-deeplearning:latest .
 
 
-docker run -d --gpus all --name RLTrain -v "C:/Users/Louis/Desktop/workSpace/docker_volumes/saves:/SynapseX/saves" my-deeplearning:latest python3 DQN_rl_train.py
+docker run -d --gpus all --name RLTrain \
+-v "C:/Users/Louis/Desktop/workSpace/docker_volumes/saves:/SynapseX/saves" \
+-v "C:/Users/Louis/Desktop/workSpace/docker_volumes/simulation:/SynapseX/Brain/simulation" \
+my-deeplearning:latest \
+python3 AC_train.py
 
 
 // To copy the file from docker container to local computer
