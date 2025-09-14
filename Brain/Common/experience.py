@@ -521,7 +521,7 @@ class ACSequentialExperienceReplayBuffer:
             [
                 symbolName
                 for symbolName, data in self.buffer.items()
-                if len(data) > self.replay_initial_size
+                if len(data) >= self.replay_initial_size
             ]
         )
 
