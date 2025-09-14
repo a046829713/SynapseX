@@ -5,7 +5,9 @@ import numpy as np
 import collections
 from typing import Optional
 from Brain.Common.DataFeature import OriginalDataFrature
-import pandas as pd 
+import pandas as pd
+from abc import ABC, abstractmethod
+
 
 class Actions(enum.Enum):
     Hold = 0
@@ -509,115 +511,47 @@ class State_time_step(State):
         return fourier_features
 
 
-# class Env(gym.Env):
-#     def __init__(self, prices, state, random_ofs_on_reset):
-#         self._prices = prices
-#         self._state = state
-#         self.action_space = gym.spaces.Discrete(n=len(Actions))
-#         self.random_ofs_on_reset = random_ofs_on_reset
-
-#     def reset(self):
-#         self._instrument = np.random.choice(list(self._prices.keys()))
-#         prices = self._prices[self._instrument]
-
-#         if self.random_ofs_on_reset:
-#             offset = (
-#                 np.random.choice(prices.high.shape[0] - self._state.bars_count * 10)
-#                 + self._state.bars_count
-#             )
-#         else:
-#             offset = self._state.bars_count
-
-#         print("目前商品:", self._instrument, "目前步數:", offset)
-
-#         self._state.reset(prices, offset)
-
-#         return self._state.encode()
-
-#     def step(self, action_idx):
-#         action = Actions(action_idx)
-#         reward, done = self._state.step(action)  # 這邊會更新步數
-#         obs = self._state.encode()  # 呼叫這裡的時候就會取得新的狀態
-
-#         info = {
-#             "instrument": self._instrument,
-#             "offset": self._state._offset,
-#             "postion": float(self._state.have_position),
-#         }
-
-#         return obs, reward, done, info
-
-#     def render(self, mode="human", close=False):
-#         pass
-
-#     def close(self):
-#         pass
-
-#     def engine_info(self):
-#         if self._state.__class__ == State_time_step:
-#             return {
-#                 "input_size": self._state.shape[1],
-#             }
 
 
-class Env(gym.Env):
-    def __init__(self, config, random_ofs_on_reset):
-        self.config = config
-        self.unique_symbols = self.config.UNIQUE_SYMBOLS
+
+class BaseTradingEnv(gym.Env, ABC):
+    """
+    交易環境的抽象基礎類別。
+    包含了生產和訓練環境共享的核心邏輯，特別是 step 方法。
+    """
+
+    def __init__(self, state: State_time_step):
+        """
+        基礎類別的初始化。
+
+        Args:
+            state (State_time_step): 狀態管理物件。
+        """
+        super().__init__()
+        self._state = state
+        self._instrument = None  # 將由子類的 reset 方法設置
         self.action_space = gym.spaces.Discrete(n=len(Actions))
-        self.random_ofs_on_reset = random_ofs_on_reset
-        random_symbol = np.random.choice(self.unique_symbols)
 
-        if self.random_ofs_on_reset:
-            self.all_data = OriginalDataFrature().get_train_net_work_data_by_path([random_symbol])
-        else:
-            self.all_data = OriginalDataFrature().get_train_net_work_data_by_path([random_symbol],typeName="test_data")
-        
-        state_params = {
-            "init_prices": self.all_data[random_symbol],
-            "bars_count": self.config.BARS_COUNT,
-            "commission_perc": self.config.MODEL_DEFAULT_COMMISSION_PERC_traing if random_ofs_on_reset else self.config.MODEL_DEFAULT_COMMISSION_PERC_test,
-            "model_train": True,
-            "default_slippage": self.config.DEFAULT_SLIPPAGE,
-        }
-        self._state = State_time_step(**state_params)
+    @abstractmethod
+    def reset(self):
+        """
+        重置環境。這是一個抽象方法，必須在子類中被實現。
+        子類需要在此方法中：
+        1. 選擇一個交易商品 (instrument)。
+        2. 準備好該商品的價格數據 (prices)。
+        3. 設置起始點 (offset)。
+        4. 調用 self._state.reset()。
+        5. 返回初始觀察值 (observation)。
+        """
+        raise NotImplementedError("子類必須實現 reset 方法")
 
-    def reset(self, symbol: str = None):
-        if symbol is None:
-            # 如果沒有指定 symbol，則隨機選擇一個
-            self._instrument = np.random.choice(self.unique_symbols)
-        else:
-            # 如果指定了 symbol，則使用它
-            self._instrument = symbol
-
-
-        if self.random_ofs_on_reset:
-            self._prices = OriginalDataFrature().get_train_net_work_data_by_path([self._instrument])
-        else:
-            self._prices = OriginalDataFrature().get_train_net_work_data_by_path([self._instrument], typeName="test_data")
-        
-        
-        
-        prices = self._prices[self._instrument]
-
-        if self.random_ofs_on_reset:
-            offset = (
-                np.random.choice(prices.high.shape[0] - self._state.bars_count * 10)
-                + self._state.bars_count
-            )
-        else:
-            offset = self._state.bars_count
-
-        print(
-            f"Actor resetting environment with symbol: {self._instrument} at offset: {offset}"
-        )
-        self._state.reset(prices, offset)
-        return self._state.encode()
-
-    def step(self, action_idx):
+    def step(self, action_idx: int):
+        """
+        執行一個時間步。這個邏輯在所有環境中都是相同的。
+        """
         action = Actions(action_idx)
-        reward, done = self._state.step(action)  # 這邊會更新步數
-        obs = self._state.encode()  # 呼叫這裡的時候就會取得新的狀態
+        reward, done = self._state.step(action)
+        obs = self._state.encode()
 
         info = {
             "instrument": self._instrument,
@@ -628,8 +562,99 @@ class Env(gym.Env):
         return obs, reward, done, info
 
     def engine_info(self):
-        if self._state.__class__ == State_time_step:
+        if isinstance(self._state, State_time_step):
             return {
                 "input_size": self._state.shape[1],
                 "action_space_n": self.action_space.n,
             }
+        return {}
+
+
+class TrainingEnv(BaseTradingEnv):
+    """
+        用於模型訓練的環境。
+        它會動態地從數據源加載數據，並在每次 reset 時隨機化起始位置。
+    """
+
+    def __init__(self, config):
+        """
+        Args:
+            config: 包含所有配置的物件。
+            is_test_mode (bool): 如果為 True，則使用測試數據和固定的起始點（用於驗證）。
+                               如果為 False，則使用訓練數據和隨機的起始點。
+        """
+        self.config = config
+        self.unique_symbols = self.config.UNIQUE_SYMBOLS
+        # 根據模式決定數據類型和佣金
+        self.data_type_name = "train_data"
+        random_symbol = np.random.choice(self.unique_symbols)
+               
+        self.all_data = OriginalDataFrature().get_train_net_work_data_by_path(
+            [random_symbol],typeName=self.data_type_name
+        )
+
+        state_params = {
+            "init_prices": self.all_data[random_symbol],
+            "bars_count": self.config.BARS_COUNT,
+            "commission_perc":  self.config.MODEL_DEFAULT_COMMISSION_PERC_traing,
+            "model_train": True,
+            "default_slippage": self.config.DEFAULT_SLIPPAGE,
+        }
+
+        super().__init__(state=State_time_step(**state_params))
+
+    def _load_data_for_instrument(self, instrument: str):
+        """一個輔助方法，專門用來載入特定商品的數據。"""
+        # 這裡將數據讀取的邏輯封裝起來
+        return OriginalDataFrature().get_train_net_work_data_by_path(
+            [instrument], typeName=self.data_type_name
+        )
+
+    def reset(self, symbol: str = None):
+        if symbol is None:
+            self._instrument = np.random.choice(self.unique_symbols)
+        else:
+            self._instrument = symbol
+
+        all_prices = self._load_data_for_instrument(self._instrument)
+        prices = all_prices[self._instrument]
+
+
+        offset = (
+            np.random.choice(prices.high.shape[0] - self._state.bars_count * 10)
+            + self._state.bars_count
+        )
+
+        print(
+            f"[{self.data_type_name}] Actor resetting env with symbol: {self._instrument} at offset: {offset}"
+        )
+
+        self._state.reset(prices, offset)
+        return self._state.encode()
+
+
+class ProductionEnv(BaseTradingEnv):
+    """
+    用於生產（或推論）的環境。
+    它在初始化時接收所有必要的、預先載入的數據。
+    """
+
+    def __init__(self, prices_data: dict, state: State_time_step):
+        """
+        Args:
+            prices_data (dict): 一個字典，key 是商品名稱，value 是對應的價格數據。
+        """
+        super().__init__(state=state)
+        self._prices = prices_data
+        self._instrument = list(self._prices.keys())[0]
+
+    def reset(self):
+        prices = self._prices[self._instrument]
+        offset = self._state.bars_count
+
+        print(
+            f"[Production] Resetting env with symbol: {self._instrument} at offset: {offset}"
+        )
+
+        self._state.reset(prices, offset)
+        return self._state.encode()

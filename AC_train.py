@@ -206,6 +206,8 @@ class LearnerProcess(mp.Process):
                 ssm_cfg=ssm_cfg,
                 moe_cfg=moe_config,
             ).to(self.config.DEVICE)
+            print(self.net)
+            time.sleep(100)
         else:
             raise ValueError(f"Unknown model KEYWORD: {self.config.KEYWORD}")
 
@@ -337,8 +339,8 @@ class ActorProcess(mp.Process):
         """
             Actor 現在只創建環境
         """
-        self.env = environment.Env(
-            config=self.config, random_ofs_on_reset=True
+        self.env = environment.TrainingEnv(
+            config=self.config
         )
 
         print(f"Actor {self.actor_id} ready.")
@@ -461,8 +463,8 @@ def main():
     
 
     # 創建一個臨時環境以獲取 `engine_info`
-    temp_env = environment.Env(
-            config=config, random_ofs_on_reset=True
+    temp_env = environment.TrainingEnv(
+            config=config
     )
     engine_info = temp_env.engine_info()
     del temp_env

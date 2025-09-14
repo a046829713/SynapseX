@@ -28,8 +28,6 @@ class StrategyBuilder:
         parts = info.split(os.sep)
 
         # parts: ['Brain', 'DQN', 'Meta', 'Meta']
-        # 根據原有程式碼邏輯取出 strategytype:
-        # _, strategytype, _, _ = parts -> strategytype = 'DQN'
         strategytype = parts[1]
 
         # 建立 Strategy 實例
@@ -43,7 +41,9 @@ class StrategyBuilder:
             model_count_path=model_path
         )
         strategy.symbol_file_name = symbol_file_name
-        
+        # 載入資料
+        data_path = os.path.join("Brain","simulation","test_data",symbol_file_name)
+        strategy.load_data(local_data_path=data_path)
 
 
         return strategy
@@ -76,6 +76,8 @@ if __name__ == "__main__":
 
 
     for test_symbol in test_symbols:
+        if test_symbol != 'BTCUSDT-F-30-Min.csv':continue
+        
         # 建立策略
         strategy = builder.create_strategy(
             os.path.join("Brain","DQN","Meta","Meta-300B-30K.pt"), symbol_file_name=test_symbol)
