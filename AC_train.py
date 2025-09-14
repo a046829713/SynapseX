@@ -448,13 +448,9 @@ NUM_ACTORS = 4
 
 def main():
     config = RLConfig()
-    symbolNames = [
-        "BTCUSDT-F-30-Min",
-        "AAVEUSDT-F-30-Min",
-        "BNBUSDT-F-30-Min",
-        "ENSUSDT-F-30-Min",
-        "KSMUSDT-F-30-Min",
-    ]
+    symbolNames = os.listdir(os.path.join(os.getcwd() , "Brain","simulation","train_data"))
+    symbolNames = [_fileName.split('.')[0] for _fileName in symbolNames]
+
 
     unique_symbols = list(set(symbolNames))
     config.update_steps_by_symbols(len(unique_symbols))
