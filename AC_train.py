@@ -472,8 +472,8 @@ def main():
     experience_queue = mp.Queue(maxsize=NUM_ACTORS * 5)
 
 
-
-    metrics_queue = mp.Queue()
+    # 為指標佇列設定一個合理的上限，防止其無限增長
+    metrics_queue = mp.Queue(maxsize=NUM_ACTORS * 100)
 
     # 建立一個事件來通知子行程關閉
     shutdown_event = mp.Event()

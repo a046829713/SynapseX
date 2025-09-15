@@ -569,10 +569,21 @@ class ACSequentialExperienceReplayBuffer:
             self.dropsymbol()
 
     def dropsymbol(self):
-        best_name = max(self.sample_count_buffer, key=self.sample_count_buffer.get)
-        self.buffer.pop(best_name)
-        self.sample_count_buffer.pop(best_name)
+        """
+        當總容量超過上限時，移除一個 symbol 的所有相關數據。
+        策略：移除當前包含最多經驗（即佔用記憶體最多）的 symbol。
+        """
+        if not self.buffer:
+            return
 
+        symbol_to_drop = max(self.buffer, key=lambda s: len(self.buffer[s]))
+
+        print(f"Buffer capacity exceeded. Dropping symbol '{symbol_to_drop}' with {len(self.buffer[symbol_to_drop])} entries.")
+
+        del self.buffer[symbol_to_drop]
+        if symbol_to_drop in self.sample_count_buffer:
+            del self.sample_count_buffer[symbol_to_drop]
+    
     def get_state(self):
         """
         保存緩衝區的當前狀態。
