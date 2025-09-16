@@ -1,8 +1,9 @@
 import re
 from Brain.DQN.lib.Backtest import Strategy, RL_evaluate, Backtest
-from utils.AppSetting import AppSetting
 import os
 import time
+from utils.AppSetting import RLConfig
+
 
 class StrategyBuilder:
     """
@@ -10,12 +11,10 @@ class StrategyBuilder:
     並建立對應的 Strategy 實例。
     """
 
-    def __init__(self, settings=None):
+    def __init__(self):
         # 如果未提供設定，則從 AppSetting 載入預設設定
-        if settings is None:
-            settings = AppSetting.RL_test_setting()
-        self.settings = settings
-
+        self.config = RLConfig()
+        
     def create_strategy(self, model_path: str, symbol_file_name: str) -> Strategy:
         # 以下程式碼為解析 model_path 的邏輯
         # 假設路徑格式: 'Brain\DQN\Meta\Meta-300B-30K.pt'
@@ -36,8 +35,8 @@ class StrategyBuilder:
             symbol_name=symbol_file_name.split('-')[0],
             freq_time=int(data_len),
             model_feature_len=int(feature_len),
-            fee=self.settings['BACKTEST_DEFAULT_COMMISSION_PERC'],
-            slippage=self.settings['DEFAULT_SLIPPAGE'],
+            fee=self.config.MODEL_DEFAULT_COMMISSION_PERC_test,
+            slippage=self.config.DEFAULT_SLIPPAGE,
             model_count_path=model_path
         )
         strategy.symbol_file_name = symbol_file_name

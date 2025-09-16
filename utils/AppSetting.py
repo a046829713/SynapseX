@@ -31,18 +31,7 @@ class AppSetting():
             "BACKTEST_DEFAULT_COMMISSION_PERC":0.0025,
             "DEFAULT_SLIPPAGE":0.0025
         }
-        return data
-    
-    @staticmethod
-    def RL_test_setting():
-        """
-            當回測可以將參數擺放至此
-        """
-        data = {
-            "BACKTEST_DEFAULT_COMMISSION_PERC":0.0005,
-            "DEFAULT_SLIPPAGE":0.0025
-        }
-        return data        
+        return data   
 
 @dataclass
 class RLConfig:
@@ -55,10 +44,10 @@ class RLConfig:
     MODEL_DEFAULT_COMMISSION_PERC_traing: float = 0.0045
     MODEL_DEFAULT_COMMISSION_PERC_test: float = 0.0005
     DEFAULT_SLIPPAGE: float = 0.0025
-    LEARNING_RATE: float = 0.00005
+    LEARNING_RATE: float = 0.000025
     LAMBDA_L2: float = 0.0
     BATCH_SIZE: int = 32
-    REPLAY_SIZE: int = 1_000_000
+    REPLAY_SIZE: int = 9000000
     EACH_REPLAY_SIZE: int = 50_000
     REPLAY_INITIAL: int = 1000
     EPSILON_START: float = 0.9
@@ -68,6 +57,7 @@ class RLConfig:
     CHECKPOINT_EVERY_STEP: int = 20_000
     BETA_START: float = 0.4
     UNIQUE_SYMBOLS: list[str] = None
+    CHECK_GRAD_STEP = 100
 
     def update_steps_by_symbols(self, num_symbols: int):
         self.EPSILON_STEPS = (

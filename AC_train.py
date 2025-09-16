@@ -266,6 +266,13 @@ class LearnerProcess(mp.Process):
         # 保存檢查點的函數
         torch.save(state, filename)
 
+    def checkgrad(self):
+        # 打印梯度統計數據
+        for name, param in self.net.named_parameters():
+            if param.grad is not None:
+                print(
+                    f"Layer: {name}, Grad Min: {param.grad.min()}, Grad Max: {param.grad.max()}, Grad Mean: {param.grad.mean()}")
+    
     def run(self):
         print("--- Learner Process Started ---")
         self._prepare_learner_components()
@@ -315,6 +322,10 @@ class LearnerProcess(mp.Process):
                 }
                 self.save_checkpoint(checkpoint, os.path.join(
                     self.config.SAVES_PATH, f"checkpoint-{idx}.pt"))
+                
+            
+            if self.step_idx % self.config.CHECK_GRAD_STEP == 0:
+                pass
 
 class ActorProcess(mp.Process):
     def __init__(
