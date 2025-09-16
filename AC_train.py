@@ -325,7 +325,8 @@ class LearnerProcess(mp.Process):
                 
             
             if self.step_idx % self.config.CHECK_GRAD_STEP == 0:
-                pass
+                self.checkgrad()
+
 
 class ActorProcess(mp.Process):
     def __init__(
