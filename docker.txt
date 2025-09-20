@@ -21,4 +21,4 @@ docker cp 3718f293ce5529fb4e68e2a1877afc3fb506b6f0fab09b3db884f698367bae3d:/Syna
 
 
 
-docker run -it --rm --gpus all --name RLTrain -v "C:/Users/Louis/Desktop/workSpace/mambaRL/SynapseX:/SynapseX" my-deeplearning:latest
+docker run -it --rm --gpus all --name RLTrain -v "C:/Users/Louis/Desktop/workSpace/mambaRL/SynapseX:/SynapseX"  -v "C:/Users/Louis/Desktop/workSpace/docker_volumes/simulation:/SynapseX/Brain/simulation" my-deeplearning:latest
