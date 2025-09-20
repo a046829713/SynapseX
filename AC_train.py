@@ -317,8 +317,8 @@ class LearnerProcess(mp.Process):
                 checkpoint = {
                     'step_idx': self.step_idx,
                     'model_state_dict': self.net.state_dict(),                            
-                    'tgt_net_state_dict': self.tgt_net.target_model.state_dict(),                            
-                    'optimizer_state_dict': self.optimizer.state_dict(),
+                    # 'tgt_net_state_dict': self.tgt_net.target_model.state_dict(),                            
+                    # 'optimizer_state_dict': self.optimizer.state_dict(),
                 }
                 self.save_checkpoint(checkpoint, os.path.join(
                     self.config.SAVES_PATH, f"checkpoint-{idx}.pt"))
@@ -326,6 +326,8 @@ class LearnerProcess(mp.Process):
             
             if self.step_idx % self.config.CHECK_GRAD_STEP == 0:
                 self.checkgrad()
+                print("目前buffer size:",len(self.buffer))
+
 
 
 class ActorProcess(mp.Process):

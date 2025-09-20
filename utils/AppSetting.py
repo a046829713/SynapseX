@@ -47,7 +47,7 @@ class RLConfig:
     LEARNING_RATE: float = 0.000025
     LAMBDA_L2: float = 0.0
     BATCH_SIZE: int = 32
-    REPLAY_SIZE: int = 9000000
+    REPLAY_SIZE: int = 5000
     EACH_REPLAY_SIZE: int = 50_000
     REPLAY_INITIAL: int = 1000
     EPSILON_START: float = 0.9
@@ -57,7 +57,7 @@ class RLConfig:
     CHECKPOINT_EVERY_STEP: int = 20_000
     BETA_START: float = 0.4
     UNIQUE_SYMBOLS: list[str] = None
-    CHECK_GRAD_STEP = 100
+    CHECK_GRAD_STEP = 1000
 
     def update_steps_by_symbols(self, num_symbols: int):
         self.EPSILON_STEPS = (
