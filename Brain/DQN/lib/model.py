@@ -4,11 +4,21 @@ from torch import nn, Tensor
 from torch.nn import TransformerEncoder
 from Brain.Common.transformer_tool import TransformerEncoderLayer, PositionalEncoding
 from Brain.Common.dain import DAIN_Layer
-import time
 from einops import rearrange
 from Brain.Common.ssm_tool import MixerModel,GatedMLP
 from torch.nn import functional as F
 from typing import Optional
+import time
+
+
+try:
+    from causal_conv1d import causal_conv1d_fn, causal_conv1d_update
+
+except Exception as e:
+    print(e)
+    print("causal_conv1d not found.")
+    print("please check the package.")
+
 
 # class TransformerDuelingModel(nn.Module):
 #     def __init__(self,

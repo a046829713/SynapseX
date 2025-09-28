@@ -18,7 +18,7 @@ from collections import deque
 from Brain.Common.experience import ACSequentialExperienceReplayBuffer
 import itertools
 from utils.AppSetting import RLConfig
-
+from utils.Debug_tool import debug
 
 # 定義 Actor 發送的經驗元組，使其更清晰
 Transition = namedtuple("Transition", ("state", "action", "reward", "done"))
@@ -95,7 +95,7 @@ class MetricsTracker:
             f"Time: {str(elapsed_time).split('.')[0]} | "
             f"Steps: {self.learner_step_idx} | "
             f"Speed: {self.steps_per_sec:7.2f} steps/s | "
-            f"Eps: {self.epsilon:.3f} | "
+            f"Epsilon: {self.epsilon:.3f} | "
             f"Loss: {self.loss:8.4f} | "
             f"Episodes: {self.total_episodes} | "
             f"Mean Reward (100): {mean_reward:8.3f}"
@@ -206,6 +206,8 @@ class LearnerProcess(mp.Process):
                 ssm_cfg=ssm_cfg,
                 moe_cfg=moe_config,
             ).to(self.config.DEVICE)
+            
+            
         else:
             raise ValueError(f"Unknown model KEYWORD: {self.config.KEYWORD}")
 
@@ -213,10 +215,14 @@ class LearnerProcess(mp.Process):
         self.tgt_net = ptan.agent.TargetNet(self.net)
         self._prepare_optimizer()
         self._prepare_buffer()
+
+        # self.net.compile()
+
     
     def count_parameters(self):
         return sum(p.numel() for p in self.net.parameters() if p.requires_grad)
 
+    @debug.record_time_add
     def _handle_inference_batch(self):
         """處理批次推理"""
         q_size = self.state_queue.qsize()

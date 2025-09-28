@@ -115,7 +115,7 @@ def calc_values_of_states(states, net, device="cpu"):
         mean_vals.append(best_action_values_v.mean().item())
     return np.mean(mean_vals)
 
-
+@debug.record_time_add
 def unpack_batch(batch):
     states, actions, rewards, dones, last_states,infos,last_infos = [], [], [], [], [], [], []
     for exp in batch:
@@ -126,10 +126,12 @@ def unpack_batch(batch):
         dones.append(exp.last_state is None)
         infos.append(exp.info)
         last_infos.append(exp.last_info)
+        
         if exp.last_state is None:
             last_states.append(state)       # the result will be masked anyway
         else:
             last_states.append(np.array(exp.last_state, copy=False))
+    
     return np.array(states, copy=False), np.array(actions), np.array(rewards, dtype=np.float32), \
         np.array(dones, dtype=np.uint8), np.array(last_states, copy=False), np.array(infos, copy=False), np.array(last_infos, copy=False)
 
@@ -137,8 +139,9 @@ def turn_to_tensor(infos,device):
     # 使用 NumPy 快速處理
     output_array = np.array([[info.get('postion', 0.0), info.get('diff_percent', 0.0)] for info in infos], dtype=np.float32)
     output_tensor = torch.from_numpy(output_array).to(device)
-    return output_tensor 
-
+    return output_tensor
+ 
+@debug.record_time_add
 def calc_loss(batch, net, tgt_net, gamma, moe_loss_coeff=0.01, device="cpu"):
     """
         計算 DQN 的 MSE loss，並同時計算每筆 transition 的 TD‐error，並整合 MoE 的輔助損失 (auxiliary loss)。

@@ -6,7 +6,8 @@
 6.PER 修改至可用
 7.Moe
 8.下單模型修改
-9. order percent change
+9.compile test how improve the performance.
+10. smaple function change.
 
 
 1.aimed to the Mamba MLP overfitting problem, we should add the dropout layer.
