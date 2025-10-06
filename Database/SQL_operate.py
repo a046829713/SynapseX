@@ -45,6 +45,8 @@ class DB_operate():
         """
         try:
             with self._router.mysql_conn as conn:
+                print(text_msg)
+                time.sleep(100)
                 return pd.read_sql(text_msg, con=conn)
         except:
             Debug_tool.debug.print_info()
