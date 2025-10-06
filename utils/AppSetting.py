@@ -10,7 +10,7 @@ class AppSetting():
     @staticmethod    
     def systeam_setting():
         permission_data ={
-            'execute_orders': False,
+            'execute_orders': True,
             'emergency_times':50
         }   
         return permission_data

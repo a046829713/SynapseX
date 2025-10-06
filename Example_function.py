@@ -176,7 +176,7 @@ def example_get_target_symbol(filter_type: str):
     """
     all_symbols = DataProvider().get_symbols_history_data(
         symbol_type='FUTURES', time_type='1d')
-    
+
     if filter_type == 'MTM':
         example = Datatransformer().get_mtm_filter_symbol(all_symbols,max_symbols=30)
     elif filter_type == 'VOLUME':
@@ -221,7 +221,7 @@ def example_simple_evaluate():
 # BasePreparator().import_all_tables()
 
 # getAllDailyData()
-# example_reload_all_data(symbol_type="FUTURES",time_type = '1m')
+example_reload_all_data(symbol_type="FUTURES",time_type = '1m')
 # example_get_symboldata()
 # checksymbol(symbol='TUSDUSDT')
 example_get_target_symbol(filter_type='MTM')
