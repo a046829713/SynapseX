@@ -139,7 +139,8 @@ class DataProvider:
         out_list = []
         for symbol_name in self.Binanceapp.get_targetsymobls(symbol_type=symbol_type):
             tb_symbol_name = self.datatransformer.generate_table_name(symbol_name, symbol_type, time_type, iflower)
-            each_df = self.SQL.read_Dateframe(tb_symbol_name)
+            text_msg = f"SELECT * FROM `{tb_symbol_name}`;"
+            each_df = self.SQL.read_Dateframe(text_msg)
             out_list.append([tb_symbol_name, each_df])
 
         return out_list

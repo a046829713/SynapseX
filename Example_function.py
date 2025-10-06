@@ -176,7 +176,7 @@ def example_get_target_symbol(filter_type: str):
     """
     all_symbols = DataProvider().get_symbols_history_data(
         symbol_type='FUTURES', time_type='1d')
-
+    
     if filter_type == 'MTM':
         example = Datatransformer().get_mtm_filter_symbol(all_symbols,max_symbols=30)
     elif filter_type == 'VOLUME':
