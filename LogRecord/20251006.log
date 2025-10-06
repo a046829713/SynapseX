@@ -1,0 +1,43 @@
+2025-10-06 13:27 ERROR Traceback (most recent call last):
+  File "/home/b0457812963/NewMambaRL/SynapseX/TradingSysteam.py", line 323, in main
+    last_status = self.generate_order_map()
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/b0457812963/NewMambaRL/SynapseX/TradingSysteam.py", line 250, in generate_order_map
+    if_order_map = self.DQN_engin.get_if_order_map(finally_df)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/b0457812963/NewMambaRL/SynapseX/Brain/DQN/lib/engine.py", line 27, in get_if_order_map
+    re_evaluate = RL_evaluate(each_strategy)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/b0457812963/NewMambaRL/SynapseX/Brain/DQN/lib/Backtest.py", line 98, in __init__
+    self.config.UNIQUE_SYMBOLS = [strategy.symbol_file_name.split('.')[0]]
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'Strategy' object has no attribute 'symbol_file_name'. Did you mean: 'symbol_name'?
+
+2025-10-06 13:27 ERROR Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x705e84510c50>
+2025-10-06 13:49 ERROR Traceback (most recent call last):
+  File "/home/b0457812963/NewMambaRL/SynapseX/TradingSysteam.py", line 341, in main
+    self.dataprovider.Binanceapp.execute_orders(
+  File "/home/b0457812963/NewMambaRL/SynapseX/Major/custom.py", line 59, in wrapper
+    result = func(self, client, *new_args, **new_kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/b0457812963/NewMambaRL/SynapseX/Major/custom.py", line 548, in execute_orders
+    raise e
+  File "/home/b0457812963/NewMambaRL/SynapseX/Major/custom.py", line 528, in execute_orders
+    response = client.futures_change_leverage(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/b0457812963/NewMambaRL/lib/python3.12/site-packages/binance/client.py", line 7801, in futures_change_leverage
+    return self._request_futures_api("post", "leverage", True, data=params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/b0457812963/NewMambaRL/lib/python3.12/site-packages/binance/client.py", line 126, in _request_futures_api
+    return self._request(method, uri, signed, force_params, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/b0457812963/NewMambaRL/lib/python3.12/site-packages/binance/client.py", line 89, in _request
+    return self._handle_response(self.response)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/b0457812963/NewMambaRL/lib/python3.12/site-packages/binance/client.py", line 98, in _handle_response
+    raise BinanceAPIException(response, response.status_code, response.text)
+binance.exceptions.BinanceAPIException: APIError(code=-2015): Invalid API-key, IP, or permissions for action
+
+2025-10-06 13:49 ERROR Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x7219c66bec00>

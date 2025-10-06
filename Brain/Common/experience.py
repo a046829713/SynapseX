@@ -500,7 +500,7 @@ class ACSequentialExperienceReplayBuffer:
         self._count = 0
         self._del_critical_len = del_critical_len
     
-    @debug.record_time_add
+    
     def is_ready(self):
         if  [
                 symbolName
@@ -526,7 +526,7 @@ class ACSequentialExperienceReplayBuffer:
             ]
         )
 
-    @debug.record_time_add
+    
     def sample(self, batch_size):
         """
         Sample a batch of sequential experiences from a random symbol.
@@ -547,7 +547,7 @@ class ACSequentialExperienceReplayBuffer:
         
         return self.sample(batch_size)
     
-    @debug.record_time_add
+    
     def populate(self):
         """
             Populate buffer with all available experiences from the queue without blocking.

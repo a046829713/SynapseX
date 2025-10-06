@@ -4,10 +4,13 @@
 4.完成虛擬現貨
 5.完成PPO 
 6.PER 修改至可用
-7.Moe
+7.soft_Moe -> 修正為DeepSpeed Moe
 8.下單模型修改
 9.compile test how improve the performance.
-10. smaple function change.
+10.增加所有期貨的上漲家數
+11.修正qezctbum 無法交易問題
+12.需要增加多模型策略載入器
+13. XBT
 
 
 1.aimed to the Mamba MLP overfitting problem, we should add the dropout layer.

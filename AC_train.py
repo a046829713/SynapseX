@@ -222,7 +222,7 @@ class LearnerProcess(mp.Process):
     def count_parameters(self):
         return sum(p.numel() for p in self.net.parameters() if p.requires_grad)
 
-    @debug.record_time_add
+    
     def _handle_inference_batch(self):
         """處理批次推理"""
         q_size = self.state_queue.qsize()

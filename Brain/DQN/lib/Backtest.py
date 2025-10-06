@@ -90,12 +90,14 @@ class Strategy(object):
 
 
 class RL_evaluate:
-    def __init__(self, strategy: Strategy) -> None:
+    def __init__(self, strategy: Strategy, formal: bool) -> None:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.hyperparameters(strategy)
 
         self.config = RLConfig()
-        self.config.UNIQUE_SYMBOLS = [strategy.symbol_file_name.split('.')[0]]
+        
+        if not formal:
+            self.config.UNIQUE_SYMBOLS = [strategy.symbol_file_name.split(".")[0]]
 
         data = OriginalDataFrature().get_train_net_work_data_by_pd(
             symbol=strategy.symbol_name, df=strategy.df
@@ -110,9 +112,7 @@ class RL_evaluate:
         )
 
         # 製作環境
-        self.evaluate_env = environment.ProductionEnv(
-            prices_data=data, state=state
-        )
+        self.evaluate_env = environment.ProductionEnv(prices_data=data, state=state)
 
         self.agent = self.load_model(model_path=strategy.model_count_path)
         self.test()

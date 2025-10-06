@@ -222,7 +222,7 @@ class PortfolioOptimizationEnv(gym.Env):
             return self._state, self._info
         return self._state
 
-    @debug.record_time_add
+    
     def step(self, actions, plot_if=True):
         """Performs a simulation step.
 

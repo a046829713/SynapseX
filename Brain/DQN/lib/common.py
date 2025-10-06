@@ -115,7 +115,7 @@ def calc_values_of_states(states, net, device="cpu"):
         mean_vals.append(best_action_values_v.mean().item())
     return np.mean(mean_vals)
 
-@debug.record_time_add
+
 def unpack_batch(batch):
     states, actions, rewards, dones, last_states,infos,last_infos = [], [], [], [], [], [], []
     for exp in batch:
@@ -141,7 +141,7 @@ def turn_to_tensor(infos,device):
     output_tensor = torch.from_numpy(output_array).to(device)
     return output_tensor
  
-@debug.record_time_add
+
 def calc_loss(batch, net, tgt_net, gamma, moe_loss_coeff=0.01, device="cpu"):
     """
         計算 DQN 的 MSE loss，並同時計算每筆 transition 的 TD‐error，並整合 MoE 的輔助損失 (auxiliary loss)。

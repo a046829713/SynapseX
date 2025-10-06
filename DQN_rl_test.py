@@ -16,9 +16,15 @@ class StrategyBuilder:
         self.config = RLConfig()
         
     def create_strategy(self, model_path: str, symbol_file_name: str) -> Strategy:
-        # 以下程式碼為解析 model_path 的邏輯
-        # 假設路徑格式: 'Brain\DQN\Meta\Meta-300B-30K.pt'
-        # 以 '-' 進行分割，取得資訊
+        """_summary_
+
+        Args:
+            model_path (str): _description_
+            symbol_file_name (str): KAITOUSDT-F-30-Min.csv
+
+        Returns:
+            Strategy: _description_
+        """
         info, feature, data = model_path.split('-')
         feature_len = re.findall(r'\d+', feature)[0]
         data_len = re.findall(r'\d+', data)[0]
@@ -59,7 +65,7 @@ class BacktestRunner:
 
     def run(self, ifplot: bool = True):
         # 使用 RL_evaluate 對策略進行評估
-        re_evaluate = RL_evaluate(self.strategy)
+        re_evaluate = RL_evaluate(self.strategy, formal= False)
         
         # 使用 Backtest 對策略執行回測
         backtest_info = Backtest(
@@ -74,12 +80,10 @@ if __name__ == "__main__":
     test_symbols = os.listdir(os.path.join(os.getcwd() , "Brain","simulation","test_data"))
 
 
-    for test_symbol in test_symbols:
-        if test_symbol != 'BTCUSDT-F-30-Min.csv':continue
-        
+    for test_symbol_extension in test_symbols:
         # 建立策略
         strategy = builder.create_strategy(
-            os.path.join("Brain","DQN","Meta","Meta-300B-30K.pt"), symbol_file_name=test_symbol)
+            os.path.join("Brain","DQN","Meta","Meta-300B-30K.pt"), symbol_file_name=test_symbol_extension)
 
         # 執行回測
         runner = BacktestRunner(strategy)
