@@ -193,6 +193,7 @@ class PositionalEncoding(nn.Module):
 
         # Calculate positional encodings
         position = torch.arange(max_len).unsqueeze(1)
+        
         div_term = torch.exp(torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model))
         pe = torch.zeros(max_len, 1, d_model)
         
@@ -208,7 +209,7 @@ class PositionalEncoding(nn.Module):
         Arguments:
             x: Tensor, shape [seq_len, batch_size, embedding_dim]
         """
-        # Add positional encoding to the input embeddings        
+  
         x = x + self.pe[:x.size(0)]
         
         # Apply dropout and return the result

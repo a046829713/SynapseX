@@ -34,15 +34,36 @@ class State:
         self.model_train = model_train
         self.default_slippage = default_slippage
         self.win_payoff_weight = 1
-        self.build_fileds(init_prices)
         self.reward_function = Reward()
         self.reward_help = RewardHelp()
+        self.info_list = [
+            "log_open",
+            "log_high",
+            "log_low",
+            "log_close",
+            "log_volume",
+            "log_quote_av",
+            "log_trades",
+            "log_tb_base_av",
+            "log_tb_quote_av",
+        ]
 
-    def build_fileds(self, init_prices):
-        self.field_names = list(init_prices._fields)
-        for i in ["open", "high", "low", "close"]:
-            if i in self.field_names:
-                self.field_names.remove(i)
+        self.timelist = [
+            "Year",
+            "Month",
+            "Day",
+            "Hour",
+            "Minute",
+            "Week",
+            "Dayofweek",
+            "absolute_minute",
+        ]
+
+    def getStateShape(self):
+        return self.bars_count, len(self.info_list) + 3
+
+    def gettimeShape(self):
+        return self.bars_count, len(self.timelist)
 
     def reset(self, prices, offset):
         assert offset >= self.bars_count - 1
@@ -259,6 +280,61 @@ class State:
         return reward, done
 
 
+class State_time_step(State):
+    """
+    專門用於transformer的時序函數。
+    """
+
+    def encode(self):
+        data_res = np.zeros(shape=self.getStateShape(), dtype=np.float32)
+        time_res = np.zeros(shape=self.gettimeShape(), dtype=np.float32)
+
+        ofs = self.bars_count
+
+        for bar_idx in range(self.bars_count):
+            for idx, field in enumerate(self.info_list):  # 編碼所有字段
+                data_res[bar_idx][idx] = getattr(self._prices, field)[
+                    self._offset - ofs + bar_idx
+                ]
+
+        if self.have_position:
+            data_res[:, len(self.info_list)] = 1.0
+            data_res[:, len(self.info_list) + 1] = (
+                self._prices.close[self._offset] - self.open_price
+            ) / self.open_price
+            data_res[:, len(self.info_list) + 2] = self.trade_bar
+
+        for bar_idx in range(self.bars_count):
+            for idx, field in enumerate(self.timelist):  # 編碼所有字段
+                time_res[bar_idx][idx] = getattr(self._prices, field)[
+                    self._offset - ofs + bar_idx
+                ]
+
+        return data_res, time_res
+
+    def fourier_transform(self, data):
+        """
+        對每一列數據進行傅立葉變換，並提取頻率和幅度信息
+
+        Args:
+            data: (np.ndarray) shape 為 (bars_count, num_features) 的數據
+
+        Returns:
+            fourier_features: (np.ndarray) shape 為 (bars_count, num_features * 2) 的傅立葉特徵
+                                         每一列數據對應兩列傅立葉特徵：頻率的實部和虛部
+        """
+        fourier_features = np.zeros(
+            (data.shape[0], data.shape[1] * 2), dtype=np.float32
+        )
+        for i in range(data.shape[1]):
+            # 使用 rfft 進行實數傅立葉變換，只計算正頻率部分
+            fft_values = np.fft.rfft(data[:, i])
+            # 提取頻率的實部和虛部
+            fourier_features[:, i * 2] = np.real(fft_values)
+            fourier_features[:, i * 2 + 1] = np.imag(fft_values)
+        return fourier_features
+
+
 class Reward:
     def __init__(self):
         self.tradeReturn_weight = 0.4
@@ -453,67 +529,6 @@ class RewardHelp:
         return max_profit_this_trade
 
 
-class State_time_step(State):
-    """
-    專門用於transformer的時序函數。
-    """
-
-    @property
-    def shape(self):
-        return (self.bars_count, len(self.field_names) + 3)
-
-    def encode(self):
-        res = np.zeros(shape=self.shape, dtype=np.float32)
-
-        ofs = self.bars_count
-        for bar_idx in range(self.bars_count):
-            for idx, field in enumerate(self.field_names):  # 編碼所有字段
-                res[bar_idx][idx] = getattr(self._prices, field)[
-                    self._offset - ofs + bar_idx
-                ]
-
-        if self.have_position:
-            res[:, len(self.field_names)] = 1.0
-            res[:, len(self.field_names) + 1] = (
-                self._prices.close[self._offset] - self.open_price
-            ) / self.open_price
-            res[:, len(self.field_names) + 2] = self.trade_bar
-
-        # print(res)
-        # # 加入傅立葉變換 res.shape # (300, 29)
-        # fourier_features = self.fourier_transform(res[:, :len(self.field_names)])
-        # print(fourier_features)
-        # # 可以選擇如何將傅立葉特徵與原有特徵結合，例如拼接或者替換
-        # # 這裡選擇拼接
-        # res = np.concatenate((res, fourier_features), axis=1)
-        return res
-
-    def fourier_transform(self, data):
-        """
-        對每一列數據進行傅立葉變換，並提取頻率和幅度信息
-
-        Args:
-            data: (np.ndarray) shape 為 (bars_count, num_features) 的數據
-
-        Returns:
-            fourier_features: (np.ndarray) shape 為 (bars_count, num_features * 2) 的傅立葉特徵
-                                         每一列數據對應兩列傅立葉特徵：頻率的實部和虛部
-        """
-        fourier_features = np.zeros(
-            (data.shape[0], data.shape[1] * 2), dtype=np.float32
-        )
-        for i in range(data.shape[1]):
-            # 使用 rfft 進行實數傅立葉變換，只計算正頻率部分
-            fft_values = np.fft.rfft(data[:, i])
-            # 提取頻率的實部和虛部
-            fourier_features[:, i * 2] = np.real(fft_values)
-            fourier_features[:, i * 2 + 1] = np.imag(fft_values)
-        return fourier_features
-
-
-
-
-
 class BaseTradingEnv(gym.Env, ABC):
     """
     交易環境的抽象基礎類別。
@@ -564,7 +579,8 @@ class BaseTradingEnv(gym.Env, ABC):
     def engine_info(self):
         if isinstance(self._state, State_time_step):
             return {
-                "input_size": self._state.shape[1],
+                "data_input_size": self._state.getStateShape()[1],
+                "time_input_size":self._state.gettimeShape()[1],
                 "action_space_n": self.action_space.n,
             }
         return {}
@@ -588,15 +604,12 @@ class TrainingEnv(BaseTradingEnv):
         # 根據模式決定數據類型和佣金
         self.data_type_name = "train_data"
         random_symbol = np.random.choice(self.unique_symbols)
-               
-        self.all_data = OriginalDataFrature().get_train_net_work_data_by_path(
-            [random_symbol],typeName=self.data_type_name
-        )
+        self.all_data = self._load_data_for_instrument(random_symbol)
 
         state_params = {
             "init_prices": self.all_data[random_symbol],
             "bars_count": self.config.BARS_COUNT,
-            "commission_perc":  self.config.MODEL_DEFAULT_COMMISSION_PERC_traing,
+            "commission_perc": self.config.MODEL_DEFAULT_COMMISSION_PERC_traing,
             "model_train": True,
             "default_slippage": self.config.DEFAULT_SLIPPAGE,
         }
@@ -605,7 +618,6 @@ class TrainingEnv(BaseTradingEnv):
 
     def _load_data_for_instrument(self, instrument: str):
         """一個輔助方法，專門用來載入特定商品的數據。"""
-        # 這裡將數據讀取的邏輯封裝起來
         return OriginalDataFrature().get_train_net_work_data_by_path(
             [instrument], typeName=self.data_type_name
         )
@@ -618,7 +630,6 @@ class TrainingEnv(BaseTradingEnv):
 
         all_prices = self._load_data_for_instrument(self._instrument)
         prices = all_prices[self._instrument]
-
 
         offset = (
             np.random.choice(prices.high.shape[0] - self._state.bars_count * 10)

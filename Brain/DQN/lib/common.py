@@ -7,7 +7,9 @@ import pandas as pd
 import numpy as np
 import time
 from utils.Debug_tool import debug
-from typing import Optional,Union
+from typing import Optional, Union
+
+
 class RewardTracker:
     def __init__(self, stop_reward, group_rewards=1):
         """用來追蹤紀錄獎勵資訊
@@ -32,57 +34,64 @@ class RewardTracker:
     def __exit__(self, *args):
         self.writer.close()
 
-    def reward(self, reward_steps, frame, epsilon=None) -> Union[bool,np.float64]:
+    def reward(self, reward_steps, frame, epsilon=None) -> Union[bool, np.float64]:
         """
-            reward_steps: (-5.116108441842309, 1000)
-            frame: 3004
-            epsilon: 0.9998331111111111
-            Result Type: <class 'bool'>
-            <class 'numpy.float64'>
+        reward_steps: (-5.116108441842309, 1000)
+        frame: 3004
+        epsilon: 0.9998331111111111
+        Result Type: <class 'bool'>
+        <class 'numpy.float64'>
         """
 
         reward, steps = reward_steps
         self.reward_buf.append(reward)
         self.steps_buf.append(steps)
-        
+
         # 每兩個group 顯示一次
         if len(self.reward_buf) < self.group_rewards:
             return False
-        
+
         reward = np.mean(self.reward_buf)
         steps = np.mean(self.steps_buf)
 
         self.reward_buf.clear()
         self.steps_buf.clear()
 
-        self.total_rewards.append(reward)        
+        self.total_rewards.append(reward)
         self.total_steps.append(steps)
 
         speed = (frame - self.ts_frame) / (time.time() - self.ts)
         self.ts_frame = frame
         self.ts = time.time()
-        
+
         mean_reward = np.mean(self.total_rewards[-100:])
         mean_steps = np.mean(self.total_steps[-100:])
-        
+
         epsilon_str = "" if epsilon is None else ", eps %.2f" % epsilon
-        
-        print("%d: done %d games, mean reward %.3f, mean steps %.2f, speed %.2f f/s%s" % (
-            frame, len(self.total_rewards) *
-            self.group_rewards, mean_reward, mean_steps, speed, epsilon_str
-        ))
+
+        print(
+            "%d: done %d games, mean reward %.3f, mean steps %.2f, speed %.2f f/s%s"
+            % (
+                frame,
+                len(self.total_rewards) * self.group_rewards,
+                mean_reward,
+                mean_steps,
+                speed,
+                epsilon_str,
+            )
+        )
 
         sys.stdout.flush()
-        
+
         if mean_reward > self.stop_reward:
             print("Solved in %d frames!" % frame)
             return True
-        
+
         return mean_reward
 
 
 def calc_values_of_states(states, net, device="cpu"):
-    """    action_values_v = net(states_v)：這裡，模型net為給定的states_v預測每個可能動作的價值。
+    """action_values_v = net(states_v)：這裡，模型net為給定的states_v預測每個可能動作的價值。
 
     best_action_values_v = action_values_v.max(1)[0]：接著，我們只考慮每個狀態的最佳動作價值，這是透過取每一行（代表每個狀態）的最大值來完成的。
 
@@ -117,47 +126,95 @@ def calc_values_of_states(states, net, device="cpu"):
 
 
 def unpack_batch(batch):
-    states, actions, rewards, dones, last_states,infos,last_infos = [], [], [], [], [], [], []
+    (
+        first_states,
+        first_time_states,
+        actions,
+        rewards,
+        dones,
+        last_states,
+        last_time_states,
+        infos,
+        last_infos,
+    ) = ([], [], [], [], [], [], [], [], [])
+
     for exp in batch:
-        state = np.array(exp.state, copy=False)
-        states.append(state)
+        first_state, first_time_state = exp.state
+        first_states.append(first_state)
+        first_time_states.append(first_time_state)
+
         actions.append(exp.action)
         rewards.append(exp.reward)
         dones.append(exp.last_state is None)
         infos.append(exp.info)
         last_infos.append(exp.last_info)
-        
-        if exp.last_state is None:
-            last_states.append(state)       # the result will be masked anyway
-        else:
-            last_states.append(np.array(exp.last_state, copy=False))
-    
-    return np.array(states, copy=False), np.array(actions), np.array(rewards, dtype=np.float32), \
-        np.array(dones, dtype=np.uint8), np.array(last_states, copy=False), np.array(infos, copy=False), np.array(last_infos, copy=False)
 
-def turn_to_tensor(infos,device):
+        if exp.last_state is None:
+            # the result will be masked anyway
+            last_states.append(first_state)
+            last_time_states.append(first_time_state)
+
+        else:
+            last_state, last_time_state = exp.last_state
+            last_states.append(last_state)
+            last_time_states.append(last_time_state)
+
+    return (
+        np.array(first_states, copy=False),
+        np.array(first_time_states, copy=False),
+        np.array(actions),
+        np.array(rewards, dtype=np.float32),
+        np.array(dones, dtype=np.uint8),
+        np.array(last_states, copy=False),
+        np.array(last_time_states, copy=False),
+        np.array(infos, copy=False),
+        np.array(last_infos, copy=False),
+    )
+
+
+def turn_to_tensor(infos, device):
     # 使用 NumPy 快速處理
-    output_array = np.array([[info.get('postion', 0.0), info.get('diff_percent', 0.0)] for info in infos], dtype=np.float32)
+    output_array = np.array(
+        [[info.get("postion", 0.0), info.get("diff_percent", 0.0)] for info in infos],
+        dtype=np.float32,
+    )
     output_tensor = torch.from_numpy(output_array).to(device)
     return output_tensor
- 
+
 
 def calc_loss(batch, net, tgt_net, gamma, moe_loss_coeff=0.01, device="cpu"):
     """
-        計算 DQN 的 MSE loss，並同時計算每筆 transition 的 TD‐error，並整合 MoE 的輔助損失 (auxiliary loss)。
+    計算 DQN 的 MSE loss，並同時計算每筆 transition 的 TD‐error，並整合 MoE 的輔助損失 (auxiliary loss)。
     """
-    states, actions, rewards, dones, next_states, _, _ = unpack_batch(batch)
-    states_v = torch.tensor(states, device=device, dtype=torch.float32)
-    next_states_v = torch.tensor(next_states, device=device, dtype=torch.float32)
+    (
+        first_states,
+        first_time_states,
+        actions,
+        rewards,
+        dones,
+        last_states,
+        last_time_states,
+        _,
+        _,
+    ) = unpack_batch(batch)
+
+    first_states_v = torch.tensor(first_states, device=device, dtype=torch.float32)
+    first_time_states_v = torch.tensor(
+        first_time_states, device=device, dtype=torch.float32
+    )
+
+    last_states_v = torch.tensor(last_states, device=device, dtype=torch.float32)
+    last_time_states_v = torch.tensor(
+        last_time_states, device=device, dtype=torch.float32
+    )
+
     actions_v = torch.tensor(actions, device=device, dtype=torch.long)
     rewards_v = torch.tensor(rewards, device=device, dtype=torch.float32)
     done_mask = torch.tensor(dones, device=device, dtype=torch.bool)
-    # weights_v = torch.tensor(batch_weights, device=device, dtype=torch.float32)
-
 
     # --- 線上網路 (net) ---
     # 1. 從 MoE 模型獲取 Q 值和輔助損失
-    q_values, aux_loss = net(states_v)
+    q_values, aux_loss = net(first_states_v, first_time_states_v)
 
     # 2. 獲取實際採取動作的 Q 值: Q(s,a)
     state_action_values = q_values.gather(1, actions_v.unsqueeze(-1)).squeeze(-1)
@@ -165,20 +222,20 @@ def calc_loss(batch, net, tgt_net, gamma, moe_loss_coeff=0.01, device="cpu"):
     # ---目標網路 (tgt_net) & Double DQN ---
     with torch.no_grad():
         # 3. 使用線上網路 `net` 選擇下一狀態的最佳動作 a_max
-        next_q_values, _ = net(next_states_v)
+        next_q_values, _ = net(last_states_v, last_time_states_v)
         next_actions = next_q_values.max(1)[1]
 
         # 4. 使用目標網路 `tgt_net` 評估 a_max 的 Q 值: Q_target(s', a_max)
-        next_state_q_values, _ = tgt_net(next_states_v)
-        next_state_values = next_state_q_values.gather(1, next_actions.unsqueeze(-1)).squeeze(-1)
-        
+        next_state_q_values, _ = tgt_net(last_states_v, last_time_states_v)
+        next_state_values = next_state_q_values.gather(
+            1, next_actions.unsqueeze(-1)
+        ).squeeze(-1)
+
         # 5. 對於終止狀態，其未來價值為 0
         next_state_values[done_mask] = 0.0
 
         # 6. 計算 TD 目標 (y)
         q_targets = rewards_v + gamma * next_state_values
-
-
 
     # [修改] 手動計算加權的 MSE Loss，取代 nn.MSELoss()
     # 1. 計算每個樣本的平方誤差
@@ -186,10 +243,9 @@ def calc_loss(batch, net, tgt_net, gamma, moe_loss_coeff=0.01, device="cpu"):
 
     # 2. 將平方誤差乘以其對應的重要性抽樣權重
     # weighted_squared_errors = weights_v * squared_errors
-    
+
     # 3. 計算加權損失的平均值作為最終的 DQN Loss
     # dqn_loss = weighted_squared_errors.mean()
-    
 
     dqn_loss = nn.MSELoss()(state_action_values, q_targets)
     # 8. 加上 MoE 的輔助損失
@@ -202,20 +258,16 @@ def calc_loss(batch, net, tgt_net, gamma, moe_loss_coeff=0.01, device="cpu"):
     with torch.no_grad():
         td_errors = torch.abs(q_targets - state_action_values).detach().cpu().numpy()
 
-
     return total_loss, td_errors
 
 
 def update_eval_states(buffer, STATES_TO_EVALUATE):
-    """    
+    """
         用來定時更新驗證資料
     Args:
         buffer (_type_): _description_
         STATES_TO_EVALUATE (_type_): _description_
     """
     eval_states = buffer.sample(STATES_TO_EVALUATE)
-    eval_states = [np.array(transition.state, copy=False)
-                   for transition in eval_states]
+    eval_states = [np.array(transition.state, copy=False) for transition in eval_states]
     return np.array(eval_states, copy=False)
-
-

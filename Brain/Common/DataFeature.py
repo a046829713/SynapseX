@@ -22,6 +22,15 @@ Prices = collections.namedtuple('Prices', field_names=[
     'log_trades',
     'log_tb_base_av',
     'log_tb_quote_av',
+    'Year',
+    'Month',
+    'Day',
+    'Hour',
+    'Minute',
+    'Week',
+    'Dayofweek',
+    'absolute_minute'
+
 ])        
 
 
@@ -57,18 +66,46 @@ class OriginalDataFrature():
                 f'Brain/simulation/{typeName}/{symbolName}.csv')
             df.set_index('Datetime', inplace=True)
             self.df = self.cleanData(df)
+            self.df = self.add_time_feature(self.df)
             # 使用 PyTorch Tensor 的方法
             out_dict.update({symbolName: self.load_relative()})
 
+            
+
         return out_dict
+    
+    def add_time_feature(self,df:pd.DataFrame):
+        # 1. 將索引轉換為 datetime 物件，避免重複計算
+        datetime_index = pd.to_datetime(df.index)
+        
+        # 2. 使用向量化屬性提取時間成分，效能更佳
+        df['Year'] = datetime_index.year
+        df['Month'] = datetime_index.month
+        df['Day'] = datetime_index.day
+        df['Hour'] = datetime_index.hour
+        df['Minute'] = datetime_index.minute
+        df['Week'] = datetime_index.isocalendar().week.astype(int)
+        df['Dayofweek'] = datetime_index.dayofweek
+        
+        # 3. 使用向量化操作計算 'absolute_minute'，取代 apply
+        Begin_Data = None
+        if Begin_Data is None:
+            df['absolute_minute'] = (datetime_index - datetime_index[0]).total_seconds() / 60
+        
+        return df
+
 
     def load_relative(self, if_log=True):
         """
             CSV最後排序為:
 
-            Open, High, Low, Close, Volume, quote_av, trades, tb_base_av, tb_quote_av
+            ['Open', 'High', 'Low', 'Close', 'Volume', 'quote_av', 'trades',
+            'tb_base_av', 'tb_quote_av', 'Year', 'Month', 'Day', 'Hour', 'Minute',
+            'Week', 'Dayofweek','absolute_minute']
         """
+        
         np_data = np.array(self.df.values, dtype=np.float32)
+
 
         if if_log:
             # 經過我的評估認為log 已經可以極大化避免極端值
@@ -77,8 +114,8 @@ class OriginalDataFrature():
 
             # 2) 再進行 log(x+1) 變換 (可改用 np.log1p)
 
-            log_np_data = np.log(np_data + 1.0)
-
+            log_np_data = np.log(np_data[:,:9] + 1.0)
+            
             return Prices(
                 open=np_data[:, 0],
                 high=np_data[:, 1],
@@ -93,6 +130,15 @@ class OriginalDataFrature():
                 log_trades=log_np_data[:, 6],
                 log_tb_base_av=log_np_data[:, 7],
                 log_tb_quote_av=log_np_data[:, 8],
+                Year=np_data[:, 9],
+                Month=np_data[:,10],
+                Day=np_data[:,11],
+                Hour=np_data[:,12],
+                Minute=np_data[:,13],
+                absolute_minute=np_data[:,14],
+                Week=np_data[:, 15],
+                Dayofweek=np_data[:, 16],
+
             )
 
 

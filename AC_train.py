@@ -112,7 +112,6 @@ class LearnerProcess(mp.Process):
         self,
         config: RLConfig,
         engine_info: dict,
-        symbol_count: int,
         state_queue: mp.Queue,
         action_queues: list[mp.Queue],
         experience_queue: mp.Queue,
@@ -190,23 +189,21 @@ class LearnerProcess(mp.Process):
 
     def _prepare_learner_components(self):
         action_space_n = self.engine_info["action_space_n"]
-        input_size = self.engine_info["input_size"]
-        if self.config.KEYWORD == "Mamba":
-            moe_config = {"num_experts": 16}
+        data_input_size = self.engine_info["data_input_size"]
 
+        if self.config.KEYWORD == "Mamba":
             ssm_cfg = {
                 "expand":4
             }
             self.net = model.mambaDuelingModel(
-                d_model=input_size,
+                d_model=data_input_size,
                 nlayers=6,
                 num_actions=action_space_n,
+                time_features_in=self.engine_info["time_input_size"],
                 seq_dim=self.config.BARS_COUNT,
                 dropout=0.3,
-                ssm_cfg=ssm_cfg,
-                moe_cfg=moe_config,
-            ).to(self.config.DEVICE)
-            
+                ssm_cfg=ssm_cfg                
+            ).to(self.config.DEVICE)            
             
         else:
             raise ValueError(f"Unknown model KEYWORD: {self.config.KEYWORD}")
@@ -230,13 +227,17 @@ class LearnerProcess(mp.Process):
             return
 
         batch = [self.state_queue.get() for _ in range(q_size)]
-        actor_ids, states = zip(*batch)
+        actor_ids, _states = zip(*batch)
+        states, time_states = zip(*_states)
 
         states_v = torch.from_numpy(np.array(states, dtype=np.float32))
         states_v = states_v.to(self.config.DEVICE)
 
+        time_states_v = torch.from_numpy(np.array(time_states, dtype=np.float32))
+        time_states_v = time_states_v.to(self.config.DEVICE)
+
         with torch.no_grad():
-            q_values,_ = self.net(states_v)
+            q_values,_ = self.net(states_v,time_states_v)
 
         # 這裡我們需要 epsilon-greedy 策略來選擇動作 Learner 統一管理 epsilon
         self.epsilon = max(
@@ -510,7 +511,6 @@ def main():
     learner_proc = LearnerProcess(
         config,
         engine_info,
-        len(unique_symbols),
         state_queue,
         action_queues,
         experience_queue,

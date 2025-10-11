@@ -11,7 +11,7 @@
 11.修正qezctbum 無法交易問題
 12.需要增加多模型策略載入器
 13. XBT
-
+14.正式交易的絕對時間要非常注意 因回測時都可以知道每個商品的開頭時間
 
 1.aimed to the Mamba MLP overfitting problem, we should add the dropout layer.
 re: It is work, but need more experiment.

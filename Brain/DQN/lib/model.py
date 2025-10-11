@@ -4,12 +4,13 @@ from torch import nn, Tensor
 from torch.nn import TransformerEncoder
 from Brain.Common.transformer_tool import TransformerEncoderLayer, PositionalEncoding
 from Brain.Common.dain import DAIN_Layer
+from Brain.Common.Components import SineActivation
 from einops import rearrange
 from Brain.Common.ssm_tool import MixerModel,GatedMLP
 from torch.nn import functional as F
 from typing import Optional
 import time
-
+import soft_moe_pytorch
 
 try:
     from causal_conv1d import causal_conv1d_fn, causal_conv1d_update
@@ -420,16 +421,35 @@ class mambaDuelingModel(nn.Module):
                  d_model: int,
                  nlayers: int,
                  num_actions: int,
+                 time_features_in: int,
+                 time_features_out: int = 32, # Time2Vec 的輸出維度，設為超參數
                  seq_dim: int = 300,
                  dropout: float = 0.1,
                  hidden_size: int = 96,
                  mode='full',
                  ssm_cfg: Optional[dict] = None,
-                 moe_cfg: Optional[dict] = None
+                 moe_cfg: Optional[dict] = None,
                  ):
 
         super().__init__()
-        self.dean = DAIN_Layer(mode=mode, input_dim=d_model)
+        self.time_embedding = SineActivation(in_features=time_features_in, out_features=time_features_out)
+        self.dean = DAIN_Layer(mode=mode, input_dim=d_model) # DAIN 只處理市場數據
+
+        self.market_embedding = nn.Linear(d_model, hidden_size)
+        self.time_emb_projection = nn.Linear(time_features_out, hidden_size)
+        
+        # 門控層: 學習如何結合兩種資訊
+        self.gate_layer = nn.Sequential(
+            nn.Linear(hidden_size * 2, hidden_size),
+            nn.Sigmoid()
+        )
+
+        # 最終的特徵轉換
+        self.feature_embedding = nn.Sequential(
+            nn.Linear(hidden_size, hidden_size),
+            nn.GELU()
+        )
+
 
         # 狀態值網絡
         self.fc_val = nn.Sequential(
@@ -457,13 +477,6 @@ class mambaDuelingModel(nn.Module):
             nn.Linear(256, num_actions)
         )
 
-        # 將資料映射至hidden_size維度
-        self.feature_embedding = nn.Sequential(
-            nn.Linear(d_model, hidden_size),
-            nn.ReLU(),
-            nn.Linear(hidden_size, hidden_size),
-            nn.Tanh()
-        )
 
         self.mixer = MixerModel(
             d_model= hidden_size,
@@ -473,28 +486,33 @@ class mambaDuelingModel(nn.Module):
             ssm_cfg= ssm_cfg,
             moe_cfg=moe_cfg
         )
+
+    def forward(self, src: Tensor, time_tau: Tensor) -> Tensor:
+        time_emb = self.time_embedding(time_tau)
+        time_emb_proj = self.time_emb_projection(time_emb) # [B, L, hidden_size]
         
+        
+        # 市場數據流
+        market_data = src.transpose(1, 2)
+        market_data = self.dean(market_data)
+        market_data = market_data.transpose(1, 2)
+        market_emb = self.market_embedding(market_data) # [B, L, hidden_size]
 
-    def forward(self, src: Tensor) -> Tensor:
-        # src: [batch_size, seq_len, d_model]
+        # 計算門控值
+        gate = self.gate_layer(torch.cat([market_emb, time_emb_proj], dim=-1))
+        
+        # 融合特徵
+        fused_emb = gate * market_emb + (1 - gate) * time_emb_proj
+        src = self.feature_embedding(fused_emb)
 
-        # 根據實測 rearrange 比較慢一些
-        # src = rearrange(src,'b l d -> b d l')        
-        src = src.transpose(1, 2)        
-        src = self.dean(src) # [B, seq_len, d_model]
-        src = src.transpose(1, 2)  
-        src = self.feature_embedding(src)
-        src, aux_loss = self.mixer(src) # 現在 src 的維度是 [B, seq_len, hidden_size]
+        src, aux_loss = self.mixer(src)
         src = src.view(src.size(0), -1)
 
-        # 狀態值和優勢值
         value = self.fc_val(src)       # [B, 1]
         advantage = self.fc_adv(src)   # [B, num_actions]
 
         q_values = value + (advantage - advantage.mean(dim=1, keepdim=True))
         return q_values, aux_loss
-
-
 
 class mamba2DuelingModel(nn.Module):
     def __init__(self,
@@ -570,3 +588,110 @@ class mamba2DuelingModel(nn.Module):
 
         q_values = value + (advantage - advantage.mean(dim=1, keepdim=True))
         return q_values
+    
+
+
+
+
+# import torch
+# import torch.nn as nn
+# import torch.nn.functional as F
+
+# # 門控殘差網絡 (GRN) - TFT 的基礎構建模塊
+# class GatedResidualNetwork(nn.Module):
+#     def __init__(self, input_dim, hidden_dim, output_dim, dropout=0.1, context_dim=None):
+#         super().__init__()
+#         self.input_dim = input_dim
+#         self.hidden_dim = hidden_dim
+#         self.output_dim = output_dim
+#         self.context_dim = context_dim
+
+#         # 如果有上下文向量，則加入
+#         if self.context_dim is not None:
+#             self.context_projection = nn.Linear(self.context_dim, self.hidden_dim)
+        
+#         self.fc1 = nn.Linear(self.input_dim, self.hidden_dim)
+#         self.fc2 = nn.Linear(self.hidden_dim, self.hidden_dim)
+#         self.elu = nn.ELU()
+#         self.dropout = nn.Dropout(dropout)
+        
+#         # 門控機制
+#         self.gate = nn.Sequential(
+#             nn.Linear(self.hidden_dim, self.hidden_dim),
+#             nn.Sigmoid()
+#         )
+        
+#         # 殘差連接的線性轉換
+#         if self.input_dim != self.output_dim:
+#             self.residual_projection = nn.Linear(self.input_dim, self.output_dim)
+#         else:
+#             self.residual_projection = nn.Identity()
+            
+#         self.layer_norm = nn.LayerNorm(self.output_dim)
+
+#     def forward(self, x, context=None):
+#         residual = self.residual_projection(x)
+        
+#         x = self.fc1(x)
+#         if context is not None:
+#             context = self.context_projection(context)
+#             x = x + context
+            
+#         x = self.elu(x)
+#         x = self.fc2(x)
+#         x = self.dropout(x)
+        
+#         gate_val = self.gate(x)
+#         x = x * gate_val
+        
+#         x = x + residual
+#         x = self.layer_norm(x)
+#         return x
+
+# # 變數選擇網絡 (VSN)
+# class VariableSelectionNetwork(nn.Module):
+#     def __init__(self, input_dim, num_features, hidden_dim, dropout=0.1):
+#         super().__init__()
+#         self.hidden_dim = hidden_dim
+#         self.num_features = num_features # 這就是您的 d_model
+        
+#         # 為每個特徵創建一個GRN
+#         self.feature_grns = nn.ModuleList([
+#             GatedResidualNetwork(1, hidden_dim, hidden_dim, dropout) for _ in range(self.num_features)
+#         ])
+        
+#         # 另一個GRN用於學習特徵權重
+#         self.weight_grn = GatedResidualNetwork(
+#             input_dim * hidden_dim, # 將所有特徵的GRN輸出展平
+#             hidden_dim, 
+#             self.num_features, 
+#             dropout
+#         )
+
+#     def forward(self, x):
+#         # x shape: [batch_size, seq_len, d_model]
+        
+#         # 1. 將每個特徵獨立輸入各自的GRN
+#         #    需要先將特徵維度分離
+#         split_features = torch.split(x, 1, dim=-1) # list of tensors, each [B, L, 1]
+        
+#         processed_features = []
+#         for i in range(self.num_features):
+#             processed_features.append(self.feature_grns[i](split_features[i]))
+        
+#         processed_features = torch.stack(processed_features, dim=-1) # [B, L, hidden_dim, num_features]
+        
+#         # 2. 學習特徵權重
+#         flat_features = processed_features.view(x.size(0), x.size(1), -1) # [B, L, hidden_dim * num_features]
+        
+#         # 注意: TFT的VSN權重是在整個實體上共享的，這裡為了簡化，讓每個時間步都有自己的權重
+#         feature_weights = self.weight_grn(flat_features) # [B, L, num_features]
+#         feature_weights = F.softmax(feature_weights, dim=-1) # [B, L, num_features]
+        
+#         # 3. 加權特徵
+#         # 原始特徵 x: [B, L, num_features]
+#         # 權重 feature_weights: [B, L, num_features]
+#         # 廣播機制會自動處理
+#         weighted_features = x * feature_weights
+        
+#         return weighted_features, feature_weights
