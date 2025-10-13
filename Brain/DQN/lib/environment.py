@@ -49,15 +49,22 @@ class State:
         ]
 
         self.timelist = [
-            "Year",
-            "Month",
-            "Day",
-            "Hour",
-            "Minute",
-            "Week",
-            "Dayofweek",
-            "absolute_minute",
+            "age_log_minutes",
+            "age_years",
+            "month_sin",
+            "month_cos",
+            "day_sin",
+            "day_cos",
+            "hour_sin",
+            "hour_cos",
+            "minute_sin",
+            "minute_cos",
+            "dayofweek_sin",
+            "dayofweek_cos",
+            "week_sin",
+            "week_cos"
         ]
+
 
     def getStateShape(self):
         return self.bars_count, len(self.info_list) + 3

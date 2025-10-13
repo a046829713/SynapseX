@@ -32,6 +32,7 @@ class Strategy(object):
         init_cash: float = 10000.0,
         symobl_type: str = "Futures",
         lookback_date: str = None,
+        symbol_first_trade_date=None,
         formal: bool = False,
     ) -> None:
         self.strategytype = strategytype
@@ -44,6 +45,7 @@ class Strategy(object):
         self.init_cash = init_cash  # 起始資金
         self.symobl_type = symobl_type  # 每個策略會有一個商品別(期貨現貨別)
         self.lookback_date = lookback_date  # 策略回測日期
+        self.symbol_first_trade_date = symbol_first_trade_date
         self.formal = formal  # 策略是否正式啟動
 
     def load_data(self, local_data_path: str):
@@ -95,12 +97,14 @@ class RL_evaluate:
         self.hyperparameters(strategy)
 
         self.config = RLConfig()
-        
+
         if not formal:
             self.config.UNIQUE_SYMBOLS = [strategy.symbol_file_name.split(".")[0]]
 
         data = OriginalDataFrature().get_train_net_work_data_by_pd(
-            symbol=strategy.symbol_name, df=strategy.df
+            symbol=strategy.symbol_name,
+            df=strategy.df,
+            first_date=strategy.symbol_first_trade_date,
         )
         # 準備神經網絡的狀態
         state = State_time_step(
@@ -120,18 +124,17 @@ class RL_evaluate:
     def load_model(self, model_path: str):
         engine_info = self.evaluate_env.engine_info()
         action_space_n = engine_info["action_space_n"]
-        input_size = engine_info["input_size"]
-        moe_config = {"num_experts": 16}
+        data_input_size = engine_info["data_input_size"]
 
         ssm_cfg = {"expand": 4}
         net = model.mambaDuelingModel(
-            d_model=input_size,
+            d_model=data_input_size,
             nlayers=6,
             num_actions=action_space_n,
+            time_features_in=engine_info["time_input_size"],
             seq_dim=self.config.BARS_COUNT,
             dropout=0.3,
             ssm_cfg=ssm_cfg,
-            moe_cfg=moe_config,
         ).to(self.config.DEVICE)
 
         checkpoint = torch.load(model_path, map_location=self.device, weights_only=True)
@@ -147,19 +150,30 @@ class RL_evaluate:
         record_orders = []
         info = [{}]
         obs = self.evaluate_env.reset()
-        state = torch.from_numpy(obs).to(self.device)
+        state, time_state = obs
+
+        state = torch.from_numpy(state).to(self.device)
         state = state.unsqueeze(0)
+
+        time_state = torch.from_numpy(time_state).to(self.device)
+        time_state = time_state.unsqueeze(0)
+
         info = common.turn_to_tensor(info, self.device)
 
         with torch.no_grad():
             while not done:
-                action, _ = self.agent(state)
+                action, _ = self.agent(state, time_state)
                 action_idx = action.max(dim=1)[1].item()
                 record_orders.append(self._parser_order(action_idx))
                 _state, reward, done, info = self.evaluate_env.step(action_idx)
                 # info = common.turn_to_tensor([info],self.device)
-                state = torch.from_numpy(_state).to(self.device)
+                state, time_state = _state
+
+                state = torch.from_numpy(state).to(self.device)
                 state = state.unsqueeze(0)
+
+                time_state = torch.from_numpy(time_state).to(self.device)
+                time_state = time_state.unsqueeze(0)
                 rewards.append(reward)
 
         self.record_orders = record_orders

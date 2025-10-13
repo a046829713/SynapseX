@@ -12,7 +12,7 @@ from utils import Debug_tool, Data_parser
 from utils.Debug_tool import ExcessiveTradeException, print_syslog
 from binance.exceptions import BinanceAPIException
 from Brain.EIIE.lib.engine import EngineBase
-from Brain.DQN.lib.engine import EngineBase as DQN_EngineBase
+from Brain.Common.engine import EngineBase as DQN_EngineBase
 import asyncio
 import os
 
@@ -242,8 +242,6 @@ class AsyncTrading_system(Trading_system):
         # 準備將資料塞入神經網絡或是策略裡面
         finally_df = self.dataprovider.get_trade_data(
             self.targetsymbols, self.symbol_map, freq=self.engine_setting['FREQ_TIME'])
-
-        
 
         # 在底層(oderbacktest會將最後一個拋棄)
         if_order_map = self.DQN_engin.get_if_order_map(finally_df)
