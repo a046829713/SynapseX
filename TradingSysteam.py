@@ -178,10 +178,10 @@ class AsyncTrading_system(Trading_system):
         """
         super().__init__()
 
-        # self.checkDailydata()  # 檢查日線資料
+        self.checkDailydata()  # 檢查日線資料
 
-        # self.dataprovider.reload_all_data(
-        #     time_type='1m', symbol_type='FUTURES')
+        self.dataprovider.reload_all_data(
+            time_type='1m', symbol_type='FUTURES')
         
         self.buildEngine()  # 檢查完資料後在建立引擎
 
