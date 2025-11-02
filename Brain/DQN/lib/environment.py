@@ -7,6 +7,7 @@ from typing import Optional
 from Brain.Common.DataFeature import OriginalDataFrature
 import pandas as pd
 from abc import ABC, abstractmethod
+from Brain.Common.env_components import State_time_step_template
 
 
 class Actions(enum.Enum):
@@ -15,62 +16,27 @@ class Actions(enum.Enum):
     Sell = 2
 
 
-class State:
+class State_time_step(State_time_step_template):
     def __init__(
         self,
-        init_prices: collections.namedtuple,
         bars_count,
         commission_perc,
         model_train,
         default_slippage,
+        N_steps,
+        win_payoff_weight,
     ):
-        assert isinstance(bars_count, int)
-        assert bars_count > 0
-        assert isinstance(commission_perc, float)
-        assert commission_perc >= 0.0
-        self.bars_count = bars_count
-        self.commission_perc = commission_perc
-        self.N_steps = 1000  # 這遊戲目前使用多少步學習
-        self.model_train = model_train
-        self.default_slippage = default_slippage
-        self.win_payoff_weight = 1
+        super().__init__(
+            bars_count=bars_count,
+            commission_perc=commission_perc,
+            model_train=model_train,
+            default_slippage=default_slippage,
+            N_steps = N_steps,            
+        )
+
         self.reward_function = Reward()
         self.reward_help = RewardHelp()
-        self.info_list = [
-            "log_open",
-            "log_high",
-            "log_low",
-            "log_close",
-            "log_volume",
-            "log_quote_av",
-            "log_trades",
-            "log_tb_base_av",
-            "log_tb_quote_av",
-        ]
-
-        self.timelist = [
-            "age_log_minutes",
-            "age_years",
-            "month_sin",
-            "month_cos",
-            "day_sin",
-            "day_cos",
-            "hour_sin",
-            "hour_cos",
-            "minute_sin",
-            "minute_cos",
-            "dayofweek_sin",
-            "dayofweek_cos",
-            "week_sin",
-            "week_cos"
-        ]
-
-
-    def getStateShape(self):
-        return self.bars_count, len(self.info_list) + 3
-
-    def gettimeShape(self):
-        return self.bars_count, len(self.timelist)
+        self.win_payoff_weight = win_payoff_weight
 
     def reset(self, prices, offset):
         assert offset >= self.bars_count - 1
@@ -285,61 +251,6 @@ class State:
         # print("本次總獎勵：",reward)
         # print('*'*120)
         return reward, done
-
-
-class State_time_step(State):
-    """
-    專門用於transformer的時序函數。
-    """
-
-    def encode(self):
-        data_res = np.zeros(shape=self.getStateShape(), dtype=np.float32)
-        time_res = np.zeros(shape=self.gettimeShape(), dtype=np.float32)
-
-        ofs = self.bars_count
-
-        for bar_idx in range(self.bars_count):
-            for idx, field in enumerate(self.info_list):  # 編碼所有字段
-                data_res[bar_idx][idx] = getattr(self._prices, field)[
-                    self._offset - ofs + bar_idx
-                ]
-
-        if self.have_position:
-            data_res[:, len(self.info_list)] = 1.0
-            data_res[:, len(self.info_list) + 1] = (
-                self._prices.close[self._offset] - self.open_price
-            ) / self.open_price
-            data_res[:, len(self.info_list) + 2] = self.trade_bar
-
-        for bar_idx in range(self.bars_count):
-            for idx, field in enumerate(self.timelist):  # 編碼所有字段
-                time_res[bar_idx][idx] = getattr(self._prices, field)[
-                    self._offset - ofs + bar_idx
-                ]
-
-        return data_res, time_res
-
-    def fourier_transform(self, data):
-        """
-        對每一列數據進行傅立葉變換，並提取頻率和幅度信息
-
-        Args:
-            data: (np.ndarray) shape 為 (bars_count, num_features) 的數據
-
-        Returns:
-            fourier_features: (np.ndarray) shape 為 (bars_count, num_features * 2) 的傅立葉特徵
-                                         每一列數據對應兩列傅立葉特徵：頻率的實部和虛部
-        """
-        fourier_features = np.zeros(
-            (data.shape[0], data.shape[1] * 2), dtype=np.float32
-        )
-        for i in range(data.shape[1]):
-            # 使用 rfft 進行實數傅立葉變換，只計算正頻率部分
-            fft_values = np.fft.rfft(data[:, i])
-            # 提取頻率的實部和虛部
-            fourier_features[:, i * 2] = np.real(fft_values)
-            fourier_features[:, i * 2 + 1] = np.imag(fft_values)
-        return fourier_features
 
 
 class Reward:
@@ -587,7 +498,7 @@ class BaseTradingEnv(gym.Env, ABC):
         if isinstance(self._state, State_time_step):
             return {
                 "data_input_size": self._state.getStateShape()[1],
-                "time_input_size":self._state.gettimeShape()[1],
+                "time_input_size": self._state.getTimeShape()[1],
                 "action_space_n": self.action_space.n,
             }
         return {}
@@ -595,8 +506,8 @@ class BaseTradingEnv(gym.Env, ABC):
 
 class TrainingEnv(BaseTradingEnv):
     """
-        用於模型訓練的環境。
-        它會動態地從數據源加載數據，並在每次 reset 時隨機化起始位置。
+    用於模型訓練的環境。
+    它會動態地從數據源加載數據，並在每次 reset 時隨機化起始位置。
     """
 
     def __init__(self, config):
@@ -614,11 +525,12 @@ class TrainingEnv(BaseTradingEnv):
         self.all_data = self._load_data_for_instrument(random_symbol)
 
         state_params = {
-            "init_prices": self.all_data[random_symbol],
             "bars_count": self.config.BARS_COUNT,
             "commission_perc": self.config.MODEL_DEFAULT_COMMISSION_PERC_traing,
             "model_train": True,
             "default_slippage": self.config.DEFAULT_SLIPPAGE,
+            "N_steps": self.config.N_STEPS,
+            "win_payoff_weight": self.config.WIN_PAYOFF_WEIGHT,
         }
 
         super().__init__(state=State_time_step(**state_params))

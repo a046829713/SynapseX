@@ -4,7 +4,7 @@ from torch import nn, Tensor
 from torch.nn import TransformerEncoder
 from Brain.Common.transformer_tool import TransformerEncoderLayer, PositionalEncoding
 from Brain.Common.dain import DAIN_Layer
-from Brain.Common.Components import SineActivation
+from Brain.Common.model_components import SineActivation
 from einops import rearrange
 from Brain.Common.ssm_tool import MixerModel,GatedMLP
 from torch.nn import functional as F
@@ -279,18 +279,6 @@ class COT_TransformerDuelingModel(nn.Module):
         q_values = value + (advantage - advantage.mean(dim=1, keepdim=True))
         return q_values
     
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

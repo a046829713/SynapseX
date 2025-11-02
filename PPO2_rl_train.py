@@ -14,32 +14,30 @@ from abc import ABC, abstractmethod
 # from Brain.PPO.lib.model import ActorCriticModel,TransformerModel
 import copy 
 import pandas as pd
-from Brain.PPO2.lib.environment import Env
+from Brain.PPO2.lib.environment import TrainingEnv
 from Brain.PPO2.lib.environment import State_time_step
 from Brain.Common.DataFeature import OriginalDataFrature
 from Brain.PPO2.lib import model
 from Brain.PPO2.lib.experience import RolloutBuffer
+from utils.AppSetting import PPO2RLConfig
+from Brain.PPO2.lib.Agent import PPO2Agent
 
 def show_setting(title: str, content: str):
     print(f"--{title}--:{content}")
 
 class RL_prepare(ABC):
     def __init__(self):
+        self.config = PPO2RLConfig()
         self._prepare_hyperparameters()
-        self._prepare_keyword()
         self._prepare_device()
         self._prepare_symbols()
         self._prepare_writer()
-        self._prepare_data()
         self._prepare_env()
         self._prepare_agent()
         # self._prepare_targer_net()
         # self._prepare_agent()
         self._prepare_optimizer()
-
-    def _prepare_keyword(self):
-        self.keyword = 'Mamba'
-        show_setting("KEYWORD:", self.keyword)
+        
 
     def _prepare_device(self):
         self.device = torch.device(
@@ -47,42 +45,30 @@ class RL_prepare(ABC):
         show_setting("DEVICE:", self.device)
 
     def _prepare_symbols(self):
-        symbols = ['BTCUSDT-F-30-Min']
-        self.symbolNames = list(set(symbols))
-        show_setting("SYMBOLNAMES", self.symbolNames)
+        symbolNames = os.listdir(os.path.join(os.getcwd() , "Brain","simulation","train_data"))
+        symbolNames = [_fileName.split('.')[0] for _fileName in symbolNames]
+        unique_symbols = list(set(symbolNames))
+        self.config.update_steps_by_symbols(len(unique_symbols))
+        self.config.create_saves_path()
+        self.config.UNIQUE_SYMBOLS = unique_symbols        
+        
+        show_setting("SYMBOLNAMES", unique_symbols)
 
-    def _prepare_data(self):
-        self.data = OriginalDataFrature().get_train_net_work_data_by_path(self.symbolNames)
-    
     def _prepare_env(self):
-        if self.keyword == 'Transformer' or 'Mamba' or "Mamba2":
-            state = State_time_step(
-                init_prices=self.data[np.random.choice(
-                    list(self.data.keys()))],
-                bars_count=self.BARS_COUNT,
-                commission_perc=self.MODEL_DEFAULT_COMMISSION_PERC,
-                model_train=True,
-                default_slippage=self.DEFAULT_SLIPPAGE
-            )
+        if self.config.KEYWORD == 'Transformer' or 'Mamba' or "Mamba2":
 
-        elif self.keyword == 'EfficientNetV2':
-            state = ''
+            # 製作環境
+            self.train_env = TrainingEnv(config=self.config)
 
-        print("There is state:", state)
+        show_setting("TrainingEnv", self.train_env)
 
-        # 製作環境
-        self.train_env = Env(
-            prices=self.data, state=state, random_ofs_on_reset=True)
 
     def _prepare_writer(self):
         pass
 
 
     def _prepare_hyperparameters(self):
-        self.BARS_COUNT = 300  # 用來準備要取樣的特徵長度,例如:開高低收成交量各取10根K棒
-        self.MODEL_DEFAULT_COMMISSION_PERC = 0.0045
-        self.DEFAULT_SLIPPAGE = 0.0025
-
+        pass
         # self.GAMMA = 0.99
         # self.LEARNING_RATE = 0.00001  # optim 的學習率
         
@@ -95,13 +81,13 @@ class RL_prepare(ABC):
         # self.checkgrad_times = 10
 
     def _prepare_agent(self):        
-        self.Agent = model.PPO2Agent(self.train_env.observation_space,
+        self.Agent = PPO2Agent(self.train_env.observation_space,
                                      self.train_env.action_space,
                                      device=self.device)
 
 
 
-    def _prepare_optimizer(self):
+    # def _prepare_optimizer(self):
         # # 定義特殊層的學習率
         # param_groups = [
         #     {'params': self.model.dean.mean_layer.parameters(), 'lr': 0.0001 * self.model.dean.mean_lr},
@@ -120,7 +106,67 @@ class RL_prepare(ABC):
 
         # # 初始化優化器
         # self.optimizer = optim.Adam(param_groups)
-        self.optimizer = optim.Adam(self.Agent.model.parameters(), lr=3e-4)
+        # self.optimizer = optim.Adam(self.Agent.model.parameters(), lr=3e-4)
+    
+    def _prepare_optimizer(self, base_lr=1e-4):
+        """
+        建立 Adam 優化器，以下功能：
+        1. `dean` 的三個特殊層 (`mean_layer`, `scaling_layer`, `gating_layer`) 使用獨立的學習率且不做 weight decay。
+        2. `LayerNorm` 層和所有 `bias` 參數不做 weight decay。
+        3. 其餘參數正常做 weight decay。
+        """
+        # 存放不同參數組
+        decay_params = []
+        no_decay_params = []
+        
+        # 獲取 dean 特殊層的參數 ID，以便後續排除
+        dean_params_ids = set()
+        if hasattr(self.Agent.model, 'dean'):
+            dean_params_ids.update(id(p) for p in self.Agent.model.dean.parameters())
+
+        for name, param in self.Agent.model.named_parameters():
+            if not param.requires_grad:
+                continue
+
+            # 如果是 dean 層的參數，跳過，因為它們會被單獨處理
+            if id(param) in dean_params_ids:
+                continue
+
+            # LayerNorm 層和 bias 不做 weight decay
+            # 透過 name 來判斷，比 isinstance 更可靠
+            if "norm" in name or name.endswith(".bias"):
+                no_decay_params.append(param)
+            else:
+                decay_params.append(param)
+
+        # 建立參數組
+        param_groups = [
+            {
+                'params': decay_params,
+                'lr': self.config.LEARNING_RATE,
+                'weight_decay': self.config.LAMBDA_L2
+            },
+            {
+                'params': no_decay_params,
+                'lr': self.config.LEARNING_RATE,
+                'weight_decay': 0.0
+            }
+        ]
+
+        # 為 dean 的特殊層添加獨立的參數組
+        if hasattr(self.Agent.model, 'dean'):
+            param_groups.extend([
+                {'params': list(self.Agent.model.dean.mean_layer.parameters()),
+                 'lr': base_lr * self.Agent.model.dean.mean_lr, 'weight_decay': 0.0},
+                {'params': list(self.Agent.model.dean.scaling_layer.parameters()),
+                 'lr': base_lr * self.Agent.model.dean.scale_lr, 'weight_decay': 0.0},
+                {'params': list(self.Agent.model.dean.gating_layer.parameters()),
+                 'lr': base_lr * self.Agent.model.dean.gate_lr, 'weight_decay': 0.0},
+            ])
+
+        # 用 Adam 建立優化器
+        self.optimizer = optim.Adam(param_groups)
+        print("optimzer create.")
 
     def _prepare_targer_net(self):
         # 创建目标网络，作为主模型的副本
@@ -138,6 +184,8 @@ class PPO2(RL_prepare):
     def train(self):                
         buffer = RolloutBuffer()
         state = self.train_env.reset()
+        print(state)
+        time.sleep(100)
         episode_reward = 0
         timesteps = 0
         while True:

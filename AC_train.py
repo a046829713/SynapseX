@@ -7,7 +7,6 @@ import time
 import torch.multiprocessing as mp
 from collections import namedtuple
 from Brain.DQN.lib import environment, common, model
-from Brain.DQN.lib.environment import State_time_step
 from Brain.Common.DataFeature import OriginalDataFrature
 from Brain.DQN import ptan
 import os

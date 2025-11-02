@@ -108,16 +108,16 @@ class RL_evaluate:
         )
         # 準備神經網絡的狀態
         state = State_time_step(
-            data[list(data.keys())[0]],
-            bars_count=self.BARS_COUNT,
-            commission_perc=self.config.MODEL_DEFAULT_COMMISSION_PERC_test,
+            bars_count=self.config.BARS_COUNT,
+            commission_perc=self.config.MODEL_DEFAULT_COMMISSION_PERC_TEST,
             model_train=False,
             default_slippage=self.config.DEFAULT_SLIPPAGE,
+            N_steps = self.config.N_STEPS,
+            win_payoff_weight = self.config.WIN_PAYOFF_WEIGHT,
         )
 
         # 製作環境
         self.evaluate_env = environment.ProductionEnv(prices_data=data, state=state)
-
         self.agent = self.load_model(model_path=strategy.model_count_path)
         self.test()
 

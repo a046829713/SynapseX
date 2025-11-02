@@ -124,7 +124,7 @@ class EngineBase:
             symbol_name=symbol,
             freq_time=int(data_len),
             model_feature_len=int(feature_len),
-            fee=self.config.MODEL_DEFAULT_COMMISSION_PERC_test,
+            fee=self.config.MODEL_DEFAULT_COMMISSION_PERC_TEST,
             slippage=self.config.DEFAULT_SLIPPAGE,
             model_count_path=model_path,
             symbol_first_trade_date=self.first_date_map[symbol],

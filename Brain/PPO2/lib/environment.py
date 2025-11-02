@@ -6,27 +6,27 @@ import numpy as np
 import collections
 import gymnasium as gym
 from gymnasium import spaces
+from Brain.Common.env_components import State_time_step_template
+from abc import ABC, abstractmethod
+from Brain.Common.DataFeature import OriginalDataFrature
 
 
-
-
-class Reward():
+class Reward:
     def __init__(self):
         self.tradeReturn_weight = 0.4
         self.closeReturn_weight = 1 - self.tradeReturn_weight
         self.wrongTrade_weight = 1
         self.trendTrade_weight = 0.5
         self.drawdown_penalty_weight = 0.001
-    
+
     def tradeReturn(self, last_value: float, previous_value: float) -> float:
         """
-            主要用於淨值 = 起始資金 + 手續費(累積) +  已平倉損益(累積) + 未平倉損益(單次)
+        主要用於淨值 = 起始資金 + 手續費(累積) +  已平倉損益(累積) + 未平倉損益(單次)
 
 
-            Return = last_value - previous_value.
+        Return = last_value - previous_value.
         """
         return self.tradeReturn_weight * (last_value - previous_value)
-
 
 
 class Actions(enum.Enum):
@@ -35,162 +35,132 @@ class Actions(enum.Enum):
     Sell = 2
 
 
-class State:
-    def __init__(self, init_prices: collections.namedtuple, bars_count, commission_perc, model_train, default_slippage):
-        assert isinstance(bars_count, int)
-        assert bars_count > 0
-        assert isinstance(commission_perc, float)
-        assert commission_perc >= 0.0
+class State_time_step(State_time_step_template):
+    def __init__(
+        self,
+        bars_count,
+        commission_perc,
+        model_train,
+        default_slippage,
+        N_steps,
+        win_payoff_weight,
+    ):
+        super().__init__(
+            bars_count=bars_count,
+            commission_perc=commission_perc,
+            model_train=model_train,
+            default_slippage=default_slippage,
+            N_steps = N_steps,            
+        )
 
-        self.bars_count = bars_count
-        self.commission_perc = commission_perc
-        self.N_steps = 1000  # 這遊戲目前使用多少步學習
-        self.model_train = model_train
-        self.default_slippage = default_slippage
-        self.win_payoff_weight = 1
-        self.build_fileds(init_prices)
-        self.reward_function = Reward()
-
-        
-    def build_fileds(self, init_prices):
-        self.field_names = list(init_prices._fields)
-        for i in ['open', 'high', 'low', 'close']:
-            if i in self.field_names:
-                self.field_names.remove(i)
-        
-
+        self.win_payoff_weight = win_payoff_weight
 
     def reset(self, prices, offset):
-        assert offset >= self.bars_count-1
+        assert offset >= self.bars_count - 1
         self.have_position = False
         self.open_price = 0.0
         self._prices = prices
         self._offset = offset
-        self.game_steps = 0  # 這次遊戲進行了多久
 
-        self.cost_sum = 0.0
-        self.closecash = 0.0
-        self.canusecash = 1.0
-        self.equity_peak = None  # 可以用 1.0 或其它初始值
-        self.trade_bar = 0 # 用來紀錄持倉多久
-        self.bar_dont_change_count = 0  # 計算K棒之間轉換過了多久 感覺下一次實驗也可以將這個部份加入
-        
-        # 新增：初始化交易統計資料
-        self.total_trades = 0
-        self.win_trades = 0
-        self.total_win = 0.0
-        self.total_loss = 0.0
-        
-        self.beforeBar = 50
-
-    def step(self,marketpostion:int,percentage:float):
+    def step(self, marketpostion: int, percentage: float):
         """
             marketpostion (0,1,2)
             percentage : 0 -1 continous.
-        """        
+        """
         reward = 0.0
         done = False
         close = self._prices.close[self._offset]
-        
-
-
 
         return reward, done
 
 
-class State_time_step(State):
-    """
-        專門用於transformer的時序函數。
-    """
-    @property
-    def shape(self):
-        return (self.bars_count, len(self.field_names) + 3)
-
-    def encode(self):
-        res = np.zeros(shape=self.shape, dtype=np.float32)
-
-        ofs = self.bars_count
-        for bar_idx in range(self.bars_count):
-            for idx, field in enumerate(self.field_names):  # 編碼所有字段
-                res[bar_idx][idx] = getattr(self._prices, field)[
-                    self._offset - ofs + bar_idx]
-
-        if self.have_position:
-            res[:, len(self.field_names)] = 1.0
-            res[:, len(self.field_names) + 1 ] = (self._prices.close[self._offset] - self.open_price) / \
-                self.open_price
-            res[:, len(self.field_names) + 2 ] = self.trade_bar
-        
-        # print(res) 
-        # # 加入傅立葉變換 res.shape # (300, 29)
-        # fourier_features = self.fourier_transform(res[:, :len(self.field_names)])
-        # print(fourier_features)
-        # # 可以選擇如何將傅立葉特徵與原有特徵結合，例如拼接或者替換
-        # # 這裡選擇拼接
-        # res = np.concatenate((res, fourier_features), axis=1)
-        return res
-    
-    def fourier_transform(self, data):
-        """
-        對每一列數據進行傅立葉變換，並提取頻率和幅度信息
-
-        Args:
-            data: (np.ndarray) shape 為 (bars_count, num_features) 的數據
-
-        Returns:
-            fourier_features: (np.ndarray) shape 為 (bars_count, num_features * 2) 的傅立葉特徵
-                                         每一列數據對應兩列傅立葉特徵：頻率的實部和虛部
-        """
-        fourier_features = np.zeros((data.shape[0], data.shape[1] * 2), dtype=np.float32)
-        for i in range(data.shape[1]):
-            # 使用 rfft 進行實數傅立葉變換，只計算正頻率部分
-            fft_values = np.fft.rfft(data[:, i])
-            # 提取頻率的實部和虛部
-            fourier_features[:, i * 2] = np.real(fft_values)
-            fourier_features[:, i * 2 + 1] = np.imag(fft_values)
-        return fourier_features
-
-
-class Env(gym.Env):
-    def __init__(self, prices, state, random_ofs_on_reset):
-        self._prices = prices
+class BaseTradingEnv(gym.Env):
+    def __init__(self, state:State_time_step):
         self._state = state
-        
-        
         # 0 Hold 1 Buy 2 Sell
-        N_DISCRETE_ACTIONS = 3 
-        self.action_space = spaces.Tuple((
-            spaces.Discrete(N_DISCRETE_ACTIONS),
-            spaces.Box(low=0.0, high=1.0, shape=(1,), dtype=np.float32)
-        ))
+        N_DISCRETE_ACTIONS = 3
+
+        self.action_space = spaces.Tuple(
+            (
+                spaces.Discrete(N_DISCRETE_ACTIONS),
+                spaces.Box(low=0.0, high=1.0, shape=(1,), dtype=np.float32),
+            )
+        )
+        # 為了讓資料分流但是同時保持gym 的標準設計
+        self.observation_space = spaces.Dict({
+            "states": spaces.Box(
+                low=-np.inf, high=np.inf, shape=self._state.getStateShape(), dtype=np.float32
+            ),
+            "time_states": spaces.Box(
+                low=-np.inf, high=np.inf, shape=self._state.getTimeShape(), dtype=np.float32
+            )
+        })
 
 
-        self.observation_space = spaces.Box(
-            low=-np.inf,
-            high=np.inf,
-            shape=self._state.shape,
-            dtype=np.float32
+
+
+class TrainingEnv(BaseTradingEnv):
+    """
+        用於模型訓練的環境。
+        它會動態地從數據源加載數據，並在每次 reset 時隨機化起始位置。
+    """
+
+    def __init__(self, config):
+        """
+        Args:
+            config: 包含所有配置的物件。
+            is_test_mode (bool): 如果為 True，則使用測試數據和固定的起始點（用於驗證）。
+                               如果為 False，則使用訓練數據和隨機的起始點。
+        """
+        self.config = config
+        self.unique_symbols = self.config.UNIQUE_SYMBOLS
+        
+        
+        # 根據模式決定數據類型和佣金
+        self.data_type_name = "train_data"
+        random_symbol = np.random.choice(self.unique_symbols)
+        self.all_data = self._load_data_for_instrument(random_symbol)
+
+        state_params = {
+            "bars_count": self.config.BARS_COUNT,
+            "commission_perc": self.config.MODEL_DEFAULT_COMMISSION_PERC_TRAING,
+            "model_train": True,
+            "default_slippage": self.config.DEFAULT_SLIPPAGE,
+            "N_steps": self.config.N_STEPS,
+            "win_payoff_weight": self.config.WIN_PAYOFF_WEIGHT,
+        }
+
+        super().__init__(state=State_time_step(**state_params))
+
+    def _load_data_for_instrument(self, instrument: str):
+        """一個輔助方法，專門用來載入特定商品的數據。"""
+        return OriginalDataFrature().get_train_net_work_data_by_path(
+            [instrument], typeName=self.data_type_name
         )
 
-        self.random_ofs_on_reset = random_ofs_on_reset
-
-    def reset(self):
-        self._instrument = np.random.choice(list(self._prices.keys()))
-        prices = self._prices[self._instrument]
-
-        if self.random_ofs_on_reset:
-            offset = np.random.choice(prices.high.shape[0]-self._state.bars_count*10) + self._state.bars_count
+    def reset(self, symbol: str = None):
+        if symbol is None:
+            self._instrument = np.random.choice(self.unique_symbols)
         else:
-            offset = self._state.bars_count
+            self._instrument = symbol
 
-        print("目前步數:", offset)
+        all_prices = self._load_data_for_instrument(self._instrument)
+        prices = all_prices[self._instrument]
+
+        offset = (
+            np.random.choice(prices.high.shape[0] - self._state.bars_count * 10)
+            + self._state.bars_count
+        )
+
+        print(
+            f"[{self.data_type_name}] Actor resetting env with symbol: {self._instrument} at offset: {offset}"
+        )
 
         self._state.reset(prices, offset)
-
         return self._state.encode()
-
-    def step(self, marketpostion:int, percentage:float):
-        reward, done = self._state.step(marketpostion,percentage)  # 這邊會更新步數
+    
+    def step(self, marketpostion: int, percentage: float):        
+        reward, done = self._state.step(marketpostion, percentage)  # 這邊會更新步數
         obs = self._state.encode()  # 呼叫這裡的時候就會取得新的狀態
 
         info = {

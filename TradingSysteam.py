@@ -24,7 +24,7 @@ class Trading_system():
         self.dataprovider = DataProvider()  # 創建資料庫的連線
         self.strategy_keyword = 'ONE_TO_MANY'
 
-        self.buildEngine()  # 建立引擎
+        
         self.systeam_setting = AppSetting.systeam_setting()
 
         self.GuiStartDay = str(datetime.date.today())
@@ -37,8 +37,6 @@ class Trading_system():
         self.engine_setting = AppSetting.engine_setting()
 
         
-       
-
     def buildEngine(self) -> None:
         """ 
         用來創建回測系統，並且將DQN判斷是否送出訂單
@@ -46,7 +44,13 @@ class Trading_system():
         """
         meta_path = os.path.join('Brain', 'EIIE', 'Meta', 'policy_EIIE.pt')
         self.engine = EngineBase(Meta_path=meta_path)
-        self.DQN_engin = DQN_EngineBase(self.strategy_keyword)
+
+
+        first_date_map = self.dataprovider.get_symbol_first_day(
+            symbol_type="FUTURES", time_type="1m"
+        )
+
+        self.DQN_engine = DQN_EngineBase(self.strategy_keyword, first_date_map, formal=True)
 
     def DailyChange(self):
         """
@@ -174,10 +178,13 @@ class AsyncTrading_system(Trading_system):
         """
         super().__init__()
 
-        self.checkDailydata()  # 檢查日線資料
+        # self.checkDailydata()  # 檢查日線資料
 
-        self.dataprovider.reload_all_data(
-            time_type='1m', symbol_type='FUTURES')
+        # self.dataprovider.reload_all_data(
+        #     time_type='1m', symbol_type='FUTURES')
+        
+        self.buildEngine()  # 檢查完資料後在建立引擎
+
         
         self.process_target_symbol()  # 取得要交易的標的
 
@@ -197,7 +204,7 @@ class AsyncTrading_system(Trading_system):
         elif self.strategy_keyword == 'ONE_TO_ONE':
             old_symbol = self.dataprovider.Binanceapp.getfutures_account_name()  # 第一次運行會是空的
             # 合併舊的商品 因為這樣更新的商品的時候可以把庫存清掉
-            self.targetsymbols = list(set(old_symbol + self.DQN_engin.symbols))
+            self.targetsymbols = list(set(old_symbol + self.DQN_engine.symbols))
         else:
             raise ValueError("STRATEGY_KEYWORD didn't match,please check")
 
@@ -237,14 +244,14 @@ class AsyncTrading_system(Trading_system):
 
     def generate_order_map(self) -> dict:
         # # DQN 準備策略
-        self.DQN_engin.strategy_prepare(self.targetsymbols)
+        self.DQN_engine.strategy_prepare(self.targetsymbols)
 
         # 準備將資料塞入神經網絡或是策略裡面
         finally_df = self.dataprovider.get_trade_data(
             self.targetsymbols, self.symbol_map, freq=self.engine_setting['FREQ_TIME'])
 
         # 在底層(oderbacktest會將最後一個拋棄)
-        if_order_map = self.DQN_engin.get_if_order_map(finally_df)
+        if_order_map = self.DQN_engine.get_if_order_map(finally_df)
 
         finally_df = self.dataprovider.datatransformer.filter_last_time_series(
             finally_df)
