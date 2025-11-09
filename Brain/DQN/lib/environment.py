@@ -522,8 +522,7 @@ class TrainingEnv(BaseTradingEnv):
         # 根據模式決定數據類型和佣金
         self.data_type_name = "train_data"
         random_symbol = np.random.choice(self.unique_symbols)
-        self.all_data = self._load_data_for_instrument(random_symbol)
-
+        
         state_params = {
             "bars_count": self.config.BARS_COUNT,
             "commission_perc": self.config.MODEL_DEFAULT_COMMISSION_PERC_TRAING,
@@ -562,8 +561,12 @@ class TrainingEnv(BaseTradingEnv):
         self._state.reset(prices, offset)
         return self._state.encode()
 
-    def getModelBase(self):
-        return self.p
+    def getModelBase_feature(self):
+        print(self._state._offset)
+        atr_Volatility = self._state._prices.atr_Volatility[self._state._offset]
+        print(atr_Volatility)
+        print("*"*120)
+        return atr_Volatility
     
 class ProductionEnv(BaseTradingEnv):
     """
