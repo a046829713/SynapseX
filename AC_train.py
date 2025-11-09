@@ -7,7 +7,6 @@ import time
 import torch.multiprocessing as mp
 from collections import namedtuple
 from Brain.DQN.lib import environment, common, model
-from Brain.Common.DataFeature import OriginalDataFrature
 from Brain.DQN import ptan
 import os
 import numpy as np
@@ -194,7 +193,7 @@ class LearnerProcess(mp.Process):
             ssm_cfg = {
                 "expand":4
             }
-            self.net = model.mambaDuelingModel(
+            self.net = model.I2A_MambaDuelingModel(
                 d_model=data_input_size,
                 nlayers=6,
                 num_actions=action_space_n,

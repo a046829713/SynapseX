@@ -526,7 +526,7 @@ class TrainingEnv(BaseTradingEnv):
 
         state_params = {
             "bars_count": self.config.BARS_COUNT,
-            "commission_perc": self.config.MODEL_DEFAULT_COMMISSION_PERC_traing,
+            "commission_perc": self.config.MODEL_DEFAULT_COMMISSION_PERC_TRAING,
             "model_train": True,
             "default_slippage": self.config.DEFAULT_SLIPPAGE,
             "N_steps": self.config.N_STEPS,

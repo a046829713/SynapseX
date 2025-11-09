@@ -78,11 +78,13 @@ class OriginalDataFrature:
             self.df = self.cleanData(df)
 
             self.df = self.add_time_feature(self.df)
+            print(self.df)
+            time.sleep(100)
             # 使用 PyTorch Tensor 的方法
             out_dict.update({symbolName: self.load_relative()})
 
         return out_dict
-
+    
     def add_time_feature(self, df: pd.DataFrame, first_date=None):
         datetime_index = pd.to_datetime(df.index)
 

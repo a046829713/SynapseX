@@ -683,3 +683,202 @@ class mamba2DuelingModel(nn.Module):
 #         weighted_features = x * feature_weights
         
 #         return weighted_features, feature_weights
+
+class GEGLU(nn.Module):
+    def forward(self, x):
+        x, gate = x.chunk(2, dim = -1)
+        return x * F.gelu(gate)
+
+def GLUFeedForward(
+    dim,
+    mult = 4,
+    dropout = 0.
+):
+    dim_hidden = int(dim * mult * 2 / 3)
+
+    return nn.Sequential(
+        nn.Linear(dim, dim_hidden * 2),
+        GEGLU(),
+        nn.Dropout(dropout),
+        nn.Linear(dim_hidden, dim)
+    )
+
+class I2A_MambaDuelingModel(nn.Module):
+    def __init__(self,
+                 d_model: int,
+                 nlayers: int,
+                 num_actions: int,
+                 time_features_in: int,
+                 time_features_out: int = 32, # Time2Vec 的輸出維度，設為超參數
+                 seq_dim: int = 300,
+                 dropout: float = 0.1,
+                 hidden_size: int = 96,
+                 mode='full',
+                 ssm_cfg: Optional[dict] = None,
+                 moe_cfg: Optional[dict] = None,
+                 # --- 新增 I2A 相關參數 ---
+                 imagination_nlayers: int = 2,  # 想像路徑可以更淺
+                 num_imagined_features: int = 1 # 想像路徑要預測的特徵數量
+                 ):
+
+        super().__init__()
+        self.time_embedding = SineActivation(in_features=time_features_in, out_features=time_features_out)
+        self.dean = DAIN_Layer(mode=mode, input_dim=d_model) # DAIN 只處理市場數據
+        self.market_embedding = nn.Linear(d_model, hidden_size)        
+        self.time_emb_projection = nn.Linear(time_features_out, hidden_size)
+
+
+
+
+
+        # 狀態值網絡
+        self.fc_val = nn.Sequential(
+            nn.Linear(seq_dim * hidden_size, 512),
+            nn.LayerNorm(512),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(512, 256),
+            nn.LayerNorm(256),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(256, 1)
+        )
+
+        # 優勢網絡
+        self.fc_adv = nn.Sequential(
+            nn.Linear(seq_dim * hidden_size, 512),
+            nn.LayerNorm(512),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(512, 256),
+            nn.LayerNorm(256),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(256, num_actions)
+        )
+
+
+
+
+
+        self.mf_mixer = MixerModel( 
+            d_model= hidden_size*2,
+            n_layer=nlayers,
+            d_intermediate=256,
+            dropout=dropout,
+            ssm_cfg= ssm_cfg,
+            moe_cfg=moe_cfg
+        )
+
+        # === 路徑二：Model-Based (新增的想像路徑) ===
+        self.imagination_embedding = nn.Linear(d_model, hidden_size) # <--- 新增
+        
+        self.imagination_mixer = MixerModel( # <--- 新增
+            d_model= hidden_size,
+            n_layer=imagination_nlayers, # 使用較淺的層數
+            d_intermediate=256,
+            dropout=dropout,
+            ssm_cfg= ssm_cfg, # 可以重用 ssm_cfg
+            moe_cfg=moe_cfg  # 可以重用 moe_cfg
+        )
+        
+        # 想像路徑的預測頭 (MLP)：從序列最後一個時間點的輸出預測未來特徵
+        self.imagination_head = nn.Sequential( # <--- 新增
+            nn.Linear(hidden_size, hidden_size // 2),
+            nn.ReLU(),
+            nn.Linear(hidden_size // 2, num_imagined_features),
+            nn.Tanh() # 假設預測的特徵被歸一化到 -1~1 之間
+        )
+
+        # === 融合決策層 (Dueling Heads) ===
+        # <--- 修改：輸入維度變為 (Model-Free 特徵 + 想像路徑特徵)
+        combined_input_dim = (seq_dim * hidden_size) + num_imagined_features
+
+        # 狀態值網絡
+        self.fc_val = nn.Sequential(
+            nn.Linear(combined_input_dim, 512), # <--- 修改
+            nn.LayerNorm(512),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(512, 256),
+            nn.LayerNorm(256),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(256, 1)
+        )
+
+        # 優勢網絡
+        self.fc_adv = nn.Sequential(
+            nn.Linear(combined_input_dim, 512), # <--- 修改
+            nn.LayerNorm(512),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(512, 256),
+            nn.LayerNorm(256),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(256, num_actions)
+        )
+
+        self.ffn = GLUFeedForward(
+            dim = hidden_size*2,
+            mult = 4,
+            dropout = dropout
+        )
+
+    def forward(self, src: Tensor, time_tau: Tensor) -> tuple[Tensor, Tensor, Tensor]:
+        # --- 數據預處理 (共享) ---
+        # 歸一化市場數據 [B, L, D] -> [B, D, L] -> [B, D, L] -> [B, L, D]
+
+        market_data_normalized = src.transpose(1, 2)
+        market_data_normalized = self.dean(market_data_normalized)
+        market_data_normalized = market_data_normalized.transpose(1, 2)
+        market_emb = self.market_embedding(market_data_normalized) # [B, L, hidden_size]
+
+
+        # 時間資訊處理
+        time_emb = self.time_embedding(time_tau)
+        time_emb_proj = self.time_emb_projection(time_emb) # [B, L, hidden_size]
+        
+
+        # 融合特徵        
+        processed_emb = self.ffn(torch.cat([market_emb, time_emb_proj], dim=-1))
+
+
+        # Model-Free Mixer
+        mf_seq_out, mf_aux_loss = self.mf_mixer(processed_emb)
+        mf_features = mf_seq_out.view(mf_seq_out.size(0), -1) # [B, L * hidden_size]
+
+
+
+
+
+
+        # --- 路徑二：Model-Based (想像) ---
+        imag_emb = self.imagination_embedding(market_data_normalized)
+
+        imag_seq_out, imag_aux_loss = self.imagination_mixer(imag_emb) # [B, L, hidden_size]
+        
+
+        # 只取序列的最後一個時間點的輸出來預測未來
+        imag_last_step = imag_seq_out[:, -1, :] # [B, hidden_size]
+        imagined_features = self.imagination_head(imag_last_step) # [B, num_imagined_features]
+        print(imag_last_step.size())
+        print('*'*120)
+        print(imagined_features.size())
+        print('*'*120)
+        time.sleep(100)
+
+        # --- 融合 (Fusion) ---
+        combined_features = torch.cat([mf_features, imagined_features], dim=1) # [B, (L*hidden) + num_imagined]
+
+        # --- Dueling 決策 ---
+        value = self.fc_val(combined_features)      # [B, 1]
+        advantage = self.fc_adv(combined_features)  # [B, num_actions]
+
+        q_values = value + (advantage - advantage.mean(dim=1, keepdim=True))
+        
+        
+        
+        # 返回 Q-values, Mamba 輔助損失, 以及 "想像的" 預測值 (用於計算想像損失)
+        return q_values, None, imagined_features
