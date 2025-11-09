@@ -562,10 +562,7 @@ class TrainingEnv(BaseTradingEnv):
         return self._state.encode()
 
     def getModelBase_feature(self):
-        print(self._state._offset)
         atr_Volatility = self._state._prices.atr_Volatility[self._state._offset]
-        print(atr_Volatility)
-        print("*"*120)
         return atr_Volatility
     
 class ProductionEnv(BaseTradingEnv):

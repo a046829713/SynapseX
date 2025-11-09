@@ -298,7 +298,13 @@ class LearnerProcess(mp.Process):
             batch_exp = self.buffer.sample(self.config.BATCH_SIZE)
 
             loss_v, td_errors = common.calc_loss(
-                batch_exp, self.net, self.tgt_net.target_model, self.config.GAMMA ** self.config.REWARD_STEPS, device=self.config.DEVICE)
+                batch=batch_exp, 
+                net=self.net, 
+                tgt_net=self.tgt_net.target_model, 
+                gamma=self.config.GAMMA ** self.config.REWARD_STEPS, 
+                device=self.config.DEVICE,
+                imag_loss_weight=0.1 # 這是想像損失的權重，您可以將其加入 RLConfig
+            )
 
             loss_v.backward()
             self.optimizer.step()

@@ -136,7 +136,8 @@ def unpack_batch(batch):
         last_time_states,
         infos,
         last_infos,
-    ) = ([], [], [], [], [], [], [], [], [])
+        model_base_features,
+    ) = ([], [], [], [], [], [], [], [], [], [])
 
     for exp in batch:
         first_state, first_time_state = exp.state
@@ -148,6 +149,7 @@ def unpack_batch(batch):
         dones.append(exp.last_state is None)
         infos.append(exp.info)
         last_infos.append(exp.last_info)
+        model_base_features.append(exp.modelBase_feature)
 
         if exp.last_state is None:
             # the result will be masked anyway
@@ -169,6 +171,7 @@ def unpack_batch(batch):
         np.array(last_time_states, copy=False),
         np.array(infos, copy=False),
         np.array(last_infos, copy=False),
+        np.array(model_base_features, dtype=np.float32),
     )
 
 
@@ -182,7 +185,14 @@ def turn_to_tensor(infos, device):
     return output_tensor
 
 
-def calc_loss(batch, net, tgt_net, gamma, moe_loss_coeff=0.01, device="cpu"):
+def calc_loss(
+    batch,
+    net,
+    tgt_net,
+    gamma,
+    imag_loss_weight=0.1,
+    moe_loss_coeff=0.01,
+    device="cpu"):
     """
     計算 DQN 的 MSE loss，並同時計算每筆 transition 的 TD‐error，並整合 MoE 的輔助損失 (auxiliary loss)。
     """
@@ -196,6 +206,7 @@ def calc_loss(batch, net, tgt_net, gamma, moe_loss_coeff=0.01, device="cpu"):
         last_time_states,
         _,
         _,
+        imagined_ground_truth, # 從 unpack_batch 獲取
     ) = unpack_batch(batch)
 
     first_states_v = torch.tensor(first_states, device=device, dtype=torch.float32)
@@ -211,10 +222,18 @@ def calc_loss(batch, net, tgt_net, gamma, moe_loss_coeff=0.01, device="cpu"):
     actions_v = torch.tensor(actions, device=device, dtype=torch.long)
     rewards_v = torch.tensor(rewards, device=device, dtype=torch.float32)
     done_mask = torch.tensor(dones, device=device, dtype=torch.bool)
+    
+    # 將想像的 "真實值" 也轉為 Tensor
+    imagined_ground_truth_v = torch.tensor(imagined_ground_truth, device=device, dtype=torch.float32)
+    # 如果它的維度是 (B,)，轉成 (B, 1) 以匹配模型輸出
+    if imagined_ground_truth_v.dim() == 1:
+        imagined_ground_truth_v = imagined_ground_truth_v.unsqueeze(-1)
+
+
 
     # --- 線上網路 (net) ---
-    # 1. 從 MoE 模型獲取 Q 值和輔助損失
-    q_values, aux_loss = net(first_states_v, first_time_states_v)
+    # 1. 從 I2A 模型獲取 Q 值、輔助損失和 "想像的預測值"
+    q_values, aux_loss, imagined_preds = net(first_states_v, first_time_states_v)
 
     # 2. 獲取實際採取動作的 Q 值: Q(s,a)
     state_action_values = q_values.gather(1, actions_v.unsqueeze(-1)).squeeze(-1)
@@ -222,11 +241,12 @@ def calc_loss(batch, net, tgt_net, gamma, moe_loss_coeff=0.01, device="cpu"):
     # ---目標網路 (tgt_net) & Double DQN ---
     with torch.no_grad():
         # 3. 使用線上網路 `net` 選擇下一狀態的最佳動作 a_max
-        next_q_values, _ = net(last_states_v, last_time_states_v)
+        #    注意：目標網路也返回3個值，但我們在計算目標Q值時只關心q_values
+        next_q_values, _, _ = net(last_states_v, last_time_states_v)
         next_actions = next_q_values.max(1)[1]
 
         # 4. 使用目標網路 `tgt_net` 評估 a_max 的 Q 值: Q_target(s', a_max)
-        next_state_q_values, _ = tgt_net(last_states_v, last_time_states_v)
+        next_state_q_values, _, _ = tgt_net(last_states_v, last_time_states_v)
         next_state_values = next_state_q_values.gather(
             1, next_actions.unsqueeze(-1)
         ).squeeze(-1)
@@ -237,24 +257,19 @@ def calc_loss(batch, net, tgt_net, gamma, moe_loss_coeff=0.01, device="cpu"):
         # 6. 計算 TD 目標 (y)
         q_targets = rewards_v + gamma * next_state_values
 
-    # [修改] 手動計算加權的 MSE Loss，取代 nn.MSELoss()
-    # 1. 計算每個樣本的平方誤差
-    # squared_errors = (state_action_values - q_targets).pow(2)
+    # --- 計算各項損失 ---
+    # 1. RL 損失 (DQN Loss)
+    rl_loss = nn.MSELoss()(state_action_values, q_targets)
 
-    # 2. 將平方誤差乘以其對應的重要性抽樣權重
-    # weighted_squared_errors = weights_v * squared_errors
+    # 2. 想像損失 (Imagination Loss)
+    imagination_loss = nn.MSELoss()(imagined_preds, imagined_ground_truth_v)
 
-    # 3. 計算加權損失的平均值作為最終的 DQN Loss
-    # dqn_loss = weighted_squared_errors.mean()
-
-    dqn_loss = nn.MSELoss()(state_action_values, q_targets)
-    # 8. 加上 MoE 的輔助損失
+    # 3. 總損失
+    total_loss = rl_loss + imag_loss_weight * imagination_loss
     if aux_loss is not None:
-        total_loss = dqn_loss + moe_loss_coeff * aux_loss
-    else:
-        total_loss = dqn_loss
+        total_loss += moe_loss_coeff * aux_loss
 
-    # 9. 計算 TD-error (用於 PER) this number could be negative.
+    # 計算 TD-error (用於 PER)
     with torch.no_grad():
         td_errors = torch.abs(q_targets - state_action_values).detach().cpu().numpy()
 
