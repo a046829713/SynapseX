@@ -48,7 +48,7 @@ class RLConfig:
     LEARNING_RATE: float = 0.000025
     LAMBDA_L2: float = 0.0
     BATCH_SIZE: int = 32
-    REPLAY_SIZE: int = 500000
+    REPLAY_SIZE: int = 800000
     EACH_REPLAY_SIZE: int = 50_000
     REPLAY_INITIAL: int = 1000
     EPSILON_START: float = 0.9
