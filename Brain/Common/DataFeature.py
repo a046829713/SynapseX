@@ -8,6 +8,7 @@ from Brain.Common.Error import InvalidModeError
 from datetime import timedelta
 
 
+
 Prices = collections.namedtuple(
     "Prices",
     field_names=[
@@ -38,6 +39,7 @@ Prices = collections.namedtuple(
         "dayofweek_cos",
         "week_sin",
         "week_cos",
+        "atr_Volatility"
     ],
 )
 
@@ -78,13 +80,46 @@ class OriginalDataFrature:
             self.df = self.cleanData(df)
 
             self.df = self.add_time_feature(self.df)
-            print(self.df)
-            time.sleep(100)
+            self.df = self.add_ATR(self.df)
+
             # 使用 PyTorch Tensor 的方法
             out_dict.update({symbolName: self.load_relative()})
 
         return out_dict
     
+    def add_ATR(self, df: pd.DataFrame, period: int = 14):
+        """
+            becasue i want use in feature, so i need to let agent know the state,not be a strategy trigger.
+
+        Args:
+            df (pd.DataFrame): _description_
+            period (int, optional): _description_. Defaults to 5.
+
+        Returns:
+            _type_: _description_
+        """
+        prev_close = df['Close'].shift(1)
+
+        # 計算 True Range (TR) 的三個組成部分
+        tr1 = df['High'] - df['Low']
+        tr2 = (df['High'] - prev_close).abs()
+        tr3 = (df['Low'] - prev_close).abs()
+
+        # 取得真實範圍 (True Range, TR) - 取三者最大值
+        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+
+        
+        # 計算 ATR (使用 Wilder's Smoothing)
+        atr_col_name = f'ATR_{period}'
+        
+        # ewm(alpha=1/period, adjust=False) 是 pandas 中
+        # 實現 Wilder's Smoothing (RMA) 的標準方法。
+        df[atr_col_name] = tr.ewm(alpha=1/period, adjust=False).mean()
+        df[atr_col_name] = df[atr_col_name].shift(-1)
+        df[atr_col_name] = np.log1p(df[atr_col_name])
+
+        return df
+
     def add_time_feature(self, df: pd.DataFrame, first_date=None):
         datetime_index = pd.to_datetime(df.index)
 
@@ -156,11 +191,13 @@ class OriginalDataFrature:
                 "dayofweek_cos",
                 "week_sin",
                 "week_cos",
+                "atr_Volatility",
             ]
 
         """
 
         np_data = np.array(self.df.values, dtype=np.float32)
+
 
         if if_log:
             # 經過我的評估認為log 已經可以極大化避免極端值
@@ -197,7 +234,8 @@ class OriginalDataFrature:
                 dayofweek_cos=np_data[:, 20],
                 week_sin=np_data[:, 21],
                 week_cos=np_data[:, 22],
-                
+                atr_Volatility=np_data[:, 23],
+
             )
 
 

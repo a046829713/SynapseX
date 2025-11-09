@@ -727,40 +727,6 @@ class I2A_MambaDuelingModel(nn.Module):
         self.market_embedding = nn.Linear(d_model, hidden_size)        
         self.time_emb_projection = nn.Linear(time_features_out, hidden_size)
 
-
-
-
-
-        # 狀態值網絡
-        self.fc_val = nn.Sequential(
-            nn.Linear(seq_dim * hidden_size, 512),
-            nn.LayerNorm(512),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(512, 256),
-            nn.LayerNorm(256),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(256, 1)
-        )
-
-        # 優勢網絡
-        self.fc_adv = nn.Sequential(
-            nn.Linear(seq_dim * hidden_size, 512),
-            nn.LayerNorm(512),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(512, 256),
-            nn.LayerNorm(256),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(256, num_actions)
-        )
-
-
-
-
-
         self.mf_mixer = MixerModel( 
             d_model= hidden_size*2,
             n_layer=nlayers,
@@ -792,7 +758,9 @@ class I2A_MambaDuelingModel(nn.Module):
 
         # === 融合決策層 (Dueling Heads) ===
         # <--- 修改：輸入維度變為 (Model-Free 特徵 + 想像路徑特徵)
-        combined_input_dim = (seq_dim * hidden_size) + num_imagined_features
+        combined_input_dim = (seq_dim * hidden_size *2 ) + num_imagined_features
+
+
 
         # 狀態值網絡
         self.fc_val = nn.Sequential(
@@ -863,11 +831,6 @@ class I2A_MambaDuelingModel(nn.Module):
         # 只取序列的最後一個時間點的輸出來預測未來
         imag_last_step = imag_seq_out[:, -1, :] # [B, hidden_size]
         imagined_features = self.imagination_head(imag_last_step) # [B, num_imagined_features]
-        print(imag_last_step.size())
-        print('*'*120)
-        print(imagined_features.size())
-        print('*'*120)
-        time.sleep(100)
 
         # --- 融合 (Fusion) ---
         combined_features = torch.cat([mf_features, imagined_features], dim=1) # [B, (L*hidden) + num_imagined]
@@ -878,7 +841,7 @@ class I2A_MambaDuelingModel(nn.Module):
 
         q_values = value + (advantage - advantage.mean(dim=1, keepdim=True))
         
-        
+
         
         # 返回 Q-values, Mamba 輔助損失, 以及 "想像的" 預測值 (用於計算想像損失)
         return q_values, None, imagined_features

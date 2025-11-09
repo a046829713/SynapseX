@@ -4,7 +4,7 @@ import gymnasium as gym
 import numpy as np
 import collections
 from typing import Optional
-from Brain.Common.DataFeature import OriginalDataFrature
+from Brain.Common.DataFeature import OriginalDataFrature,Prices
 import pandas as pd
 from abc import ABC, abstractmethod
 from Brain.Common.env_components import State_time_step_template
@@ -38,7 +38,7 @@ class State_time_step(State_time_step_template):
         self.reward_help = RewardHelp()
         self.win_payoff_weight = win_payoff_weight
 
-    def reset(self, prices, offset):
+    def reset(self, prices:Prices, offset):
         assert offset >= self.bars_count - 1
         self.have_position = False
         self.open_price = 0.0
@@ -562,7 +562,9 @@ class TrainingEnv(BaseTradingEnv):
         self._state.reset(prices, offset)
         return self._state.encode()
 
-
+    def getModelBase(self):
+        return self.p
+    
 class ProductionEnv(BaseTradingEnv):
     """
     用於生產（或推論）的環境。
