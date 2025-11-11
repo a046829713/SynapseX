@@ -753,7 +753,7 @@ class I2A_MambaDuelingModel(nn.Module):
             nn.Linear(hidden_size, hidden_size // 2),
             nn.ReLU(),
             nn.Linear(hidden_size // 2, num_imagined_features),
-            nn.Tanh() # 假設預測的特徵被歸一化到 -1~1 之間
+            nn.Sigmoid() # 假設預測的特徵被歸一化到 0~1 之間
         )
 
         # === 融合決策層 (Dueling Heads) ===
@@ -831,6 +831,7 @@ class I2A_MambaDuelingModel(nn.Module):
         # 只取序列的最後一個時間點的輸出來預測未來
         imag_last_step = imag_seq_out[:, -1, :] # [B, hidden_size]
         imagined_features = self.imagination_head(imag_last_step) # [B, num_imagined_features]
+        
 
         # --- 融合 (Fusion) ---
         combined_features = torch.cat([mf_features, imagined_features], dim=1) # [B, (L*hidden) + num_imagined]

@@ -127,7 +127,7 @@ class RL_evaluate:
         data_input_size = engine_info["data_input_size"]
 
         ssm_cfg = {"expand": 4}
-        net = model.mambaDuelingModel(
+        net = model.I2A_MambaDuelingModel(
             d_model=data_input_size,
             nlayers=6,
             num_actions=action_space_n,
@@ -162,7 +162,7 @@ class RL_evaluate:
 
         with torch.no_grad():
             while not done:
-                action, _ = self.agent(state, time_state)
+                action, _,_ = self.agent(state, time_state)
                 action_idx = action.max(dim=1)[1].item()
                 record_orders.append(self._parser_order(action_idx))
                 _state, reward, done, info = self.evaluate_env.step(action_idx)

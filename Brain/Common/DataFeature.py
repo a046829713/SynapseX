@@ -64,6 +64,7 @@ class OriginalDataFrature:
         """
         out_dict = {}
         self.df = self.add_time_feature(df, first_date)
+        self.df = self.add_ATR(self.df)
         out_dict.update({symbol: self.load_relative()})
         return out_dict
 
@@ -117,7 +118,7 @@ class OriginalDataFrature:
         df[atr_col_name] = tr.ewm(alpha=1/period, adjust=False).mean()
         df[atr_col_name] = df[atr_col_name].shift(-1)
         df[atr_col_name] = np.log1p(df[atr_col_name])
-
+        df = df.dropna()
         return df
 
     def add_time_feature(self, df: pd.DataFrame, first_date=None):
