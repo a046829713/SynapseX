@@ -119,6 +119,7 @@ class OriginalDataFrature:
         df[atr_col_name] = df[atr_col_name].shift(-1)
         df[atr_col_name] = np.log1p(df[atr_col_name])
         df = df.dropna()
+
         return df
 
     def add_time_feature(self, df: pd.DataFrame, first_date=None):

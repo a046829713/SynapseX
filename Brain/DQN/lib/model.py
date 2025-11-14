@@ -753,7 +753,7 @@ class I2A_MambaDuelingModel(nn.Module):
             nn.Linear(hidden_size, hidden_size // 2),
             nn.ReLU(),
             nn.Linear(hidden_size // 2, num_imagined_features),
-            nn.Sigmoid() # 假設預測的特徵被歸一化到 0~1 之間
+            nn.ReLU() # 0 - MAX
         )
 
         # === 融合決策層 (Dueling Heads) ===
