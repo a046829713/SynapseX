@@ -40,7 +40,7 @@ class RLConfig:
     SAVES_TAG: str = "saves"
     BARS_COUNT: int = 300
     GAMMA: float = 0.99
-    REWARD_STEPS: int = 1
+    REWARD_STEPS: int = 2
     MODEL_DEFAULT_COMMISSION_PERC_TRAING: float = 0.0045
 
     MODEL_DEFAULT_COMMISSION_PERC_TEST: float = 0.0005
