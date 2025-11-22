@@ -215,13 +215,16 @@ def example_simple_evaluate():
                                     Meta_path=r'EIIE\Meta\policy_EIIE.pt')
 
 
+
+
 # from Database.BackUp import BasePreparator
 
 
 # BasePreparator().import_all_tables()
 
 # getAllDailyData()
-example_reload_all_data(symbol_type="FUTURES",time_type = '1m')
+# example_reload_all_data(symbol_type="FUTURES",time_type = '1m')
 # example_get_symboldata()
 # checksymbol(symbol='TUSDUSDT')
 # example_get_target_symbol(filter_type='MTM')
+get_symbol_number()

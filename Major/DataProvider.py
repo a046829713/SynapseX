@@ -283,7 +283,7 @@ class DataProvider:
             out_put[symbol_name] = self.SQL.get_db_data(f"select * from `{tb_symbol_name}` limit 1")[0][0]
 
         return out_put
-
+    
 
 
 class AsyncDataProvider:
