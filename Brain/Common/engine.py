@@ -83,6 +83,7 @@ class EngineBase:
 
                 self.strategys = []
                 for symbol in targetsymbols:
+                    
                     self.strategys.append(
                         self.create_strategy(Meta_model_path, symbol=symbol)
                     )
@@ -94,11 +95,14 @@ class EngineBase:
 
                 self.strategys = []
                 for symbol_file_name in targetsymbols:
-                    self.strategys.append(
-                        self.create_strategy_from_csv(
-                            Meta_model_path, symbol_file_name=symbol_file_name
-                        )
+                    _strategy = self.create_strategy_from_csv(
+                        Meta_model_path, symbol_file_name=symbol_file_name
                     )
+
+                    if _strategy is not None:
+                        self.strategys.append(_strategy)
+
+                    
         else:
             raise ValueError("STRATEGY_KEYWORD didn't match,please check")
 
@@ -118,6 +122,9 @@ class EngineBase:
         info, feature_len, data_len, strategytype = self._parse_model_path(model_path)
         symbol = symbol_file_name.split("-")[0]
 
+        if symbol not in self.first_date_map.keys():
+            return 
+        
         # 建立 Strategy 實例
         strategy = Strategy(
             strategytype=strategytype,

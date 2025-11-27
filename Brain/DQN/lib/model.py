@@ -758,7 +758,7 @@ class I2A_MambaDuelingModel(nn.Module):
 
         # === 融合決策層 (Dueling Heads) ===
         # <--- 修改：輸入維度變為 (Model-Free 特徵 + 想像路徑特徵)
-        combined_input_dim = (seq_dim * hidden_size *2 ) + num_imagined_features
+        combined_input_dim = hidden_size *2 + num_imagined_features
 
 
 
@@ -815,11 +815,7 @@ class I2A_MambaDuelingModel(nn.Module):
 
         # Model-Free Mixer
         mf_seq_out, mf_aux_loss = self.mf_mixer(processed_emb)
-        mf_features = mf_seq_out.view(mf_seq_out.size(0), -1) # [B, L * hidden_size]
-
-
-
-
+        mf_features = mf_seq_out[:, -1, :]
 
 
         # --- 路徑二：Model-Based (想像) ---

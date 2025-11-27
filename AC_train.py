@@ -390,7 +390,7 @@ class ActorProcess(mp.Process):
 
             n_step_buffer = deque(maxlen=self.config.REWARD_STEPS)
             done = False
-            total_reward = 0.0
+            episode_accumulated_reward = 0.0
             episode_steps = 0
 
             # 3. 執行一個完整的 episode
@@ -403,7 +403,8 @@ class ActorProcess(mp.Process):
 
                 # 3.3. 在環境中執行動作
                 next_state, reward, done, info = self.env.step(action)
-                total_reward += reward
+                
+                episode_accumulated_reward += reward
                 episode_steps += 1
                 n_step_buffer.append((state, action, reward, modelBase_feature))
 
@@ -428,9 +429,9 @@ class ActorProcess(mp.Process):
                 
                 # 3.5. 如果 episode 結束，處理剩餘的 n-step transitions
                 if done:
-                    try:
+                    try:                        
                         self.metrics_queue.put_nowait(
-                            ("episode_done", self.actor_id, total_reward, episode_steps)
+                            ("episode_done", self.actor_id, episode_accumulated_reward, episode_steps)
                         )
                     except Full:
                         pass # 如果佇列滿了，就跳過

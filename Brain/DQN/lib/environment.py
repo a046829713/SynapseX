@@ -314,7 +314,7 @@ class State_time_step(State_time_step_template):
         wrongTrade_reward = self.reward_function.wrongTrade(
              self.have_position, action=action
         )
-
+        
         reward += wrongTrade_reward 
         
         # 3. 預先計算「動作後」的持倉狀態 (Virtual Next State)
