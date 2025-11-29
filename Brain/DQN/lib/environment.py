@@ -269,6 +269,18 @@ class State_time_step(State_time_step_template):
         self.reward_help = RewardHelp()
         self.reward_function = Reward()
         self.dsr_calc = DSR_Calculator(window=dsr_window, risk_free_rate=0.0)
+        self.current_step = 0
+        self.annealing_steps = 500000
+        self.max_commission = commission_perc
+
+
+    def _get_current_commission(self):
+        """計算當前步數對應的手續費"""
+        if self.current_step >= self.annealing_steps:
+            return self.max_commission
+        
+        # 線性增加 (Linear Annealing)
+        return self.max_commission * (self.current_step / self.annealing_steps)
 
     def reset(self, prices:Prices, offset):
         assert offset >= self.bars_count - 1
@@ -301,6 +313,7 @@ class State_time_step(State_time_step_template):
             _type_: _description_
         """
         assert isinstance(action, Actions)
+        self.current_step += 1
         
         reward = 0.0 # 總獎勵
         done = False
@@ -346,9 +359,9 @@ class State_time_step(State_time_step_template):
         
         # 5. 計算交易成本
         cost = self.reward_help.CaculateCost(
-            havePostion=self.have_position, action=action, cost=self.commission_perc
+            havePostion=self.have_position, action=action, cost=self._get_current_commission()
         )
-        
+
         self.cost_sum += cost
         self.closecash += closecash_diff
 
