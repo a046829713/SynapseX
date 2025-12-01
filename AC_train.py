@@ -473,7 +473,7 @@ class SymbolProcess(mp.Process):
 
 
 # --- 主執行流程 (重大修改) ---
-NUM_ACTORS = 1
+NUM_ACTORS = 4
 
 
 def main():
