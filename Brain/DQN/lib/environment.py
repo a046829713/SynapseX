@@ -272,6 +272,7 @@ class State_time_step(State_time_step_template):
         self.current_step = 0
         self.annealing_steps = 500000
         self.max_commission = commission_perc
+        self.max_default_slippage = default_slippage
 
 
     def _get_current_commission(self):
@@ -282,6 +283,14 @@ class State_time_step(State_time_step_template):
         # 線性增加 (Linear Annealing)
         return self.max_commission * (self.current_step / self.annealing_steps)
 
+    def _get_current_default_slippage(self):
+        """計算當前步數對應的滑價"""
+        if self.current_step >= self.annealing_steps:
+            return self.max_default_slippage
+        
+        # 線性增加 (Linear Annealing)
+        return self.max_default_slippage * (self.current_step / self.annealing_steps)
+    
     def reset(self, prices:Prices, offset):
         assert offset >= self.bars_count - 1
 
@@ -344,7 +353,7 @@ class State_time_step(State_time_step_template):
             self.have_position,
             action=action,
             openPrice=self.open_price,
-            default_slippage=self.default_slippage,
+            default_slippage=self._get_current_default_slippage(),
             closePrcie=close,
         )
 
@@ -353,7 +362,7 @@ class State_time_step(State_time_step_template):
             self.open_price,
             self.have_position,
             action=action,
-            default_slippage=self.default_slippage,
+            default_slippage=self._get_current_default_slippage(),
             closePrcie=close,
         )
         

@@ -76,6 +76,19 @@ class DSR_Calculator:
         # 處理無風險利率 (r_t' = r_t - R_f)
         r_t_adj = r_t - self.risk_free_rate
         
+        # --- Warm-up 處理 ---
+        # 在 DSR 的計算初期 (例如前 100 步)，A 和 B 的估計非常不準確，
+        # DSR 獎勵可能會是極大的 NaN 或 Inf，導致網路爆炸。
+        # 我們需要在 warm-up 期間回傳一個穩定的獎勵值。
+        if self.t < self.window:
+             # 在 warm-up 期間，返回調整後的報酬率作為獎勵
+             # 這樣 Agent 至少知道要往正報酬的方向走
+
+            # 2. 更新 A 和 B (為 t 時刻做準備)
+            # 注意：我們使用 r_t_adj 來更新，這樣 A 和 B 會變成超額報酬的統計量
+            self._update_moments(r_t_adj)
+            return r_t_adj
+        
         # 1. 計算 DSR 獎勵 (使用 t-1 時刻的統計數據 A 和 B)
         # 論文中的公式 (式 13)： R_D(t) = (B_{t-1} * d/dA - A_{t-1}/2 * d/dB) * dr_t
         # 簡化後的實作公式：
@@ -97,22 +110,11 @@ class DSR_Calculator:
             
             reward = (self.eta / (1.0 - self.eta)) * (term_1 - term_2) # 這裡的 eta  scaling 是為了匹配 EMA 的特性
             
-        # 2. 更新 A 和 B (為 t 時刻做準備)
-        # 注意：我們使用 r_t_adj 來更新，這樣 A 和 B 會變成超額報酬的統計量
+
+        # 更新統計量 (為下一步做準備)
         self._update_moments(r_t_adj)
-        
-        # --- Warm-up 處理 ---
-        # 在 DSR 的計算初期 (例如前 100 步)，A 和 B 的估計非常不準確，
-        # DSR 獎勵可能會是極大的 NaN 或 Inf，導致網路爆炸。
-        # 我們需要在 warm-up 期間回傳一個穩定的獎勵值。
-        if self.t < self.window:
-             # 在 warm-up 期間，返回調整後的報酬率作為獎勵
-             # 這樣 Agent 至少知道要往正報酬的方向走
-            return r_t_adj
-        else:
-             # 在 warm-up 之後，才返回 DSR 獎勵
-             # 進行 clip 防止獎勵爆炸 (可選但推薦)
-            return np.clip(reward, -1.0, 1.0)
+
+        return np.clip(reward, -1.0, 1.0)
         
 class RewardHelp:
     def __init__(self):
@@ -154,7 +156,7 @@ class RewardHelp:
             trade_bar += 1
         if havePostion and action == Actions.Sell:
             trade_bar = 0
-        if not (havePostion) and Actions.Buy:
+        if not (havePostion) and action == Actions.Buy:
             trade_bar = 1
 
         return trade_bar
@@ -189,7 +191,7 @@ class RewardHelp:
     ) -> float:
         opencash_diff = 0.0
 
-        if havePostion and (action == Actions.Buy or Actions == Actions.Hold):
+        if havePostion and (action == Actions.Buy or action == Actions.Hold):
             opencash_diff = (closePrice - OpenPrice) / OpenPrice
 
         return opencash_diff
