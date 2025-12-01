@@ -110,6 +110,16 @@ class DSR_Calculator:
             
             reward = (self.eta / (1.0 - self.eta)) * (term_1 - term_2) # 這裡的 eta  scaling 是為了匹配 EMA 的特性
             
+        # ★修改點 2: 防躺平機制 (Anti-Slacker Logic) ★
+        # 如果歷史績效是負的 (A < 0)，且當前這一步幾乎沒賺錢 (r_t 接近 0)
+        # 數學公式會給出正獎勵 (0 - 負數 = 正數)，我們要手動修正這個 Bug。
+        if self.A < -1e-5 and abs(r_t_adj) < 1e-6:
+            # 強制將獎勵歸零，甚至給予極小的懲罰
+            # 告訴 Agent: "雖然你沒賠錢，但因為你之前賠太慘了，現在不動是不給分的"
+            reward = 0.0 
+            
+            # 或者更激進一點，給予回撤期間的時間懲罰：
+            # reward = -0.0001
 
         # 更新統計量 (為下一步做準備)
         self._update_moments(r_t_adj)

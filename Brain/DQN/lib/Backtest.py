@@ -164,6 +164,10 @@ class RL_evaluate:
             while not done:
                 action, _,_ = self.agent(state, time_state)
                 action_idx = action.max(dim=1)[1].item()
+                if action_idx != 0:
+                    print(action_idx)
+                    print("*"*120)
+                    time.sleep(100)
                 record_orders.append(self._parser_order(action_idx))
                 _state, reward, done, info = self.evaluate_env.step(action_idx)
                 # info = common.turn_to_tensor([info],self.device)

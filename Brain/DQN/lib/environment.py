@@ -408,8 +408,16 @@ class State_time_step(State_time_step_template):
             portfolio_return_rt = (current_equity / previous_equity) - 1.0
             
         # 從 DSR 計算器獲取獎勵
-        dsr_reward = self.dsr_calc.step(portfolio_return_rt)        
+        dsr_reward = self.dsr_calc.step(portfolio_return_rt)
         reward += dsr_reward # 將 DSR 獎勵作為主要獎勵
+
+
+        # ★修改點 3: 額外的生存懲罰 (Optional) ★
+        # 如果權益數小於 1 (處於虧損狀態)，且動作是 Hold (Action=0 或類似定義)，給予極小的額外扣分
+        # 這會給 Agent 壓力：你現在是賠錢的，光坐著等是不行的，要嘛止損，要嘛找機會賺回來
+        # 注意：這個值要非常小，避免干擾 DSR 的梯度
+        # if current_equity < 0.98 and abs(portfolio_return_rt) < 1e-6:
+        #     reward -= 0.00005
 
         # --- 11. 更新步數與結束判斷 ---
         self._offset += 1
