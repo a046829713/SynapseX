@@ -125,7 +125,135 @@ class DSR_Calculator:
         self._update_moments(r_t_adj)
 
         return np.clip(reward, -1.0, 1.0)
+
+
+class RelativeDSR_Calculator:
+    """
+    計算相對微分夏普比率 (Relative Differential Sharpe Ratio)
+    
+    這個版本的 DSR 不是優化絕對回報，而是優化「超額回報」(Excess Return)。
+    這相當於在優化 Information Ratio (資訊比率)。
+    
+    解決問題：
+        在牛市中，傳統 DSR 容易收斂成死多頭 (Buy and Hold)。
+        相對 DSR 強迫模型只有在 "跑贏大盤" 時才能獲得正獎勵。
+
+
+        Active Return (主動回報) = 定義： 策略回報與基準（Benchmark）回報之間的差額。
+        Alpha 收益 :代表與市場無關的超額收益
+
+        variance (變異數): 是統計學中用來衡量資料**「離散程度」 (Dispersion)** 或 「波動程度」 的核心指標。
+        math formula:
+            Var(X) = E[(X - \mu)^2]
+            Var(X) = E[X^2] - (E[X])^2
+
+            
+        Sharpe Ratio (或 Information Ratio)
         
+
+    """
+    def __init__(self, window: int, epsilon: float = 1e-9):
+        """
+        初始化計算器
+        
+        Args:
+            window (int): 用於計算 EMA 的窗口大小 (例如 100, 250)。
+                          eta = 1 / window.
+            epsilon (float): 防止除以零的極小值。
+        """
+        self.eta = 1.0 / window  # EMA 的學習率
+        self.epsilon = epsilon
+        
+        
+        # A_t: 超額報酬率 (r_strat - r_bench) 的指數移動平均 (預期 Alpha) 歷史平均超額回報 (Expected Alpha)。
+        self.A = 0.0
+        # B_t: 超額報酬率平方 (r_strat - r_bench)^2 的指數移動平均 超額回報的平方期望。
+        self.B = 0.0
+        
+        self.t = 0 # 記錄時間步，用於 "warm-up"
+        self.window = window
+
+    def reset(self):
+        """重置內部狀態"""
+        self.A = 0.0
+        self.B = 0.0
+        self.t = 0
+        
+    def _update_moments(self, r_net: float):
+        """
+        使用當前的淨報酬率 r_net 來更新 A 和 B
+            A_t = A_{t-1} + eta * (r_net - A_{t-1})
+            B_t = B_{t-1} + eta * (r_net^2 - B_{t-1})
+        """
+        self.A += self.eta * (r_net - self.A)
+        self.B += self.eta * (r_net**2 - self.B)
+
+    def step(self, strategy_r_t: float, benchmark_r_t: float) -> float:
+        """
+        計算單步相對 DSR 獎勵。
+        
+        Args:
+            strategy_r_t (float): 策略的當前收益率。
+            benchmark_r_t (float): 基準 (大盤/BTC) 的當前收益率。
+                                   如果是 Buy and Hold 策略，這裡傳入的就是持有資產的漲跌幅。
+        
+        Returns:
+            float: DSR 獎勵值。
+        """
+        self.t += 1
+        
+        
+        # 計算相對於基準的超額回報 (Alpha) 如果策略只是單純持有，這個值會接近 0
+        r_net = strategy_r_t - benchmark_r_t
+        
+        # --- Warm-up 處理 ---
+        if self.t < self.window:
+            # 在 warm-up 期間，直接鼓勵跑贏大盤
+            self._update_moments(r_net)
+            return r_net
+        
+        # Var = E[x^2] - (E[x])^2 計算波動率 (Tracking Error 的近似值)
+        variance = self.B - self.A**2
+        
+        # 數值穩定性處理：確保變異數不為負且不為零
+        if variance < self.epsilon:
+            std_dev = self.epsilon
+        else:
+            std_dev = np.sqrt(variance)
+            
+        # 計算前一時刻的 Information Ratio (類似 Sharpe，但分子是 Alpha)
+        # SR_{t-1} = A_{t-1} / sigma_{t-1}
+        sharpe_t_minus_1 = self.A / std_dev
+        
+        # --- DSR 公式計算 ---
+        # 這裡我們計算 Reward 對 Sharp Ratio 的梯度近似
+        # Term 1: 獎勵「當前超額回報」高於「歷史平均超額回報」的部分
+        term_1 = (r_net - self.A) / std_dev
+        
+        # Term 2: 懲罰波動性增加 (風險調整)
+        term_2 = (sharpe_t_minus_1 * (r_net**2 - self.B)) / (2 * (std_dev**2 + self.epsilon))
+        
+        # 組合 DSR
+        dsr_reward = term_1 - term_2
+        
+        # 加入 eta scaling (根據原始論文建議，雖然很多實作會省略，但保留較符合數學定義)
+        dsr_reward *= (self.eta / (1.0 - self.eta))
+        
+        # --- 防躺平機制 (Anti-Slacker Logic) ---
+        # 這裡的意義變了：
+        # 如果歷史 Alpha (self.A) 是負的 (長期輸給大盤)，
+        # 且現在只是跟著大盤走 (r_net ~ 0)，
+        # 那必須給予懲罰，逼迫它做出改變。
+        if self.A < -1e-4 and abs(r_net) < 1e-4:
+            # 這裡給一個微小的負獎勵，比 0 更能推動改變
+            dsr_reward = -0.05 
+
+        # 更新統計量 (為下一步做準備)
+        self._update_moments(r_net)
+
+        # Clip 防止梯度爆炸，範圍可以根據你的訓練情況調整
+        return np.clip(dsr_reward, -1.0, 1.0) 
+    
 class RewardHelp:
     def __init__(self):
         pass

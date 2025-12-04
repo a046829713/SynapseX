@@ -5,7 +5,7 @@ from Brain.Common.DataFeature import OriginalDataFrature, Prices
 import pandas as pd
 from abc import ABC, abstractmethod
 from Brain.Common.env_components import State_time_step_template
-from Brain.DQN.lib.reward import Actions, Reward, RewardHelp, DSR_Calculator
+from Brain.DQN.lib.reward import Actions, Reward, RewardHelp, DSR_Calculator , RelativeDSR_Calculator
 
 
 # class State_time_step(State_time_step_template):
@@ -247,6 +247,192 @@ from Brain.DQN.lib.reward import Actions, Reward, RewardHelp, DSR_Calculator
 
 
 
+# class State_time_step(State_time_step_template):
+#     def __init__(
+#         self,
+#         bars_count,
+#         commission_perc,
+#         model_train,
+#         default_slippage,
+#         N_steps,
+#         win_payoff_weight = None,
+#         dsr_window=100,  # <-- 新增 DSR 參數
+#     ):
+#         super().__init__(
+#             bars_count=bars_count,
+#             commission_perc=commission_perc,
+#             model_train=model_train,
+#             default_slippage=default_slippage,
+#             N_steps = N_steps,          
+#         )
+        
+#         self.reward_help = RewardHelp()
+#         self.reward_function = Reward()
+#         self.dsr_calc = DSR_Calculator(window=dsr_window, risk_free_rate=0.0)
+#         self.current_step = 0
+#         self.annealing_steps = 500000
+#         self.max_commission = commission_perc
+#         self.max_default_slippage = default_slippage
+
+
+#     def _get_current_commission(self):
+#         """計算當前步數對應的手續費"""
+#         if self.current_step >= self.annealing_steps:
+#             return self.max_commission
+        
+#         # 線性增加 (Linear Annealing)
+#         return self.max_commission * (self.current_step / self.annealing_steps)
+
+#     def _get_current_default_slippage(self):
+#         """計算當前步數對應的滑價"""
+#         if self.current_step >= self.annealing_steps:
+#             return self.max_default_slippage
+        
+#         # 線性增加 (Linear Annealing)
+#         return self.max_default_slippage * (self.current_step / self.annealing_steps)
+    
+#     def reset(self, prices:Prices, offset):
+#         assert offset >= self.bars_count - 1
+
+#         self.canusecash = 1.0
+#         self.dsr_calc.reset()
+#         self.open_price = 0.0
+#         self.trade_bar = 0  # 用來紀錄持倉多久
+#         self.have_position = False
+#         self._prices = prices
+#         self._offset = offset
+#         self.game_steps = 0  # 這次遊戲進行了多久
+#         self.cost_sum = 0.0
+#         self.closecash = 0.0
+
+#         self.bar_dont_change_count = (
+#             0  # 計算K棒之間轉換過了多久 感覺下一次實驗也可以將這個部份加入
+#         )
+
+
+#     def step(self, action: Actions):
+#         """
+#             避免權重地獄 並且重新設計使用 DSR
+
+
+#         Args:
+#             action (Actions): _description_
+
+#         Returns:
+#             _type_: _description_
+#         """
+#         assert isinstance(action, Actions)
+#         self.current_step += 1
+        
+#         reward = 0.0 # 總獎勵
+#         done = False
+#         close = self._prices.close[self._offset]
+
+        
+#         # 1.獲取上一步的總淨值
+#         previous_equity = self.canusecash 
+        
+#         # 2. 計算規則懲罰
+#         wrongTrade_reward = self.reward_function.wrongTrade(
+#              self.have_position, action=action
+#         )
+        
+#         reward += wrongTrade_reward 
+        
+#         # 3. 預先計算「動作後」的持倉狀態 (Virtual Next State)
+#         # 這是為了讓本根 K 棒的損益能被正確計算
+#         next_have_position = self.reward_help.CaculatePostion(
+#             self.have_position, action=action
+#         )
+
+
+#         # 4. 計算平倉損益 (Realized P&L)
+#         # 注意：平倉是用「舊狀態」來判斷是否要結算
+#         # closecash_diff should be first update .
+#         closecash_diff = self.reward_help.CaculateCloseProfit(
+#             self.have_position,
+#             action=action,
+#             openPrice=self.open_price,
+#             default_slippage=self._get_current_default_slippage(),
+#             closePrcie=close,
+#         )
+
+#         # 更新開倉價格
+#         self.open_price = self.reward_help.CaculateOpenPrcie(
+#             self.open_price,
+#             self.have_position,
+#             action=action,
+#             default_slippage=self._get_current_default_slippage(),
+#             closePrcie=close,
+#         )
+        
+#         # 5. 計算交易成本
+#         cost = self.reward_help.CaculateCost(
+#             havePostion=self.have_position, action=action, cost=self._get_current_commission()
+#         )
+
+#         self.cost_sum += cost
+#         self.closecash += closecash_diff
+
+#         # 6. 計算浮動損益 (Unrealized P&L)
+#         # ★關鍵修正★：這裡應該基於「動作後」的狀態來計算
+#         # 如果我剛買入，next_have_position 為 True，我應該立刻看到這根 K 棒帶來的浮盈/浮虧
+#         # 但要注意 CaculateOpenProfit 的內部邏輯是否支援傳入 next_have_position
+#         opencash_diff = self.reward_help.CaculateOpenProfit(
+#             next_have_position, # ★ 改用 next_have_position
+#             action=action,
+#             closePrice=close,
+#             OpenPrice=self.open_price,
+#         )
+
+
+#         # # 7. 更新統計數據 模型需要知道目前進行了多少根K棒的交易
+#         self.trade_bar = self.reward_help.Caculatetrade_bar(
+#             self.trade_bar, self.have_position, action=action
+#         )
+
+
+#         # 8. 正式更新持倉狀態
+#         self.have_position = next_have_position
+
+
+
+#         # # 9.  計算當前的總淨值 (Equity)
+#         current_equity = 1.0 + self.cost_sum + self.closecash + opencash_diff
+#         self.canusecash = current_equity # 更新淨值
+        
+#         # --- 10. 計算 DSR 獎勵 ---
+#         if previous_equity <= 1e-8:
+#             portfolio_return_rt = 0.0
+#         else:
+#             portfolio_return_rt = (current_equity / previous_equity) - 1.0
+            
+#         # 從 DSR 計算器獲取獎勵
+#         dsr_reward = self.dsr_calc.step(portfolio_return_rt)
+#         reward += dsr_reward # 將 DSR 獎勵作為主要獎勵
+
+
+#         # ★修改點 3: 額外的生存懲罰 (Optional) ★
+#         # 如果權益數小於 1 (處於虧損狀態)，且動作是 Hold (Action=0 或類似定義)，給予極小的額外扣分
+#         # 這會給 Agent 壓力：你現在是賠錢的，光坐著等是不行的，要嘛止損，要嘛找機會賺回來
+#         # 注意：這個值要非常小，避免干擾 DSR 的梯度
+#         # if current_equity < 0.98 and abs(portfolio_return_rt) < 1e-6:
+#         #     reward -= 0.00005
+
+#         # --- 11. 更新步數與結束判斷 ---
+#         self._offset += 1
+#         self.game_steps += 1
+#         done |= self._offset >= self._prices.close.shape[0] - 1
+
+#         if self.game_steps == self.N_steps and self.model_train:
+#             done = True       
+
+
+#         return reward, done
+
+
+    
+
 class State_time_step(State_time_step_template):
     def __init__(
         self,
@@ -256,7 +442,7 @@ class State_time_step(State_time_step_template):
         default_slippage,
         N_steps,
         win_payoff_weight = None,
-        dsr_window=100,  # <-- 新增 DSR 參數
+        dsr_window=100,  # DSR 窗口
     ):
         super().__init__(
             bars_count=bars_count,
@@ -268,27 +454,23 @@ class State_time_step(State_time_step_template):
         
         self.reward_help = RewardHelp()
         self.reward_function = Reward()
-        self.dsr_calc = DSR_Calculator(window=dsr_window, risk_free_rate=0.0)
+        
+        # ★ 修改點 1: 初始化 Relative DSR 計算器 (移除 risk_free_rate)
+        self.dsr_calc = RelativeDSR_Calculator(window=dsr_window)
+        
         self.current_step = 0
         self.annealing_steps = 500000
         self.max_commission = commission_perc
         self.max_default_slippage = default_slippage
 
-
     def _get_current_commission(self):
-        """計算當前步數對應的手續費"""
         if self.current_step >= self.annealing_steps:
             return self.max_commission
-        
-        # 線性增加 (Linear Annealing)
         return self.max_commission * (self.current_step / self.annealing_steps)
 
     def _get_current_default_slippage(self):
-        """計算當前步數對應的滑價"""
         if self.current_step >= self.annealing_steps:
             return self.max_default_slippage
-        
-        # 線性增加 (Linear Annealing)
         return self.max_default_slippage * (self.current_step / self.annealing_steps)
     
     def reset(self, prices:Prices, offset):
@@ -297,58 +479,41 @@ class State_time_step(State_time_step_template):
         self.canusecash = 1.0
         self.dsr_calc.reset()
         self.open_price = 0.0
-        self.trade_bar = 0  # 用來紀錄持倉多久
+        self.trade_bar = 0 
         self.have_position = False
         self._prices = prices
         self._offset = offset
-        self.game_steps = 0  # 這次遊戲進行了多久
+        self.game_steps = 0 
         self.cost_sum = 0.0
         self.closecash = 0.0
-
-        self.bar_dont_change_count = (
-            0  # 計算K棒之間轉換過了多久 感覺下一次實驗也可以將這個部份加入
-        )
-
+        self.bar_dont_change_count = 0
 
     def step(self, action: Actions):
-        """
-            避免權重地獄 並且重新設計使用 DSR
-
-
-        Args:
-            action (Actions): _description_
-
-        Returns:
-            _type_: _description_
-        """
         assert isinstance(action, Actions)
         self.current_step += 1
         
-        reward = 0.0 # 總獎勵
+        reward = 0.0 
         done = False
-        close = self._prices.close[self._offset]
-
         
-        # 1.獲取上一步的總淨值
+        # 獲取當前價格 (P_t) 和 上一根價格 (P_{t-1})
+        close = self._prices.close[self._offset]
+        prev_close = self._prices.close[self._offset - 1] # 用於計算 Benchmark Return
+
+        # 1. 獲取上一步的總淨值
         previous_equity = self.canusecash 
         
         # 2. 計算規則懲罰
         wrongTrade_reward = self.reward_function.wrongTrade(
              self.have_position, action=action
         )
-        
         reward += wrongTrade_reward 
         
-        # 3. 預先計算「動作後」的持倉狀態 (Virtual Next State)
-        # 這是為了讓本根 K 棒的損益能被正確計算
+        # 3. 預先計算「動作後」的持倉狀態
         next_have_position = self.reward_help.CaculatePostion(
             self.have_position, action=action
         )
 
-
-        # 4. 計算平倉損益 (Realized P&L)
-        # 注意：平倉是用「舊狀態」來判斷是否要結算
-        # closecash_diff should be first update .
+        # 4. 計算平倉損益
         closecash_diff = self.reward_help.CaculateCloseProfit(
             self.have_position,
             action=action,
@@ -357,7 +522,6 @@ class State_time_step(State_time_step_template):
             closePrcie=close,
         )
 
-        # 更新開倉價格
         self.open_price = self.reward_help.CaculateOpenPrcie(
             self.open_price,
             self.have_position,
@@ -374,50 +538,46 @@ class State_time_step(State_time_step_template):
         self.cost_sum += cost
         self.closecash += closecash_diff
 
-        # 6. 計算浮動損益 (Unrealized P&L)
-        # ★關鍵修正★：這裡應該基於「動作後」的狀態來計算
-        # 如果我剛買入，next_have_position 為 True，我應該立刻看到這根 K 棒帶來的浮盈/浮虧
-        # 但要注意 CaculateOpenProfit 的內部邏輯是否支援傳入 next_have_position
+        # 6. 計算浮動損益 (基於 next_have_position)
         opencash_diff = self.reward_help.CaculateOpenProfit(
-            next_have_position, # ★ 改用 next_have_position
+            next_have_position, 
             action=action,
             closePrice=close,
             OpenPrice=self.open_price,
         )
 
-
-        # # 7. 更新統計數據 模型需要知道目前進行了多少根K棒的交易
+        # 7. 更新統計數據
         self.trade_bar = self.reward_help.Caculatetrade_bar(
             self.trade_bar, self.have_position, action=action
         )
 
-
         # 8. 正式更新持倉狀態
         self.have_position = next_have_position
 
-
-
-        # # 9.  計算當前的總淨值 (Equity)
+        # 9. 計算當前的總淨值 (Equity)
         current_equity = 1.0 + self.cost_sum + self.closecash + opencash_diff
-        self.canusecash = current_equity # 更新淨值
+        self.canusecash = current_equity 
         
-        # --- 10. 計算 DSR 獎勵 ---
+        # --- 10. 計算相對 DSR 獎勵 (核心修改) ---
+        
+        # A. 計算策略回報率 (Strategy Return)
         if previous_equity <= 1e-8:
             portfolio_return_rt = 0.0
         else:
             portfolio_return_rt = (current_equity / previous_equity) - 1.0
             
-        # 從 DSR 計算器獲取獎勵
-        dsr_reward = self.dsr_calc.step(portfolio_return_rt)
-        reward += dsr_reward # 將 DSR 獎勵作為主要獎勵
+        # B. ★ 計算基準回報率 (Benchmark Return) ★
+        # 這是 "Buy and Hold" 的回報率
+        if prev_close <= 1e-8:
+            benchmark_return_rt = 0.0
+        else:
+            benchmark_return_rt = (close / prev_close) - 1.0
 
-
-        # ★修改點 3: 額外的生存懲罰 (Optional) ★
-        # 如果權益數小於 1 (處於虧損狀態)，且動作是 Hold (Action=0 或類似定義)，給予極小的額外扣分
-        # 這會給 Agent 壓力：你現在是賠錢的，光坐著等是不行的，要嘛止損，要嘛找機會賺回來
-        # 注意：這個值要非常小，避免干擾 DSR 的梯度
-        # if current_equity < 0.98 and abs(portfolio_return_rt) < 1e-6:
-        #     reward -= 0.00005
+        # C. 傳入兩個回報率給計算器
+        dsr_reward = self.dsr_calc.step(portfolio_return_rt, benchmark_return_rt)
+        
+        # 將 DSR 獎勵加入總獎勵
+        reward += dsr_reward 
 
         # --- 11. 更新步數與結束判斷 ---
         self._offset += 1
@@ -427,11 +587,8 @@ class State_time_step(State_time_step_template):
         if self.game_steps == self.N_steps and self.model_train:
             done = True       
 
-
         return reward, done
-
-
-
+    
 class BaseTradingEnv(gym.Env, ABC):
     """
     交易環境的抽象基礎類別。
