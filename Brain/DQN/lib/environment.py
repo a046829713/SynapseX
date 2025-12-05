@@ -577,7 +577,8 @@ class State_time_step(State_time_step_template):
         dsr_reward = self.dsr_calc.step(portfolio_return_rt, benchmark_return_rt)
         
         # 將 DSR 獎勵加入總獎勵
-        reward += dsr_reward 
+        reward = reward + 0.6 * portfolio_return_rt + 0.4 * dsr_reward 
+
 
         # --- 11. 更新步數與結束判斷 ---
         self._offset += 1
