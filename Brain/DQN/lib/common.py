@@ -262,10 +262,12 @@ def calc_loss(
     rl_loss = nn.MSELoss()(state_action_values, q_targets)
 
     # 2. 想像損失 (Imagination Loss)
-    imagination_loss = nn.MSELoss()(imagined_preds, imagined_ground_truth_v)
+    # imagination_loss = nn.MSELoss()(imagined_preds, imagined_ground_truth_v)
 
     # 3. 總損失
-    total_loss = rl_loss + imag_loss_weight * imagination_loss
+    # total_loss = rl_loss + imag_loss_weight * imagination_loss
+    total_loss = rl_loss
+    
     if aux_loss is not None:
         total_loss += moe_loss_coeff * aux_loss
 
