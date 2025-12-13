@@ -947,6 +947,6 @@ class I2A_MambaDuelingModel(nn.Module):
         q_values = value + (advantage - advantage.mean(dim=1, keepdim=True))       
 
         
-        print("Q Value:", q_values.size())
+        
         # 返回 Q-values, Mamba 輔助損失, 以及 "想像的" 預測值 (用於計算想像損失)
         return q_values, None, None

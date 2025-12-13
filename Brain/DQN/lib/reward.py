@@ -202,7 +202,6 @@ class RelativeDSR_Calculator:
         """
         self.t += 1
         
-        
         # 計算相對於基準的超額回報 (Alpha) 如果策略只是單純持有，這個值會接近 0
         r_net = strategy_r_t - benchmark_r_t
         
@@ -351,13 +350,15 @@ class RewardHelp:
         return openPrice
 
     def clip(self, inputslope: float):
-        if inputslope > 0.01:
-            return 0.01
+        if inputslope > 0:
+            return 0
+        
+        elif inputslope < 0:
+            return inputslope
+        
+        else:
+            return 0
 
-        if inputslope < -0.01:
-            return -0.01
-
-        return inputslope
 
     def CaculateEquity_peak_before(
         self, equity_peak: Optional[float], havePostion: bool, action: Actions
@@ -392,7 +393,7 @@ class RewardHelp:
 
 class Reward:
     def __init__(self):
-        self.tradeReturn_weight = 0.4
+        self.tradeReturn_weight = 0.2
         self.closeReturn_weight = 1 - self.tradeReturn_weight
         self.wrongTrade_weight = 1
         self.trendTrade_weight = 0.5
@@ -407,16 +408,26 @@ class Reward:
         """
         return self.tradeReturn_weight * (last_value - previous_value)
 
+
+    def OpenReturn(self, last_value: float, previous_value: float) -> float:
+        """
+            計算開倉損益
+
+
+            Return = last_value - previous_value.
+        """
+        return self.tradeReturn_weight * (last_value - previous_value)
+    
     def closeReturn(
         self, CloseCash: float, cost: float, havePostion: bool, action: Actions
     ):
         """
-        To caculate return when close the postion.
+            To caculate return when close the postion.
 
         """
         _reward = 0
         if havePostion and action == Actions.Sell:
-            _reward = CloseCash - 2 * cost
+            _reward = CloseCash - cost
 
         return self.closeReturn_weight * _reward, _reward
 

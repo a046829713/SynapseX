@@ -462,6 +462,7 @@ class State_time_step(State_time_step_template):
         self.annealing_steps = 500000
         self.max_commission = commission_perc
         self.max_default_slippage = default_slippage
+        self.beforeBar = 50
 
     def _get_current_commission(self):
         if self.current_step >= self.annealing_steps:
@@ -491,29 +492,42 @@ class State_time_step(State_time_step_template):
     def step(self, action: Actions):
         assert isinstance(action, Actions)
         self.current_step += 1
-        
         reward = 0.0 
-        done = False
-        
+        done = False        
         # 獲取當前價格 (P_t) 和 上一根價格 (P_{t-1})
         close = self._prices.close[self._offset]
-        prev_close = self._prices.close[self._offset - 1] # 用於計算 Benchmark Return
-
-        # 1. 獲取上一步的總淨值
+        # 用於計算 Benchmark Return
+        prev_close = self._prices.close[self._offset - 1] 
+        
+        
+        # 獲取上一步的總淨值
         previous_equity = self.canusecash 
         
-        # 2. 計算規則懲罰
+
+        # 1. 計算規則懲罰
         wrongTrade_reward = self.reward_function.wrongTrade(
              self.have_position, action=action
         )
+        # print("錯誤交易獎勵值:",wrongTrade_reward)
         reward += wrongTrade_reward 
-        
-        # 3. 預先計算「動作後」的持倉狀態
-        next_have_position = self.reward_help.CaculatePostion(
-            self.have_position, action=action
-        )
 
-        # 4. 計算平倉損益
+
+
+
+        # 2. 計算趨勢交易獎勵
+        trendTrade_reward = self.reward_function.trendTrade(
+            self.have_position,
+            action=action,
+            slope=self.reward_help.clip(
+                (close - self._prices.close[self._offset - self.beforeBar])
+                / self.beforeBar
+            ),
+        )
+        reward += trendTrade_reward
+        # print("趨勢交易獎勵值:",trendTrade_reward)
+
+
+        # 3. 計算平倉損益
         closecash_diff = self.reward_help.CaculateCloseProfit(
             self.have_position,
             action=action,
@@ -521,7 +535,18 @@ class State_time_step(State_time_step_template):
             default_slippage=self._get_current_default_slippage(),
             closePrcie=close,
         )
+        # really_closecash_diff need isloate caculate because we need to know the finally game reward.
+        close_reward, really_closecash_diff = self.reward_function.closeReturn(
+            closecash_diff,
+            cost=self._get_current_commission(),
+            havePostion=self.have_position,
+            action=action,
+        )
+        # print("平倉交易獎勵值:",close_reward)
+        reward += close_reward
 
+
+        # 4. 更新開倉價格
         self.open_price = self.reward_help.CaculateOpenPrcie(
             self.open_price,
             self.have_position,
@@ -529,16 +554,25 @@ class State_time_step(State_time_step_template):
             default_slippage=self._get_current_default_slippage(),
             closePrcie=close,
         )
-        
-        # 5. 計算交易成本
+
+
+        # 5. 預先計算「動作後」的持倉狀態
+        next_have_position = self.reward_help.CaculatePostion(
+            self.have_position, action=action
+        )
+
+
+
+        # 6. 計算交易成本
         cost = self.reward_help.CaculateCost(
             havePostion=self.have_position, action=action, cost=self._get_current_commission()
         )
-
         self.cost_sum += cost
         self.closecash += closecash_diff
 
-        # 6. 計算浮動損益 (基於 next_have_position)
+
+
+        # 7. 計算浮動損益 (基於 next_have_position)
         opencash_diff = self.reward_help.CaculateOpenProfit(
             next_have_position, 
             action=action,
@@ -546,39 +580,57 @@ class State_time_step(State_time_step_template):
             OpenPrice=self.open_price,
         )
 
-        # 7. 更新統計數據
+
+
+        # 8. 更新統計數據
         self.trade_bar = self.reward_help.Caculatetrade_bar(
             self.trade_bar, self.have_position, action=action
         )
 
-        # 8. 正式更新持倉狀態
+        # 9. 正式更新持倉狀態
         self.have_position = next_have_position
 
-        # 9. 計算當前的總淨值 (Equity)
+
+        # 10. 計算當前的總淨值 (Equity)
         current_equity = 1.0 + self.cost_sum + self.closecash + opencash_diff
         self.canusecash = current_equity 
+
+
+        # 11. 計算交易獎勵
+        tradeReturn_reward = self.reward_function.tradeReturn(
+            last_value=self.canusecash, previous_value=previous_equity
+        )
+        # print("淨值浮動獎勵值:",tradeReturn_reward)
+        reward += tradeReturn_reward
         
-        # --- 10. 計算相對 DSR 獎勵 (核心修改) ---
+
+
+
         
-        # A. 計算策略回報率 (Strategy Return)
-        if previous_equity <= 1e-8:
-            portfolio_return_rt = 0.0
-        else:
-            portfolio_return_rt = (current_equity / previous_equity) - 1.0
+        # # --- 10. 計算相對 DSR 獎勵 (核心修改) ---
+        
+        # # A. 計算策略回報率 (Strategy Return)
+        # if previous_equity <= 1e-8:
+        #     portfolio_return_rt = 0.0
+        # else:
+        #     portfolio_return_rt = (current_equity / previous_equity) - 1.0
             
-        # B. ★ 計算基準回報率 (Benchmark Return) ★
-        # 這是 "Buy and Hold" 的回報率
-        if prev_close <= 1e-8:
-            benchmark_return_rt = 0.0
-        else:
-            benchmark_return_rt = (close / prev_close) - 1.0
+        # # B. ★ 計算基準回報率 (Benchmark Return) ★
+        # # 這是 "Buy and Hold" 的回報率
+        # if prev_close <= 1e-8:
+        #     benchmark_return_rt = 0.0
+        # else:
+        #     benchmark_return_rt = (close / prev_close) - 1.0
 
-        # C. 傳入兩個回報率給計算器
-        dsr_reward = self.dsr_calc.step(portfolio_return_rt, benchmark_return_rt)
+        # # C. 傳入兩個回報率給計算器
+        # dsr_reward = self.dsr_calc.step(portfolio_return_rt, benchmark_return_rt)
         
-        # 將 DSR 獎勵加入總獎勵
-        reward = reward + 0.6 * portfolio_return_rt + 0.4 * dsr_reward 
-
+        reward = (
+            reward 
+            # + 0.01 * dsr_reward 
+        )
+        # print("總獎勵值:",reward)
+        # print("*"*120)
 
         # --- 11. 更新步數與結束判斷 ---
         self._offset += 1

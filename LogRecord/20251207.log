@@ -1,4 +1,4 @@
-2025-11-27 19:38 ERROR Traceback (most recent call last):
+2025-12-07 14:55 ERROR Traceback (most recent call last):
   File "/home/b0457812963/NewMambaRL/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1967, in _exec_single_context
     self.dialect.do_execute(
   File "/home/b0457812963/NewMambaRL/lib/python3.12/site-packages/sqlalchemy/engine/default.py", line 941, in do_execute
@@ -22,7 +22,7 @@
     err.raise_mysql_exception(self._data)
   File "/home/b0457812963/NewMambaRL/lib/python3.12/site-packages/pymysql/err.py", line 150, in raise_mysql_exception
     raise errorclass(errno, errval)
-pymysql.err.ProgrammingError: (1146, "Table 'crypto_data.irysusdt-f' doesn't exist")
+pymysql.err.ProgrammingError: (1146, "Table 'crypto_data.powerusdt-f' doesn't exist")
 
 The above exception was the direct cause of the following exception:
 
@@ -69,7 +69,7 @@ Traceback (most recent call last):
     err.raise_mysql_exception(self._data)
   File "/home/b0457812963/NewMambaRL/lib/python3.12/site-packages/pymysql/err.py", line 150, in raise_mysql_exception
     raise errorclass(errno, errval)
-sqlalchemy.exc.ProgrammingError: (pymysql.err.ProgrammingError) (1146, "Table 'crypto_data.irysusdt-f' doesn't exist")
-[SQL: select * from `irysusdt-f` limit 1]
+sqlalchemy.exc.ProgrammingError: (pymysql.err.ProgrammingError) (1146, "Table 'crypto_data.powerusdt-f' doesn't exist")
+[SQL: select * from `powerusdt-f` limit 1]
 (Background on this error at: https://sqlalche.me/e/20/f405)
 
