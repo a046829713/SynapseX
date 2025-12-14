@@ -488,6 +488,7 @@ class State_time_step(State_time_step_template):
         self.cost_sum = 0.0
         self.closecash = 0.0
         self.bar_dont_change_count = 0
+        self.pre_open_diff = 0.0
 
     def step(self, action: Actions):
         assert isinstance(action, Actions)
@@ -496,8 +497,11 @@ class State_time_step(State_time_step_template):
         done = False        
         # 獲取當前價格 (P_t) 和 上一根價格 (P_{t-1})
         close = self._prices.close[self._offset]
+
         # 用於計算 Benchmark Return
         prev_close = self._prices.close[self._offset - 1] 
+        
+
         
         
         # 獲取上一步的總淨值
@@ -564,13 +568,16 @@ class State_time_step(State_time_step_template):
 
 
         # 6. 計算交易成本
-        cost = self.reward_help.CaculateCost(
+        current_step_cost = self.reward_help.CaculateCost(
             havePostion=self.have_position, action=action, cost=self._get_current_commission()
         )
-        self.cost_sum += cost
+
+        self.cost_sum += current_step_cost
         self.closecash += closecash_diff
 
-
+        if not self.have_position and next_have_position:
+            # 這是開倉動作 (Open)
+            reward -= current_step_cost
 
         # 7. 計算浮動損益 (基於 next_have_position)
         opencash_diff = self.reward_help.CaculateOpenProfit(
@@ -579,6 +586,12 @@ class State_time_step(State_time_step_template):
             closePrice=close,
             OpenPrice=self.open_price,
         )
+
+
+        open_reward = self.reward_function.OpenReturn(opencash_diff,self.pre_open_diff)
+        reward += open_reward    
+
+        self.pre_open_diff = opencash_diff
 
 
 
@@ -594,17 +607,6 @@ class State_time_step(State_time_step_template):
         # 10. 計算當前的總淨值 (Equity)
         current_equity = 1.0 + self.cost_sum + self.closecash + opencash_diff
         self.canusecash = current_equity 
-
-
-        # 11. 計算交易獎勵
-        tradeReturn_reward = self.reward_function.tradeReturn(
-            last_value=self.canusecash, previous_value=previous_equity
-        )
-        # print("淨值浮動獎勵值:",tradeReturn_reward)
-        reward += tradeReturn_reward
-        
-
-
 
         
         # # --- 10. 計算相對 DSR 獎勵 (核心修改) ---

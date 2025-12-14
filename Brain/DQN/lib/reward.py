@@ -394,7 +394,8 @@ class RewardHelp:
 class Reward:
     def __init__(self):
         self.tradeReturn_weight = 0.2
-        self.closeReturn_weight = 1 - self.tradeReturn_weight
+        self.OpenReturn_weight = 0.2
+        self.closeReturn_weight = 1 - self.OpenReturn_weight
         self.wrongTrade_weight = 1
         self.trendTrade_weight = 0.5
         self.drawdown_penalty_weight = 0.01
@@ -416,7 +417,7 @@ class Reward:
 
             Return = last_value - previous_value.
         """
-        return self.tradeReturn_weight * (last_value - previous_value)
+        return self.OpenReturn_weight * (last_value - previous_value)
     
     def closeReturn(
         self, CloseCash: float, cost: float, havePostion: bool, action: Actions
