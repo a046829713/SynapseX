@@ -350,15 +350,8 @@ class RewardHelp:
         return openPrice
 
     def clip(self, inputslope: float):
-        if inputslope > 0:
-            return 0
-        
-        elif inputslope < 0:
-            return inputslope
-        
-        else:
-            return 0
-
+        # 使用 tanh 進行軟截斷
+        return np.tanh(inputslope)
 
     def CaculateEquity_peak_before(
         self, equity_peak: Optional[float], havePostion: bool, action: Actions

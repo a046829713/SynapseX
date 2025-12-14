@@ -517,15 +517,19 @@ class State_time_step(State_time_step_template):
 
 
 
+        # 在你的 step 函數中計算 slope 時：
+        price_change = close - self._prices.close[self._offset - self.beforeBar]
+        base_price = self._prices.close[self._offset - self.beforeBar]
+
+        # 計算百分比斜率 (Percentage Slope)
+        # 例如：50根K棒漲了 5% -> 0.05
+        slope_pct = price_change / base_price
 
         # 2. 計算趨勢交易獎勵
         trendTrade_reward = self.reward_function.trendTrade(
             self.have_position,
             action=action,
-            slope=self.reward_help.clip(
-                (close - self._prices.close[self._offset - self.beforeBar])
-                / self.beforeBar
-            ),
+            slope=self.reward_help.clip(slope_pct),
         )
         reward += trendTrade_reward
         # print("趨勢交易獎勵值:",trendTrade_reward)
