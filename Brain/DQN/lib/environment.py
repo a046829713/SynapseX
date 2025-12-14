@@ -577,7 +577,7 @@ class State_time_step(State_time_step_template):
 
         if not self.have_position and next_have_position:
             # 這是開倉動作 (Open)
-            reward -= current_step_cost
+            reward += current_step_cost
 
         # 7. 計算浮動損益 (基於 next_have_position)
         opencash_diff = self.reward_help.CaculateOpenProfit(
