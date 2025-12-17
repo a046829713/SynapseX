@@ -473,14 +473,15 @@ class SymbolProcess(mp.Process):
 
 
 # --- 主執行流程 (重大修改) ---
-NUM_ACTORS = 1
+NUM_ACTORS = 4
 
 
 def main():
     config = RLConfig()
     symbolNames = os.listdir(os.path.join(os.getcwd() , "Brain","simulation","train_data"))
     symbolNames = [_fileName.split('.')[0] for _fileName in symbolNames]
-
+    symbolNames =  ['BTCUSDT-F-30-Min','ETHUSDT-F-30-Min','BNBUSDT-F-30-Min','SOLUSDT-F-30-Min']
+    print(symbolNames)
 
     unique_symbols = list(set(symbolNames))
     config.update_steps_by_symbols(len(unique_symbols))

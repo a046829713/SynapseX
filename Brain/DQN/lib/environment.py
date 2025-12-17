@@ -598,6 +598,10 @@ class State_time_step(State_time_step_template):
         self.pre_open_diff = opencash_diff
 
 
+        if next_have_position:
+            time_cost = -0.0001 
+            reward += time_cost
+
 
         # 8. 更新統計數據
         self.trade_bar = self.reward_help.Caculatetrade_bar(
@@ -613,8 +617,7 @@ class State_time_step(State_time_step_template):
         self.canusecash = current_equity 
 
         
-        # # --- 10. 計算相對 DSR 獎勵 (核心修改) ---
-        
+        # # --- 10. 計算相對 DSR 獎勵 (核心修改) ---        
         # # A. 計算策略回報率 (Strategy Return)
         # if previous_equity <= 1e-8:
         #     portfolio_return_rt = 0.0
@@ -635,8 +638,7 @@ class State_time_step(State_time_step_template):
             reward 
             # + 0.01 * dsr_reward 
         )
-        # print("總獎勵值:",reward)
-        # print("*"*120)
+
 
         # --- 11. 更新步數與結束判斷 ---
         self._offset += 1

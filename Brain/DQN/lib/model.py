@@ -500,7 +500,7 @@ class mambaDuelingModel(nn.Module):
         advantage = self.fc_adv(src)   # [B, num_actions]
 
         q_values = value + (advantage - advantage.mean(dim=1, keepdim=True))
-        return q_values, aux_loss
+        return q_values  ,None, None
 
 class mamba2DuelingModel(nn.Module):
     def __init__(self,
