@@ -403,13 +403,16 @@ class Reward:
         return self.tradeReturn_weight * (last_value - previous_value)
 
 
-    def OpenReturn(self, last_value: float, previous_value: float) -> float:
+    def OpenReturn(self, have_position:bool, last_value: float, previous_value: float) -> float:
         """
             計算開倉損益
 
 
             Return = last_value - previous_value.
         """
+        if not have_position:
+            return 0.0
+
         return self.OpenReturn_weight * (last_value - previous_value)
     
     def closeReturn(

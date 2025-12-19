@@ -592,9 +592,8 @@ class State_time_step(State_time_step_template):
         )
 
 
-        open_reward = self.reward_function.OpenReturn(opencash_diff,self.pre_open_diff)
+        open_reward = self.reward_function.OpenReturn(next_have_position ,opencash_diff, self.pre_open_diff)
         reward += open_reward    
-
         self.pre_open_diff = opencash_diff
 
 
