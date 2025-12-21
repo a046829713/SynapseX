@@ -390,7 +390,7 @@ class Reward:
         self.OpenReturn_weight = 0.2
         self.closeReturn_weight = 1 - self.OpenReturn_weight
         self.wrongTrade_weight = 1
-        self.trendTrade_weight = 0.5
+        self.trendTrade_weight = 0.01
         self.drawdown_penalty_weight = 0.01
 
     def tradeReturn(self, last_value: float, previous_value: float) -> float:

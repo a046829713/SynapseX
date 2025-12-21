@@ -495,6 +495,8 @@ class State_time_step(State_time_step_template):
         self.current_step += 1
         reward = 0.0 
         done = False        
+        time_cost = 0.0
+
         # 獲取當前價格 (P_t) 和 上一根價格 (P_{t-1})
         close = self._prices.close[self._offset]
 
@@ -646,6 +648,7 @@ class State_time_step(State_time_step_template):
 
         if self.game_steps == self.N_steps and self.model_train:
             done = True       
+
 
         return reward, done
     
