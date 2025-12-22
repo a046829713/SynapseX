@@ -264,7 +264,7 @@ class RewardHelp:
         if not (havePostion) and action == Actions.Buy:
             _cost = cost
 
-        return -_cost
+        return _cost
 
     def CaculateGameDoneInfo(
         self,
