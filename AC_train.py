@@ -192,9 +192,9 @@ class LearnerProcess(mp.Process):
             ssm_cfg = {
                 "expand":4
             }
-            self.net = model.I2A_MambaDuelingModel(
+            self.net = model.mambaDuelingModel(
                 d_model=data_input_size,
-                nlayers=6,
+                nlayers=4,
                 num_actions=action_space_n,
                 time_features_in=self.engine_info["time_input_size"],
                 seq_dim=self.config.BARS_COUNT,
@@ -473,7 +473,7 @@ class SymbolProcess(mp.Process):
 
 
 # --- 主執行流程 (重大修改) ---
-NUM_ACTORS = 1
+NUM_ACTORS = 4
 
 
 def main():
