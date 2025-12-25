@@ -443,6 +443,7 @@ class State_time_step(State_time_step_template):
         N_steps,
         win_payoff_weight = None,
         dsr_window=100,  # DSR 窗口
+        dsr_weight=0.01
     ):
         super().__init__(
             bars_count=bars_count,
@@ -463,6 +464,7 @@ class State_time_step(State_time_step_template):
         self.max_commission = commission_perc
         self.max_default_slippage = default_slippage
         self.beforeBar = 50
+        self.dsr_weight = dsr_weight
 
     def _get_current_commission(self):
         if self.current_step >= self.annealing_steps:
@@ -583,27 +585,33 @@ class State_time_step(State_time_step_template):
         self.canusecash = current_equity 
 
         
-        # # --- 10. 計算相對 DSR 獎勵 (核心修改) ---        
-        # # A. 計算策略回報率 (Strategy Return)
-        # if previous_equity <= 1e-8:
-        #     portfolio_return_rt = 0.0
-        # else:
-        #     portfolio_return_rt = (current_equity / previous_equity) - 1.0
+        # --- 10. 計算相對 DSR 獎勵 (核心修改) ---        
+        # A. 計算策略回報率 (Strategy Return)
+        if previous_equity <= 1e-8:
+            portfolio_return_rt = 0.0
+        else:
+            portfolio_return_rt = current_equity - previous_equity
             
-        # # B. ★ 計算基準回報率 (Benchmark Return) ★
-        # # 這是 "Buy and Hold" 的回報率
-        # if prev_close <= 1e-8:
-        #     benchmark_return_rt = 0.0
-        # else:
-        #     benchmark_return_rt = (close / prev_close) - 1.0
+        # B. ★ 計算基準回報率 (Benchmark Return) ★
+        # 這是 "Buy and Hold" 的回報率
+        if prev_close <= 1e-8:
+            benchmark_return_rt = 0.0
+        else:
+            benchmark_return_rt = (close / prev_close) - 1.0
 
-        # # C. 傳入兩個回報率給計算器
-        # dsr_reward = self.dsr_calc.step(portfolio_return_rt, benchmark_return_rt)
+        # C. 傳入兩個回報率給計算器
+        dsr_reward = self.dsr_calc.step(portfolio_return_rt, benchmark_return_rt)
         
         reward = reward + (
              current_equity - previous_equity
-            # + 0.01 * dsr_reward 
+            + self.dsr_weight * dsr_reward 
         )
+        print("損益變化獎勵:",current_equity - previous_equity)
+
+        print("市場變化獎勵：",benchmark_return_rt)
+        print("DSR獎勵:",self.dsr_weight * dsr_reward)
+        print("*"*120)
+
 
 
         # --- 11. 更新步數與結束判斷 ---
