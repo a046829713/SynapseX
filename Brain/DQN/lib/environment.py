@@ -585,19 +585,8 @@ class State_time_step(State_time_step_template):
         self.canusecash = current_equity 
 
         
-        # --- 10. 計算相對 DSR 獎勵 (核心修改) ---        
-        # A. 計算策略回報率 (Strategy Return)
-        if previous_equity <= 1e-8:
-            portfolio_return_rt = 0.0
-        else:
-            portfolio_return_rt = current_equity - previous_equity
-            
-        # B. ★ 計算基準回報率 (Benchmark Return) ★
-        # 這是 "Buy and Hold" 的回報率
-        if prev_close <= 1e-8:
-            benchmark_return_rt = 0.0
-        else:
-            benchmark_return_rt = (close / prev_close) - 1.0
+        portfolio_return_rt = current_equity - previous_equity            
+        benchmark_return_rt = (close / prev_close) - 1.0
 
         # C. 傳入兩個回報率給計算器
         dsr_reward = self.dsr_calc.step(portfolio_return_rt, benchmark_return_rt)
@@ -606,12 +595,6 @@ class State_time_step(State_time_step_template):
              current_equity - previous_equity
             + self.dsr_weight * dsr_reward 
         )
-        print("損益變化獎勵:",current_equity - previous_equity)
-
-        print("市場變化獎勵：",benchmark_return_rt)
-        print("DSR獎勵:",self.dsr_weight * dsr_reward)
-        print("*"*120)
-
 
 
         # --- 11. 更新步數與結束判斷 ---

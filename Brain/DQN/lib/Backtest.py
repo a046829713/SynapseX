@@ -127,9 +127,9 @@ class RL_evaluate:
         data_input_size = engine_info["data_input_size"]
 
         ssm_cfg = {"expand": 4}
-        net = model.I2A_MambaDuelingModel(
+        net = model.mambaDuelingModel(
             d_model=data_input_size,
-            nlayers=6,
+            nlayers=4,
             num_actions=action_space_n,
             time_features_in=engine_info["time_input_size"],
             seq_dim=self.config.BARS_COUNT,
