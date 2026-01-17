@@ -1,7 +1,0 @@
-training:
-  model: Mamba
-  EPSILON_STEPS_FACTOR: 1000000
-  SAVES_TAG: saves
-  BARS_COUNT: 300
-paths:
-  train_data: Brain/simulation/train_data
