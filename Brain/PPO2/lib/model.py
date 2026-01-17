@@ -353,8 +353,8 @@ class HybridMambaPolicy(nn.Module):
     def __init__(
         self,
         # ob_dim: int,
-        # discrete_ac_dim: int,
-        # continuous_ac_dim: int,
+        discrete_ac_dim: int,
+        continuous_ac_dim: int,
         # hid_size: int = 64,
         # num_hid_layers: int = 2,
         d_model: int,

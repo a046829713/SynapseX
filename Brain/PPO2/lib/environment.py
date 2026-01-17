@@ -113,7 +113,7 @@ class TrainingEnv(BaseTradingEnv):
                                如果為 False，則使用訓練數據和隨機的起始點。
         """
         self.config = config
-        self.unique_symbols = self.config.UNIQUE_SYMBOLS
+        self.unique_symbols = self.config.training.UNIQUE_SYMBOLS
         
         
         # 根據模式決定數據類型和佣金
@@ -122,12 +122,12 @@ class TrainingEnv(BaseTradingEnv):
         self.all_data = self._load_data_for_instrument(random_symbol)
 
         state_params = {
-            "bars_count": self.config.BARS_COUNT,
-            "commission_perc": self.config.MODEL_DEFAULT_COMMISSION_PERC_TRAING,
+            "bars_count": self.config.training.BARS_COUNT,
+            "commission_perc": self.config.training.MODEL_DEFAULT_COMMISSION_PERC_TRAING,
             "model_train": True,
-            "default_slippage": self.config.DEFAULT_SLIPPAGE,
-            "N_steps": self.config.N_STEPS,
-            "win_payoff_weight": self.config.WIN_PAYOFF_WEIGHT,
+            "default_slippage": self.config.training.DEFAULT_SLIPPAGE,
+            "N_steps": self.config.training.N_STEPS,
+            "win_payoff_weight": self.config.training.WIN_PAYOFF_WEIGHT,
         }
 
         super().__init__(state=State_time_step(**state_params))

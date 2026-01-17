@@ -443,7 +443,7 @@ class State_time_step(State_time_step_template):
         N_steps,
         win_payoff_weight = None,
         dsr_window=100,  # DSR 窗口
-        dsr_weight=0.01
+        dsr_weight=0.01375
     ):
         super().__init__(
             bars_count=bars_count,

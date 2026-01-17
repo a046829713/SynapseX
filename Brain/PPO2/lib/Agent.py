@@ -32,25 +32,23 @@ class PPO2Agent:
         continuous_ac_dim = self.ac_space[1].shape[0]
         
 
-
         # discrete_ac_dim 3  # continuous_ac_dim 1
         self.model = HybridMambaPolicy(
+            discrete_ac_dim = discrete_ac_dim,
+            continuous_ac_dim = continuous_ac_dim,
             d_model=self.ob_space['states'].shape[1],
             time_features_in = self.ob_space['time_states'].shape[1]
         ).to(self.device)
 
+
         print(self.model)
-        time.sleep(100)
-        print(discrete_ac_dim)
-        print(continuous_ac_dim)
-        time.sleep(100)
+
 
     def _validate_spaces(self):
         assert isinstance(self.ac_space, TupleSpace), "混合動作空間必須使用 gym.spaces.Tuple"
         assert len(self.ac_space.spaces) == 2, "動作元組應包含2個元素"
         assert isinstance(self.ac_space[0], Discrete), "Tuple的第一個元素必須是 Discrete"
         assert isinstance(self.ac_space[1], Box), "Tuple的第二個元素必須是 Box"
-        print("環境驗證成功")
 
     def _preprocess_obs(self, obs: torch.Tensor) -> torch.Tensor:
         """

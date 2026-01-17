@@ -1,0 +1,3 @@
+training: {}
+paths:
+  train_data: Brain/simulation/train_data

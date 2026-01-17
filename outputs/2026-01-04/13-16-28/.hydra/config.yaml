@@ -1,0 +1,12 @@
+training:
+  model: Mamba
+  EPSILON_STEPS_FACTOR: 1000000
+  SAVES_TAG: saves
+  BARS_COUNT: 300
+  UNIQUE_SYMBOLS: null
+  MODEL_DEFAULT_COMMISSION_PERC_TRAING: 0.0045
+  DEFAULT_SLIPPAGE: 0.0025
+  N_STEPS: 1000
+  WIN_PAYOFF_WEIGHT: 1.0
+paths:
+  train_data: Brain/simulation/train_data

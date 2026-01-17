@@ -19,25 +19,48 @@ from Brain.PPO2.lib.environment import State_time_step
 from Brain.Common.DataFeature import OriginalDataFrature
 from Brain.PPO2.lib import model
 from Brain.PPO2.lib.experience import RolloutBuffer
-from utils.AppSetting import PPO2RLConfig
 from Brain.PPO2.lib.Agent import PPO2Agent
+import hydra
+from omegaconf import DictConfig, OmegaConf
 
 def show_setting(title: str, content: str):
     print(f"--{title}--:{content}")
 
 class RL_prepare(ABC):
-    def __init__(self):
-        self.config = PPO2RLConfig()
-        self._prepare_hyperparameters()
+    def __init__(self, cfg: DictConfig):
+        self.config = cfg
+        
         self._prepare_device()
         self._prepare_symbols()
-        self._prepare_writer()
         self._prepare_env()
-        self._prepare_agent()
+
+
+        # self._prepare_hyperparameters()
+        
+        
+        # self._prepare_writer()
+        # self._prepare_agent()
         # self._prepare_targer_net()
         # self._prepare_agent()
-        self._prepare_optimizer()
+        # self._prepare_optimizer()
         
+    def update_steps_by_symbols(self, num_symbols: int):
+        self.EPSILON_STEPS = (
+            self.config.training.EPSILON_STEPS_FACTOR * 30
+            if num_symbols > 30
+            else self.config.training.EPSILON_STEPS_FACTOR * num_symbols
+        )
+
+    def create_saves_path(self):
+        saves_path = os.path.join(
+            self.config.training.SAVES_TAG,
+            datetime.strftime(datetime.now(), "%Y%m%d-%H%M%S")
+            + "-"
+            + str(self.config.training.BARS_COUNT)
+            + "k-",
+        )
+        os.makedirs(saves_path, exist_ok=True)
+        self.SAVES_PATH = saves_path
 
     def _prepare_device(self):
         self.device = torch.device(
@@ -48,15 +71,14 @@ class RL_prepare(ABC):
         symbolNames = os.listdir(os.path.join(os.getcwd() , "Brain","simulation","train_data"))
         symbolNames = [_fileName.split('.')[0] for _fileName in symbolNames]
         unique_symbols = list(set(symbolNames))
-        self.config.update_steps_by_symbols(len(unique_symbols))
-        self.config.create_saves_path()
-        self.config.UNIQUE_SYMBOLS = unique_symbols        
+        self.update_steps_by_symbols(len(unique_symbols))
+        self.create_saves_path()
+        self.config.training.UNIQUE_SYMBOLS = unique_symbols
         
         show_setting("SYMBOLNAMES", unique_symbols)
 
     def _prepare_env(self):
-        if self.config.KEYWORD == 'Transformer' or 'Mamba' or "Mamba2":
-
+        if self.config.training.model == 'Transformer' or 'Mamba' or "Mamba2":
             # 製作環境
             self.train_env = TrainingEnv(config=self.config)
 
@@ -85,28 +107,6 @@ class RL_prepare(ABC):
                                      self.train_env.action_space,
                                      device=self.device)
 
-
-
-    # def _prepare_optimizer(self):
-        # # 定義特殊層的學習率
-        # param_groups = [
-        #     {'params': self.model.dean.mean_layer.parameters(), 'lr': 0.0001 * self.model.dean.mean_lr},
-        #     {'params': self.model.dean.scaling_layer.parameters(), 'lr': 0.0001 * self.model.dean.scale_lr},
-        #     {'params': self.model.dean.gating_layer.parameters(), 'lr': 0.0001 * self.model.dean.gate_lr},
-        # ]
-
-        # # 其餘參數使用默認學習率，直接加入 param_groups
-        # for name, param in self.model.named_parameters():
-        #     if (
-        #         "dean.mean_layer" not in name
-        #         and "dean.scaling_layer" not in name
-        #         and "dean.gating_layer" not in name
-        #     ):
-        #         param_groups.append({'params': param, 'lr': self.LEARNING_RATE})
-
-        # # 初始化優化器
-        # self.optimizer = optim.Adam(param_groups)
-        # self.optimizer = optim.Adam(self.Agent.model.parameters(), lr=3e-4)
     
     def _prepare_optimizer(self, base_lr=1e-4):
         """
@@ -165,7 +165,7 @@ class RL_prepare(ABC):
             ])
 
         # 用 Adam 建立優化器
-        self.optimizer = optim.Adam(param_groups)
+        self.optimizer = optim.AdamW(param_groups)
         print("optimzer create.")
 
     def _prepare_targer_net(self):
@@ -176,21 +176,20 @@ class RL_prepare(ABC):
 
 
 class PPO2(RL_prepare):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, cfg: DictConfig):     
+        super().__init__(cfg)
         self.train()
 
 
-    def train(self):                
+    def train(self):               
         buffer = RolloutBuffer()
         state = self.train_env.reset()
-        print(state)
-        time.sleep(100)
+
         episode_reward = 0
         timesteps = 0
         while True:
             # collect rollout
-            for _ in range(2048):
+            while True:
                 state_tensor = torch.tensor(state, dtype=torch.float32 ,device=self.device)
 
                 # In data collection we don't need computational graph
@@ -209,6 +208,7 @@ class PPO2(RL_prepare):
                 if done:
                     print(f"Episode return: {episode_reward:.2f}")
                     state, episode_reward = env.reset()[0], 0
+                    break
 
             # GAE 與 PPO 更新
             with torch.no_grad():
@@ -397,4 +397,13 @@ class PPO2(RL_prepare):
 #         return values, logprobs, rewards, entropies, G, check
 
 
-PPO2()
+# 使用 Hydra 裝飾器作為入口
+@hydra.main(version_base=None, config_path="configs", config_name="config")
+def main(cfg: DictConfig):
+    print(cfg)
+    # 初始化你的 PPO2 類別
+    ppo_instance = PPO2(cfg)
+    ppo_instance.train()
+
+if __name__ == "__main__":
+    main()

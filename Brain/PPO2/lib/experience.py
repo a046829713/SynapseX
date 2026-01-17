@@ -3,8 +3,6 @@ from collections import deque, namedtuple
 
 
 
-
-
 Transition = namedtuple('Transition',
                         ['state', 'action', 'logp', 'reward', 'next_state', 'done', 'value'])
 

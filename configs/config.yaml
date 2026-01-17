@@ -1,0 +1,8 @@
+defaults:
+  - training: ppo_v2
+  - _self_
+
+paths:
+  train_data: "Brain/simulation/train_data"
+
+
