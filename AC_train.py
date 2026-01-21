@@ -192,7 +192,7 @@ class LearnerProcess(mp.Process):
             ssm_cfg = {
                 "expand":4
             }
-            self.net = model.mambaDuelingModel(
+            self.net = model.I2A_MambaDuelingModel(
                 d_model=data_input_size,
                 nlayers=4,
                 num_actions=action_space_n,
@@ -480,8 +480,7 @@ def main():
     config = RLConfig()
     symbolNames = os.listdir(os.path.join(os.getcwd() , "Brain","simulation","train_data"))
     symbolNames = [_fileName.split('.')[0] for _fileName in symbolNames]
-    symbolNames =  ['BTCUSDT-F-30-Min','ETHUSDT-F-30-Min','BNBUSDT-F-30-Min','SOLUSDT-F-30-Min']
-    print(symbolNames)
+
 
     unique_symbols = list(set(symbolNames))
     config.update_steps_by_symbols(len(unique_symbols))
