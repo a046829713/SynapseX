@@ -2,6 +2,8 @@ import torch
 from dataclasses import dataclass
 from datetime import datetime
 import os
+from omegaconf import DictConfig, OmegaConf
+import time
 
 class AppSetting():
     def __init__(self) -> None:
@@ -80,36 +82,47 @@ class RLConfig:
         os.makedirs(saves_path, exist_ok=True)
         self.SAVES_PATH = saves_path
 
-# @dataclass
-# class PPO2RLConfig:
-#     KEYWORD: str = "Mamba"
-#     DEVICE: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
+class UpdateConfig():
+    def __init__(self, cfg:DictConfig):
+        """
+            To Update Config from DictConfig.
+
+            To Calculate all parameters.
+        """
+
+        self.cfg = cfg
 
 
-
-#     MODEL_DEFAULT_COMMISSION_PERC_TEST: float = 0.0005
-
-    
-    
-    
-#     GAMMA: float = 0.99
-#     REWARD_STEPS: int = 2
-#     LEARNING_RATE: float = 0.000025
-#     LAMBDA_L2: float = 0.0
-#     BATCH_SIZE: int = 32
-#     REPLAY_SIZE: int = 500000
-#     EACH_REPLAY_SIZE: int = 50_000
-#     REPLAY_INITIAL: int = 1000
-#     EPSILON_START: float = 0.9
-#     EPSILON_STOP: float = 0.1
-
-#     TARGET_NET_SYNC: int = 1000
-#     CHECKPOINT_EVERY_STEP: int = 20_000
-#     BETA_START: float = 0.4
-#     UNIQUE_SYMBOLS: list[str] = None
-#     CHECK_GRAD_STEP = 1000
-
-
+        self.update_steps_by_symbols()
+        self.create_saves_path()
         
+
+    def GetInstance(self):
+        return self.cfg
+    
+    def update_steps_by_symbols(self, num_symbols: int):
+        self.EPSILON_STEPS = (
+            self.cfg.train.epsilon_steps_factor * 30
+            if num_symbols > 30
+            else self.cfg.train.epsilon_steps_factor * num_symbols
+        )
+        
+    def create_saves_path(self):
+        saves_path = os.path.join(
+            self.cfg.train.checkpoint.saves_tag,
+            datetime.strftime(datetime.now(), "%Y%m%d-%H%M%S")
+            + "-"
+            + str(self.cfg.train.bars_count)
+            + "k-",
+        )
+        os.makedirs(saves_path, exist_ok=True)
+        self.cfg.train.saves_path = saves_path
+    
+
+    def GetSymbols(self):
+        symbolNames = os.listdir(os.path.join(os.getcwd() , *self.cfg.train.train_data_file_path))
+        symbolNames = [_fileName.split('.')[0] for _fileName in symbolNames]
+        unique_symbols = list(set(symbolNames))
+        return unique_symbols

@@ -1,7 +1,4 @@
-import torch
+import os
 
-
-x = torch.randn([1,10,3])
-print(x)
-print(x.size())
-print(torch.mean(x,dim = 1))
+a = ["Brain","simulation","train_data"]
+print(os.path.join(*a))

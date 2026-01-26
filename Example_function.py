@@ -12,7 +12,7 @@ import time
 import re
 import pandas as pd
 from Database.SQL_operate import SqlSentense
- 
+from Brain.Common.DataFeature import OriginalDataFrature
 
 
 
@@ -223,7 +223,10 @@ def example_simple_evaluate():
 # BasePreparator().import_all_tables()
 
 # getAllDailyData()
-example_reload_all_data(symbol_type="FUTURES",time_type = '1m')
+# example_reload_all_data(symbol_type="FUTURES",time_type = '1m')
 # example_get_symboldata()
 # checksymbol(symbol='TUSDUSDT')
 # example_get_target_symbol(filter_type='MTM')
+
+
+OriginalDataFrature().get_train_net_work_data_by_path(['BTCUSDT-F-30-Min'])

@@ -1,0 +1,47 @@
+
+# --- RL 特定維度 ---
+state_dim: 12           # 輸入狀態維度 
+action_dim: 3           # 動作空間大小 (總共有多少種可能的動作)
+
+# --- Transformer/HOPE 基礎設定 ---
+dim: 256                 # 內部的 Hidden Size
+num_layers: 4            # 總共有幾層 HOPE Block
+heads: 4                 # Attention Heads 數量
+gradient_checkpointing: false # 顯存如果不夠可以開 true
+
+# --- HOPE 教學訊號設定 ---
+teach_scale: 1.0         # "Surprise" 訊號對內部權重更新的影響係數
+teach_clip: 1.0          # 避免梯度爆炸的裁切值
+
+# --- Titan Level (慢速/長期記憶層設定) ---
+# 這對應代碼中的 LevelSpec
+titan_level:
+  name: titan
+  update_period: 8
+  optimizer_key: titan_opt
+
+# --- CMS Levels (快速/短期記憶層設定) ---
+cms_levels:
+  - name: cms_fast
+    update_period: 1
+    optimizer_key: cms_opt
+  - name: cms_mid
+    update_period: 4
+    optimizer_key: cms_opt
+  - name: cms_slow
+    update_period: 16
+    optimizer_key: cms_opt
+
+optimizers:
+  titan_opt:
+    type: deep_momentum
+    lr: 1.0e-3
+    params:
+      beta: 0.9
+      beta2: 0.999
+  cms_opt:
+    type: deep_momentum
+    lr: 5.0e-4
+    params:
+      beta: 0.9
+      beta2: 0.999

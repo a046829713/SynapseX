@@ -25,6 +25,15 @@ Prices = collections.namedtuple(
         "log_trades",
         "log_tb_base_av",
         "log_tb_quote_av",
+
+        # 新增均線特徵
+        "log_ma_30",
+        "log_ma_60",
+        "log_ma_120",
+        "log_ma_240",
+        "log_ma_360",
+
+
         "age_log_minutes",
         "age_years",
         "month_sin",
@@ -66,6 +75,9 @@ class OriginalDataFrature:
         self.df = self.add_time_feature(df, first_date)
         self.df = self.add_ATR(self.df)
         out_dict.update({symbol: self.load_relative()})
+
+
+        
         return out_dict
 
     def get_train_net_work_data_by_path(
@@ -79,15 +91,37 @@ class OriginalDataFrature:
             df = pd.read_csv(f"Brain/simulation/{typeName}/{symbolName}.csv")
             df.set_index("Datetime", inplace=True)
             self.df = self.cleanData(df)
-
+            self.df = self.add_average_metric(self.df)
             self.df = self.add_time_feature(self.df)
             self.df = self.add_ATR(self.df)
+
+            
 
             # 使用 PyTorch Tensor 的方法
             out_dict.update({symbolName: self.load_relative()})
 
+
         return out_dict
     
+    def add_average_metric(self, df: pd.DataFrame, periods=[30, 60, 120, 240, 360]):
+        """
+            計算均線並生成相對特徵：log(Close / MA)
+            這能告訴模型目前價格相對於均線的偏離程度。
+            # 均線邏輯：不需要 shift
+        """
+        for p in periods:
+            ma_col_name = f'MA_{p}'
+            feature_col_name = f'log_ma_{p}'
+            
+            # 計算簡單移動平均 (SMA)
+            df[ma_col_name] = df['Close'].rolling(window=p).mean()
+            df[feature_col_name] = np.log(df['Close'] / df[ma_col_name])            
+            df.drop(columns=[ma_col_name], inplace=True)
+
+        # 因為 rolling 會產生 NaN (例如 MA_360 前 359 筆是空的)，這裡需要清除
+        df = df.dropna()
+        return df
+
     def add_ATR(self, df: pd.DataFrame, period: int = 14):
         """
             becasue i want use in feature, so i need to let agent know the state,not be a strategy trigger.
@@ -198,30 +232,39 @@ class OriginalDataFrature:
 
         """
 
-        np_data = np.array(self.df.values, dtype=np.float32)
+        # np_data = np.array(self.df.values, dtype=np.float32)
 
+
+        
 
         if if_log:
             # 經過我的評估認為log 已經可以極大化避免極端值
             # clamp_min, clamp_max = 0.01, 100000.0
             # np_data = np.clip(np_data, clamp_min, clamp_max)
 
-            log_np_data = np.log1p(np_data[:, :9])
-
+            # log_np_data = np.log1p(np_data[:, :9])
+            print(self.df)
+            print(self.df.columns)
+            print(self.df["Open"].values)
             return Prices(
-                open=np_data[:, 0],
-                high=np_data[:, 1],
-                low=np_data[:, 2],
-                close=np_data[:, 3],
-                log_open=log_np_data[:, 0],
-                log_high=log_np_data[:, 1],
-                log_low=log_np_data[:, 2],
-                log_close=log_np_data[:, 3],
-                log_volume=log_np_data[:, 4],
-                log_quote_av=log_np_data[:, 5],
-                log_trades=log_np_data[:, 6],
-                log_tb_base_av=log_np_data[:, 7],
-                log_tb_quote_av=log_np_data[:, 8],
+                open=self.df["Open"].values,
+                high=self.df["High"].values,
+                low=self.df["Low"].values,
+                close=self.df["Close"].values,
+                log_open=np.log1p(self.df["Open"].values),
+                log_high=np.log1p(self.df["High"].values),
+                log_low=np.log1p(self.df["Low"].values),
+                log_close=np.log1p(self.df["Close"].values),
+                log_volume=np.log1p(self.df["Volume"].values),
+                log_quote_av=np.log1p(self.df["quote_av"].values),
+                log_trades=np.log1p(self.df["trades"].values),
+                log_tb_base_av=np.log1p(self.df["tb_base_av"].values),
+                log_tb_quote_av=np.log1p(self.df["tb_quote_av"].values),
+                log_ma_30 = self.df["log_ma_30"]
+                log_ma_60= self.df["log_ma_60"],
+                log_ma_120=self.df["log_ma_120"] ,
+                log_ma_240=self.df["log_ma_240"] ,
+                log_ma_360=self.df["log_ma_360"] ,
                 age_log_minutes=np_data[:, 9],
                 age_years=np_data[:, 10],
                 month_sin=np_data[:, 11],

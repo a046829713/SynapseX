@@ -15,7 +15,7 @@ from queue import Empty, Full
 from collections import deque
 from Brain.Common.experience import ACSequentialExperienceReplayBuffer
 import itertools
-from utils.AppSetting import RLConfig
+from utils.AppSetting import RLConfig, UpdateConfig
 from utils.Debug_tool import debug
 
 
@@ -473,7 +473,7 @@ class SymbolProcess(mp.Process):
 
 
 # --- 主執行流程 (重大修改) ---
-NUM_ACTORS = 4
+NUM_ACTORS = 1
 
 
 def main():
