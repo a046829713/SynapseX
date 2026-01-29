@@ -25,7 +25,6 @@ Prices = collections.namedtuple(
         "log_trades",
         "log_tb_base_av",
         "log_tb_quote_av",
-
         # 新增均線特徵
         "log_ma_30",
         "log_ma_60",
@@ -231,21 +230,8 @@ class OriginalDataFrature:
             ]
 
         """
-
-        # np_data = np.array(self.df.values, dtype=np.float32)
-
-
-        
-
         if if_log:
-            # 經過我的評估認為log 已經可以極大化避免極端值
-            # clamp_min, clamp_max = 0.01, 100000.0
-            # np_data = np.clip(np_data, clamp_min, clamp_max)
-
-            # log_np_data = np.log1p(np_data[:, :9])
-            print(self.df)
-            print(self.df.columns)
-            print(self.df["Open"].values)
+            
             return Prices(
                 open=self.df["Open"].values,
                 high=self.df["High"].values,
@@ -260,26 +246,26 @@ class OriginalDataFrature:
                 log_trades=np.log1p(self.df["trades"].values),
                 log_tb_base_av=np.log1p(self.df["tb_base_av"].values),
                 log_tb_quote_av=np.log1p(self.df["tb_quote_av"].values),
-                log_ma_30 = self.df["log_ma_30"]
-                log_ma_60= self.df["log_ma_60"],
-                log_ma_120=self.df["log_ma_120"] ,
-                log_ma_240=self.df["log_ma_240"] ,
-                log_ma_360=self.df["log_ma_360"] ,
-                age_log_minutes=np_data[:, 9],
-                age_years=np_data[:, 10],
-                month_sin=np_data[:, 11],
-                month_cos=np_data[:, 12],
-                day_sin=np_data[:, 13],
-                day_cos=np_data[:, 14],
-                hour_sin=np_data[:, 15],
-                hour_cos=np_data[:, 16],
-                minute_sin=np_data[:, 17],
-                minute_cos=np_data[:, 18],
-                dayofweek_sin=np_data[:, 19],
-                dayofweek_cos=np_data[:, 20],
-                week_sin=np_data[:, 21],
-                week_cos=np_data[:, 22],
-                atr_Volatility=np_data[:, 23],
+                log_ma_30 = self.df["log_ma_30"].values,
+                log_ma_60= self.df["log_ma_60"].values,
+                log_ma_120=self.df["log_ma_120"].values ,
+                log_ma_240=self.df["log_ma_240"].values ,
+                log_ma_360=self.df["log_ma_360"].values ,
+                age_log_minutes=self.df["age_log_minutes"].values,
+                age_years=self.df["age_years"].values,
+                month_sin=self.df["month_sin"].values,
+                month_cos=self.df["month_cos"].values,
+                day_sin=self.df["day_sin"].values,
+                day_cos=self.df["day_cos"].values,
+                hour_sin=self.df["hour_sin"].values,
+                hour_cos=self.df["hour_cos"].values,
+                minute_sin=self.df["minute_sin"].values,
+                minute_cos=self.df["minute_cos"].values,
+                dayofweek_sin=self.df["dayofweek_sin"].values,
+                dayofweek_cos=self.df["dayofweek_cos"].values,
+                week_sin=self.df["week_sin"].values,
+                week_cos=self.df["week_cos"].values,
+                atr_Volatility=self.df["ATR_14"].values,
 
             )
 

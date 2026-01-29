@@ -31,6 +31,11 @@ class BasicState():
             "log_trades",
             "log_tb_base_av",
             "log_tb_quote_av",
+            "log_ma_30",
+            "log_ma_60",
+            "log_ma_120",
+            "log_ma_240",
+            "log_ma_360",
         ]
 
         self.timelist = [
@@ -72,6 +77,8 @@ class State_time_step_template(BasicState):
                 data_res[bar_idx][idx] = getattr(self._prices, field)[
                     self._offset - ofs + bar_idx
                 ]
+
+
 
         if self.have_position:
             data_res[:, len(self.info_list)] = 1.0

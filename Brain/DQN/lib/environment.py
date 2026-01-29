@@ -719,6 +719,8 @@ class TrainingEnv(BaseTradingEnv):
         )
 
         self._state.reset(prices, offset)
+
+
         return self._state.encode()
 
     def getModelBase_feature(self):

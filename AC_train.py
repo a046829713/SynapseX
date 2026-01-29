@@ -192,7 +192,7 @@ class LearnerProcess(mp.Process):
             ssm_cfg = {
                 "expand":4
             }
-            self.net = model.I2A_MambaDuelingModel(
+            self.net = model.mambaDuelingModel(
                 d_model=data_input_size,
                 nlayers=4,
                 num_actions=action_space_n,

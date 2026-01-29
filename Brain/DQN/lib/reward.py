@@ -1,6 +1,7 @@
 import numpy as np
 import enum
 from typing import Optional
+import time
 
 class Actions(enum.Enum):
     Hold = 0
@@ -167,6 +168,7 @@ class RelativeDSR_Calculator:
         
         # A_t: 超額報酬率 (r_strat - r_bench) 的指數移動平均 (預期 Alpha) 歷史平均超額回報 (Expected Alpha)。
         self.A = 0.0
+        
         # B_t: 超額報酬率平方 (r_strat - r_bench)^2 的指數移動平均 超額回報的平方期望。
         self.B = 0.0
         
@@ -233,6 +235,9 @@ class RelativeDSR_Calculator:
         term_2 = (sharpe_t_minus_1 * (r_net**2 - self.B)) / (2 * (std_dev**2 + self.epsilon))
         
         # 組合 DSR
+        if r_net > 0:
+            term_2 = 0.0  # 豁免懲罰，鼓勵上漲波動
+
         dsr_reward = term_1 - term_2
         
         # 加入 eta scaling (根據原始論文建議，雖然很多實作會省略，但保留較符合數學定義)
@@ -243,7 +248,7 @@ class RelativeDSR_Calculator:
         # 如果歷史 Alpha (self.A) 是負的 (長期輸給大盤)，
         # 且現在只是跟著大盤走 (r_net ~ 0)，
         # 那必須給予懲罰，逼迫它做出改變。
-        if self.A < -1e-4 and abs(r_net) < 1e-4:
+        if self.A < -1e-6 and abs(r_net) < 1e-6:
             # 這裡給一個微小的負獎勵，比 0 更能推動改變
             dsr_reward = -0.05 
 
