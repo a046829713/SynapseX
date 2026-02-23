@@ -5,8 +5,9 @@ from Brain.Common.DataFeature import OriginalDataFrature, Prices
 import pandas as pd
 from abc import ABC, abstractmethod
 from Brain.Common.env_components import State_time_step_template
-from Brain.DQN.lib.reward import Actions, Reward, RewardHelp, DSR_Calculator , RelativeDSR_Calculator, RelativeSortino_Calculator,Window_RelativeSortino_Calculator
-from collections import deque
+from Brain.DQN.lib.reward import Actions, Reward, RewardHelp, DSR_Calculator , RelativeDSR_Calculator
+
+
 # class State_time_step(State_time_step_template):
 #     def __init__(
 #         self,
@@ -442,7 +443,7 @@ class State_time_step(State_time_step_template):
         N_steps,
         win_payoff_weight = None,
         dsr_window=100,  # DSR 窗口
-        dsr_weight=0.01
+        dsr_weight=1
     ):
         super().__init__(
             bars_count=bars_count,
@@ -454,7 +455,9 @@ class State_time_step(State_time_step_template):
         
         self.reward_help = RewardHelp()
         self.reward_function = Reward()
-        self.dsr_calc = Window_RelativeSortino_Calculator()
+        
+        # ★ 修改點 1: 初始化 Relative DSR 計算器 (移除 risk_free_rate)
+        self.dsr_calc = RelativeDSR_Calculator(window=dsr_window)
         
         self.current_step = 0
         self.annealing_steps = 500000
@@ -462,9 +465,6 @@ class State_time_step(State_time_step_template):
         self.max_default_slippage = default_slippage
         self.beforeBar = 50
         self.dsr_weight = dsr_weight
-        self.dsr_window = dsr_window
-        self.strategy_returns_buffer = []
-        self.benchmark_returns_buffer = []
 
     def _get_current_commission(self):
         if self.current_step >= self.annealing_steps:
@@ -480,6 +480,7 @@ class State_time_step(State_time_step_template):
         assert offset >= self.bars_count - 1
 
         self.canusecash = 1.0
+        self.dsr_calc.reset()
         self.open_price = 0.0
         self.trade_bar = 0 
         self.have_position = False
@@ -490,10 +491,6 @@ class State_time_step(State_time_step_template):
         self.closecash = 0.0
         self.bar_dont_change_count = 0
         self.pre_open_diff = 0.0
-
-
-        self.strategy_returns_buffer.clear()
-        self.benchmark_returns_buffer.clear()
 
     def step(self, action: Actions):
         assert isinstance(action, Actions)
@@ -588,22 +585,15 @@ class State_time_step(State_time_step_template):
         self.canusecash = current_equity 
 
         
-        # ★ 11. 計算百分比報酬率 (專門存起來給 DSR 算帳用的)
-        # 保護分母不為 0
-        if previous_equity > 0:
-            strat_ret_pct = (current_equity / previous_equity) - 1.0
-        else:
-            strat_ret_pct = 0.0
-        
-        bench_ret_pct = (close / prev_close) - 1.0
-        
-        # 將這一步的百分比報酬存入 Buffer
-        self.strategy_returns_buffer.append(strat_ret_pct)
-        self.benchmark_returns_buffer.append(bench_ret_pct)
+        portfolio_return_rt = current_equity - previous_equity            
+        benchmark_return_rt = (close / prev_close) - 1.0
 
+        # C. 傳入兩個回報率給計算器
+        dsr_reward = self.dsr_calc.step(portfolio_return_rt, benchmark_return_rt)
         
         reward = reward + (
-             current_equity - previous_equity
+            #  current_equity - previous_equity
+            + self.dsr_weight * dsr_reward 
         )
 
 
@@ -615,38 +605,8 @@ class State_time_step(State_time_step_template):
         if self.game_steps == self.N_steps and self.model_train:
             done = True       
 
-
-        # ★ 13. Window-based DSR 考核時間！
-        # 如果存滿了指定的 Window 長度，或者是 Episode 結束了，就進行結算
-        if len(self.strategy_returns_buffer) >= self.dsr_window or done:
-            
-            # 確保 Buffer 內有資料可以算
-            if len(self.strategy_returns_buffer) > 1:
-                dsr_score = self.dsr_calc.calculate(
-                    self.strategy_returns_buffer, 
-                    self.benchmark_returns_buffer
-                )
-                
-                # 計算這段區間的 DSR 獎金/罰款
-                # 因為是累積了 N 步才發一次，可以乘以 window 長度來平衡單步獎勵
-                window_reward = self.dsr_weight * dsr_score * len(self.strategy_returns_buffer)
-                
-                # 將這筆大獎勵加進當下的 reward 中
-                reward += window_reward
-                
-            
-            # 結算完畢，清空 Buffer，準備迎接下一個區間
-            self.strategy_returns_buffer.clear()
-            self.benchmark_returns_buffer.clear()
-
-
-
-
-
-
-
         return reward, done
-        
+    
 class BaseTradingEnv(gym.Env, ABC):
     """
     交易環境的抽象基礎類別。
@@ -718,18 +678,19 @@ class TrainingEnv(BaseTradingEnv):
                                如果為 False，則使用訓練數據和隨機的起始點。
         """
         self.config = config
-        self.unique_symbols = self.config.UNIQUE_SYMBOLS
+        self.unique_symbols = self.config.unique_symbols
+        
         # 根據模式決定數據類型和佣金
         self.data_type_name = "train_data"
-        random_symbol = np.random.choice(self.unique_symbols)
+
 
         state_params = {
-            "bars_count": self.config.BARS_COUNT,
-            "commission_perc": self.config.MODEL_DEFAULT_COMMISSION_PERC_TRAING,
+            "bars_count": self.config.bars_count,
+            "commission_perc": self.config.model_default_commission_perc_traing,
             "model_train": True,
-            "default_slippage": self.config.DEFAULT_SLIPPAGE,
-            "N_steps": self.config.N_STEPS,
-            "win_payoff_weight": self.config.WIN_PAYOFF_WEIGHT,
+            "default_slippage": self.config.default_slippage,
+            "N_steps": self.config.n_steps,
+            "win_payoff_weight": self.config.win_payoff_weight,
         }
 
         super().__init__(state=State_time_step(**state_params))

@@ -27,6 +27,13 @@ train:
   epsilon_decay: 20000     # 經過多少步衰減到接近最小值
   epsilon_steps_factor : 0 # 函數產生
 
+
+  # strategy
+  model_default_commission_perc_traing : 0.0045
+  default_slippage : 0.0025
+  n_steps : 1000
+  win_payoff_weight : 1.0
+
   # --- 存檔設定 ---
   checkpoint:
     enable: true
@@ -35,7 +42,7 @@ train:
     saves_path: ""         # 函數產生
 
   train_data_file_path : ["Brain","simulation","train_data"]
-
+  unique_symbols : [] # 函數產生 (訓練資料表)
 
 # 3. 優化器設定
 optim:

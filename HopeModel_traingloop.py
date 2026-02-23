@@ -24,7 +24,7 @@ from HopeModel import HOPEDQN, DQNConfig
 from nested_learning.levels import LevelSpec
 from nested_learning.logging_utils import BaseLogger, NullLogger, init_logger
 import time
-from Brain.DQN.lib.environment import TrainingEnv
+from Brain.HopeDQN.lib.environment import TrainingEnv
 from utils.AppSetting import UpdateConfig
 
 @dataclass
@@ -148,12 +148,13 @@ def run_dqn_training_loop(
     
 
         
-    env = TrainingEnv(cfg)
-    print(env)
-    time.sleep(100)
+    env = TrainingEnv(cfg.train)
 
+    print(cfg.model)
     # 2. 建立 Policy Network 和 Target Network
     policy_net = build_model_from_cfg(cfg.model).to(device)
+    print(policy_net)
+    time.sleep(100)
 
     target_net = build_model_from_cfg(cfg.model).to(device)
     target_net.load_state_dict(policy_net.state_dict())
@@ -278,7 +279,6 @@ def run_dqn_training_loop(
 @hydra.main(config_path="configs", config_name="dqn_pilot", version_base=None)
 def main(cfg: DictConfig) -> None:
     UpdateConfig(cfg)
-
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     run_dqn_training_loop(cfg, device=device)
 

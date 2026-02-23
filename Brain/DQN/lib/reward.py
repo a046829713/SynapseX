@@ -257,6 +257,132 @@ class RelativeDSR_Calculator:
 
         # Clip 防止梯度爆炸，範圍可以根據你的訓練情況調整
         return np.clip(dsr_reward, -1.0, 1.0) 
+
+class RelativeSortino_Calculator:
+    """
+        計算相對微分索提諾比率 (Relative Differential Sortino Ratio)
+        
+        特點：
+        1. 只懲罰「下行波動」(Downside Risk)：即跑輸大盤的時候。
+        如果跑贏大盤且波動很大，Sortino Ratio 不會懲罰它。
+        2. 加入 Hurdle Rate：解決「死多頭」問題，強迫模型必須超越大盤一定幅度才有正獎勵。
+    """
+    def __init__(self, window: int, hurdle_rate: float = 0.001, epsilon: float = 1e-9):
+        """
+        Args:
+            window (int): EMA 窗口大小。
+            hurdle_rate (float): 門檻費率 (例如 1e-5)。
+                                 如果 r_net = 0 (完全跟隨大盤)，扣除此費率後會變成負獎勵。
+                                 這能逼迫模型尋找比 Buy & Hold 更好的機會。
+            epsilon (float): 數值穩定項。
+        """
+        self.eta = 1.0 / window
+        self.epsilon = epsilon
+        self.hurdle_rate = hurdle_rate
+        
+        # A_t: 預期超額回報 (Expected Excess Return)
+        self.A = 0.0
+        
+        # D_t: 下行變異數 (Downside Variance) 的 EMA
+        # 這是 Sortino 的核心，只累積負的波動
+        self.D_sq = 0.0 
+        
+        self.t = 0
+        self.window = window
+
+    def reset(self):
+        self.A = 0.0
+        self.D_sq = 0.0
+        self.t = 0
+        
+    def _update_moments(self, r_net: float):
+        # 1. 更新預期超額回報
+        self.A += self.eta * (r_net - self.A)
+        
+        # 2. 更新下行變異數 (Downside Variance)
+        # 邏輯：只有當 (r_net - A) < 0 時，才視為風險
+        delta = r_net - self.A
+        downside_delta_sq = (min(0, delta)) ** 2
+        
+        self.D_sq += self.eta * (downside_delta_sq - self.D_sq)
+
+    def step(self, strategy_r_t: float, benchmark_r_t: float) -> float:
+        self.t += 1
+        
+        # 核心修改 1: 計算淨回報並扣除 Hurdle Rate
+        # 如果模型只是 Buy & Hold，strategy_r_t ~= benchmark_r_t
+        # 此時 r_net 會變成負的 (-hurdle_rate)，長期累積會給予負獎勵，逼迫其改變。
+        r_net = strategy_r_t - benchmark_r_t - self.hurdle_rate
+        
+        # --- Warm-up ---
+        if self.t < self.window:
+            self._update_moments(r_net)
+            return r_net  # 預熱期直接返回超額回報
+        
+        # 計算下行標準差 (Downside Deviation)
+        downside_dev = np.sqrt(self.D_sq + self.epsilon)
+        
+        # 計算前一時刻的 Sortino Ratio
+        sortino_t_minus_1 = self.A / downside_dev
+        
+        # --- Differential Sortino Ratio 公式 ---
+        # 這是對 Sortino Ratio 的梯度近似
+        # Term 1: 獎勵回報提升
+        term_1 = (r_net - self.A) / downside_dev
+        
+        # Term 2: 懲罰下行風險增加
+        # 注意這裡的 delta 處理：只有當這次回報是「負向偏離」時，term_2 才會生效
+        delta = r_net - self.A
+        # 如果 delta > 0 (表現好於預期)，downside_correction 為 0，自然就不懲罰
+        # 如果 delta < 0 (表現差於預期)，downside_correction 為 delta^2
+        downside_correction = (min(0, delta)**2 - self.D_sq)
+        
+        term_2 = (sortino_t_minus_1 * downside_correction) / (2 * (self.D_sq + self.epsilon))
+        
+        dsr_reward = term_1 - term_2
+        
+        # 縮放係數 (保留數學定義)
+        dsr_reward *= (self.eta / (1.0 - self.eta))
+        
+        # 更新統計量
+        self._update_moments(r_net)
+
+        # 數值截斷 (使用 tanh 會比 hard clip 更平滑，有助於訓練)
+        return np.tanh(dsr_reward)
+
+
+class Window_RelativeSortino_Calculator:
+    """
+    區間型相對索提諾比率 (Window-based Relative Sortino Ratio)
+    接收一段時間的策略回報與大盤回報陣列，進行一次性結算。
+    """
+    def __init__(self, hurdle_rate: float = 0.001, epsilon: float = 1e-9):
+        self.hurdle_rate = hurdle_rate
+        self.epsilon = epsilon
+
+    def calculate(self, strategy_returns: list, benchmark_returns: list) -> float:
+        # 將傳入的 List 轉為 Numpy 陣列
+        strat_arr = np.array(strategy_returns)
+        bench_arr = np.array(benchmark_returns)
+        
+        # 1. 計算這段區間內，每一步的淨超額回報 (扣除 hurdle rate)
+        r_net = strat_arr - bench_arr - self.hurdle_rate
+        
+        # 2. 計算預期超額回報 (Mean)
+        A = np.mean(r_net)
+        
+        # 3. 計算下行風險 (Downside Deviation)
+        # 只取小於 0 的部分，大於 0 的部分當作 0
+        downside_diff = np.minimum(0, r_net - A)
+        downside_variance = np.mean(downside_diff ** 2)
+        downside_dev = np.sqrt(downside_variance + self.epsilon)
+        
+        # 4. 計算 Sortino Ratio
+        sortino = A / downside_dev
+        
+        # 為了避免極端值導致梯度爆炸，依然使用 tanh 進行縮放
+        # 也可以視情況改用 np.clip(sortino, -5.0, 5.0) 讓獎勵區間大一點
+        return np.tanh(sortino)
     
 class RewardHelp:
     def __init__(self):

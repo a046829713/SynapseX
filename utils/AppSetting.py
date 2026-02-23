@@ -93,12 +93,25 @@ class UpdateConfig():
         """
 
         self.cfg = cfg
-
-
-        self.update_steps_by_symbols()
+        self.update_steps_by_symbols(num_symbols=self.GetSymbolsCount())
+        self.update_unique_symbols()
         self.create_saves_path()
         
+    def GetSymbolsCount(self) -> int:
+        """ Get the train symbols len.
 
+        Returns:
+            int: number of list
+        """
+        return len(self.GetSymbols())
+
+
+    def GetSymbols(self):
+        symbolNames = os.listdir(os.path.join(os.getcwd() , *self.cfg.train.train_data_file_path))
+        symbolNames = [_fileName.split('.')[0] for _fileName in symbolNames]
+        unique_symbols = list(set(symbolNames))    
+        return unique_symbols
+    
     def GetInstance(self):
         return self.cfg
     
@@ -108,6 +121,9 @@ class UpdateConfig():
             if num_symbols > 30
             else self.cfg.train.epsilon_steps_factor * num_symbols
         )
+
+    def update_unique_symbols(self):
+        self.cfg.train.unique_symbols = self.GetSymbols()
         
     def create_saves_path(self):
         saves_path = os.path.join(
@@ -118,11 +134,3 @@ class UpdateConfig():
             + "k-",
         )
         os.makedirs(saves_path, exist_ok=True)
-        self.cfg.train.saves_path = saves_path
-    
-
-    def GetSymbols(self):
-        symbolNames = os.listdir(os.path.join(os.getcwd() , *self.cfg.train.train_data_file_path))
-        symbolNames = [_fileName.split('.')[0] for _fileName in symbolNames]
-        unique_symbols = list(set(symbolNames))
-        return unique_symbols
