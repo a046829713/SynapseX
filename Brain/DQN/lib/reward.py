@@ -369,21 +369,42 @@ class Window_RelativeSortino_Calculator:
         r_net = strat_arr - bench_arr - self.hurdle_rate
         
         # 2. 計算預期超額回報 (Mean)
-        A = np.mean(r_net)
+        A = np.mean(r_net)        
+
+
         
         # 3. 計算下行風險 (Downside Deviation)
         # 只取小於 0 的部分，大於 0 的部分當作 0
         downside_diff = np.minimum(0, r_net - A)
+
+        
         downside_variance = np.mean(downside_diff ** 2)
+
+
         downside_dev = np.sqrt(downside_variance + self.epsilon)
-        
+
+
+
         # 4. 計算 Sortino Ratio
-        sortino = A / downside_dev
-        
+        sortino = A / downside_dev        
         # 為了避免極端值導致梯度爆炸，依然使用 tanh 進行縮放
         # 也可以視情況改用 np.clip(sortino, -5.0, 5.0) 讓獎勵區間大一點
+
+
         return np.tanh(sortino)
-    
+
+
+
+
+
+
+
+
+
+
+
+
+
 class RewardHelp:
     def __init__(self):
         pass

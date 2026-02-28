@@ -18,6 +18,8 @@ import itertools
 from utils.AppSetting import RLConfig, UpdateConfig
 from utils.Debug_tool import debug
 
+# --- 主執行流程 (重大修改) ---
+NUM_ACTORS = 1
 
 
 # those entries are emitted from ExperienceSourceFirstLast. Reward is discounted over the trajectory piece
@@ -220,7 +222,7 @@ class LearnerProcess(mp.Process):
     def _handle_inference_batch(self):
         """處理批次推理"""
         q_size = self.state_queue.qsize()
-        if q_size == 0:
+        if q_size != NUM_ACTORS:
             return
 
         batch = [self.state_queue.get() for _ in range(q_size)]
@@ -472,8 +474,6 @@ class SymbolProcess(mp.Process):
         print("--- Symbol Process Exited ---")
 
 
-# --- 主執行流程 (重大修改) ---
-NUM_ACTORS = 1
 
 
 def main():

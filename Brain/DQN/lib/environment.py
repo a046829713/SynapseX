@@ -442,7 +442,7 @@ class State_time_step(State_time_step_template):
         N_steps,
         win_payoff_weight = None,
         dsr_window=100,  # DSR 窗口
-        dsr_weight=0.01
+        dsr_weight=0.001
     ):
         super().__init__(
             bars_count=bars_count,
@@ -588,17 +588,10 @@ class State_time_step(State_time_step_template):
         self.canusecash = current_equity 
 
         
-        # ★ 11. 計算百分比報酬率 (專門存起來給 DSR 算帳用的)
-        # 保護分母不為 0
-        if previous_equity > 0:
-            strat_ret_pct = (current_equity / previous_equity) - 1.0
-        else:
-            strat_ret_pct = 0.0
-        
         bench_ret_pct = (close / prev_close) - 1.0
         
         # 將這一步的百分比報酬存入 Buffer
-        self.strategy_returns_buffer.append(strat_ret_pct)
+        self.strategy_returns_buffer.append(current_equity - previous_equity)
         self.benchmark_returns_buffer.append(bench_ret_pct)
 
         
@@ -615,11 +608,10 @@ class State_time_step(State_time_step_template):
         if self.game_steps == self.N_steps and self.model_train:
             done = True       
 
-
         # ★ 13. Window-based DSR 考核時間！
         # 如果存滿了指定的 Window 長度，或者是 Episode 結束了，就進行結算
         if len(self.strategy_returns_buffer) >= self.dsr_window or done:
-            
+                       
             # 確保 Buffer 內有資料可以算
             if len(self.strategy_returns_buffer) > 1:
                 dsr_score = self.dsr_calc.calculate(
@@ -638,10 +630,6 @@ class State_time_step(State_time_step_template):
             # 結算完畢，清空 Buffer，準備迎接下一個區間
             self.strategy_returns_buffer.clear()
             self.benchmark_returns_buffer.clear()
-
-
-
-
 
 
 
