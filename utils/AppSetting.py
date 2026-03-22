@@ -62,7 +62,7 @@ class RLConfig:
     UNIQUE_SYMBOLS: list[str] = None
     CHECK_GRAD_STEP = 1000
     N_STEPS = 1000
-    WIN_PAYOFF_WEIGHT = 1.0
+
 
     def update_steps_by_symbols(self, num_symbols: int):
         self.EPSILON_STEPS = (

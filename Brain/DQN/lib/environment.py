@@ -432,6 +432,213 @@ from collections import deque
 
     
 
+# class State_time_step(State_time_step_template):
+#     def __init__(
+#         self,
+#         bars_count,
+#         commission_perc,
+#         model_train,
+#         default_slippage,
+#         N_steps,
+#         win_payoff_weight = None,
+#         dsr_window=100,  # DSR 窗口
+#         dsr_weight=0.001
+#     ):
+#         super().__init__(
+#             bars_count=bars_count,
+#             commission_perc=commission_perc,
+#             model_train=model_train,
+#             default_slippage=default_slippage,
+#             N_steps = N_steps,          
+#         )
+        
+#         self.reward_help = RewardHelp()
+#         self.reward_function = Reward()
+#         self.dsr_calc = Window_RelativeSortino_Calculator()
+        
+#         self.current_step = 0
+#         self.annealing_steps = 500000
+#         self.max_commission = commission_perc
+#         self.max_default_slippage = default_slippage
+#         self.beforeBar = 50
+#         self.dsr_weight = dsr_weight
+#         self.dsr_window = dsr_window
+#         self.strategy_returns_buffer = []
+#         self.benchmark_returns_buffer = []
+
+#     def _get_current_commission(self):
+#         if self.current_step >= self.annealing_steps:
+#             return self.max_commission
+#         return self.max_commission * (self.current_step / self.annealing_steps)
+
+#     def _get_current_default_slippage(self):
+#         if self.current_step >= self.annealing_steps:
+#             return self.max_default_slippage
+#         return self.max_default_slippage * (self.current_step / self.annealing_steps)
+    
+#     def reset(self, prices:Prices, offset):
+#         assert offset >= self.bars_count - 1
+
+#         self.canusecash = 1.0
+#         self.open_price = 0.0
+#         self.trade_bar = 0 
+#         self.have_position = False
+#         self._prices = prices
+#         self._offset = offset
+#         self.game_steps = 0 
+#         self.cost_sum = 0.0
+#         self.closecash = 0.0
+#         self.bar_dont_change_count = 0
+#         self.pre_open_diff = 0.0
+
+
+#         self.strategy_returns_buffer.clear()
+#         self.benchmark_returns_buffer.clear()
+
+#     def step(self, action: Actions):
+#         assert isinstance(action, Actions)
+#         self.current_step += 1
+#         reward = 0.0 
+#         done = False        
+#         time_cost = 0.0
+
+#         # 獲取當前價格 (P_t) 和 上一根價格 (P_{t-1})
+#         close = self._prices.close[self._offset]
+
+#         # 用於計算 Benchmark Return
+#         prev_close = self._prices.close[self._offset - 1] 
+        
+
+        
+        
+#         # 獲取上一步的總淨值
+#         previous_equity = self.canusecash 
+        
+
+#         # 1. 計算規則懲罰
+#         wrongTrade_reward = self.reward_function.wrongTrade(
+#              self.have_position, action=action
+#         )
+#         # print("錯誤交易獎勵值:",wrongTrade_reward)
+#         reward += wrongTrade_reward 
+
+
+
+#         # 3. 計算平倉損益
+#         closecash_diff = self.reward_help.CaculateCloseProfit(
+#             self.have_position,
+#             action=action,
+#             openPrice=self.open_price,
+#             default_slippage=self.max_default_slippage,
+#             closePrcie=close,
+#         )
+
+
+
+#         # 4. 更新開倉價格
+#         self.open_price = self.reward_help.CaculateOpenPrcie(
+#             self.open_price,
+#             self.have_position,
+#             action=action,
+#             default_slippage=self.max_default_slippage,
+#             closePrcie=close,
+#         )
+
+
+#         # 5. 預先計算「動作後」的持倉狀態
+#         next_have_position = self.reward_help.CaculatePostion(
+#             self.have_position, action=action
+#         )
+
+
+
+#         # 6. 計算交易成本
+#         current_step_cost = self.reward_help.CaculateCost(
+#             havePostion=self.have_position, action=action, cost=self.max_commission
+#         )
+
+#         self.cost_sum += current_step_cost
+#         self.closecash += closecash_diff
+
+
+#         # 7. 計算浮動損益 (基於 next_have_position)
+#         opencash_diff = self.reward_help.CaculateOpenProfit(
+#             next_have_position, 
+#             action=action,
+#             closePrice=close,
+#             OpenPrice=self.open_price,
+#         )
+
+
+        
+
+
+
+#         # 8. 更新統計數據
+#         self.trade_bar = self.reward_help.Caculatetrade_bar(
+#             self.trade_bar, self.have_position, action=action
+#         )
+
+#         # 9. 正式更新持倉狀態
+#         self.have_position = next_have_position
+
+
+#         # 10. 計算當前的總淨值 (Equity)
+#         current_equity = 1.0 - self.cost_sum + self.closecash + opencash_diff
+#         self.canusecash = current_equity 
+
+        
+#         bench_ret_pct = (close / prev_close) - 1.0
+        
+#         # 將這一步的百分比報酬存入 Buffer
+#         self.strategy_returns_buffer.append(current_equity - previous_equity)
+#         self.benchmark_returns_buffer.append(bench_ret_pct)
+
+        
+#         reward = reward + (
+#              current_equity - previous_equity
+#         )
+
+
+#         # --- 11. 更新步數與結束判斷 ---
+#         self._offset += 1
+#         self.game_steps += 1
+#         done |= self._offset >= self._prices.close.shape[0] - 1
+
+#         if self.game_steps == self.N_steps and self.model_train:
+#             done = True       
+
+#         # ★ 13. Window-based DSR 考核時間！
+#         # 如果存滿了指定的 Window 長度，或者是 Episode 結束了，就進行結算
+#         if len(self.strategy_returns_buffer) >= self.dsr_window or done:
+                       
+#             # 確保 Buffer 內有資料可以算
+#             if len(self.strategy_returns_buffer) > 1:
+#                 dsr_score = self.dsr_calc.calculate(
+#                     self.strategy_returns_buffer, 
+#                     self.benchmark_returns_buffer
+#                 )
+                
+#                 # 計算這段區間的 DSR 獎金/罰款
+#                 # 因為是累積了 N 步才發一次，可以乘以 window 長度來平衡單步獎勵
+#                 window_reward = self.dsr_weight * dsr_score * len(self.strategy_returns_buffer)
+                
+#                 # 將這筆大獎勵加進當下的 reward 中
+#                 reward += window_reward
+                
+            
+#             # 結算完畢，清空 Buffer，準備迎接下一個區間
+#             self.strategy_returns_buffer.clear()
+#             self.benchmark_returns_buffer.clear()
+
+
+
+#         return reward, done
+
+
+
+
+
 class State_time_step(State_time_step_template):
     def __init__(
         self,
@@ -440,10 +647,19 @@ class State_time_step(State_time_step_template):
         model_train,
         default_slippage,
         N_steps,
-        win_payoff_weight = None,
-        dsr_window=100,  # DSR 窗口
-        dsr_weight=0.001
+        
     ):
+        """
+            base on Risk-Aware Reinforcement Learning Reward for Financial Trading
+
+        Args:
+            bars_count (_type_): _description_
+            commission_perc (_type_): _description_
+            model_train (_type_): _description_
+            default_slippage (_type_): _description_
+            N_steps (_type_): _description_
+        """
+
         super().__init__(
             bars_count=bars_count,
             commission_perc=commission_perc,
@@ -451,89 +667,159 @@ class State_time_step(State_time_step_template):
             default_slippage=default_slippage,
             N_steps = N_steps,          
         )
-        
-        self.reward_help = RewardHelp()
-        self.reward_function = Reward()
-        self.dsr_calc = Window_RelativeSortino_Calculator()
-        
-        self.current_step = 0
-        self.annealing_steps = 500000
-        self.max_commission = commission_perc
+
         self.max_default_slippage = default_slippage
-        self.beforeBar = 50
-        self.dsr_weight = dsr_weight
-        self.dsr_window = dsr_window
-        self.strategy_returns_buffer = []
-        self.benchmark_returns_buffer = []
+        self.max_commission = commission_perc
+        self.reward_function = Reward()
+        self.reward_help = RewardHelp()
 
-    def _get_current_commission(self):
-        if self.current_step >= self.annealing_steps:
-            return self.max_commission
-        return self.max_commission * (self.current_step / self.annealing_steps)
+        self.lookbackDays = 30
 
-    def _get_current_default_slippage(self):
-        if self.current_step >= self.annealing_steps:
-            return self.max_default_slippage
-        return self.max_default_slippage * (self.current_step / self.annealing_steps)
-    
+        self.weights = {
+            'w1_ann_return': 0.4,  # 年化報酬權重
+            'w2_down_risk': 0.1,   # 下行風險權重 (懲罰項)
+            'w3_diff_return': 0.35, # 差異報酬權重
+            'w4_treynor': 0.15      # 崔諾指標權重
+        }
+        self.risk_free_rate = 0.0
+
+        self.portfolio_history_returns = deque(maxlen=self.lookbackDays)
+        self.benchmark_returns = deque(maxlen=self.lookbackDays)
+
+    def calculate_geometric_annualized_return(self, daily_returns):
+        """
+        計算精確的幾何年化報酬率（考慮複利）
+        :param daily_returns: 一維的 numpy array 或 list，包含這段期間每天的報酬率 (例如 0.01 代表 1%)
+        """
+        if len(daily_returns) == 0:
+            return 0.0
+        
+        t_days = len(daily_returns)
+        # 將每天的報酬率加上 1，然後全部乘起來 (計算累積淨值)
+        cumulative_return = np.prod(1 + np.array(daily_returns))
+        
+        # 開次方並年化
+        ann_return = (cumulative_return ** (252 / t_days)) - 1
+        
+        return ann_return
+
+
+
+    def calculate_downside_risk_numpy(self,returns):
+        """
+        計算投資組合的下行風險 (Downside Risk)
+        
+        參數:
+        returns (np.ndarray): 包含一段時間內報酬率的陣列，例如 [0.05, -0.02, -0.05, 0.01]
+        
+        回傳:
+        float: 下行風險值
+        """
+        # 步驟 1: 實作 max(0, -R_{p,t})
+        # np.maximum 會逐一比較陣列元素與 0，只保留正數（也就是虧損的部分，因為前面加了負號）
+        downside_diff = np.maximum(0, - np.array(returns))
+
+
+        # 步驟 2: 將取出的虧損數值進行平方
+        squared_downside = downside_diff ** 2
+        
+        # 步驟 3: 加總平均後開根號 (Root Mean Square)
+        downside_risk = np.sqrt(np.mean(squared_downside))
+        
+        return downside_risk
+
+
+    def calculate_step_differential_return(self, current_p_return, current_b_return, min_beta=0.3):
+        """
+            在 step() 裡面呼叫這個函數，傳入「當下這一步」的報酬
+            計算簡化差異報酬 (Simplified Differential Return)
+        """
+        # 2. 防呆機制：如果歷史資料少於 2 筆，無法計算 Beta
+        if len(self.portfolio_history_returns) < 2:
+            # 資料不足時，退化成最簡單的「絕對超額報酬」，不除以 Beta
+            return current_p_return - current_b_return, 1
+            
+        # 3. 資料足夠，轉成 NumPy 陣列準備計算
+        p_returns = np.array(self.portfolio_history_returns)
+        b_returns = np.array(self.benchmark_returns)
+        
+        # 4. 防呆機制：檢查大盤是否完全沒有波動 (例如連續幾天假日或停牌)
+        benchmark_variance = np.var(b_returns, ddof=1)
+        if benchmark_variance < 1e-8:
+            # 大盤沒波動，Beta 預設為 1
+            beta_p = 1.0
+        else:
+            # 計算共變異數矩陣
+            cov_matrix = np.cov(p_returns, b_returns)
+            covariance = cov_matrix[0, 1]
+            beta_p = covariance / benchmark_variance
+            
+        # 5. 限制 Beta 範圍，防止除以極小值導致獎勵爆炸
+        beta_p = np.clip(beta_p, a_min=min_beta, a_max=3.0)
+        
+        # 6. 計算這一段窗格內的平均報酬
+        mu_p = np.mean(p_returns)
+        mu_b = np.mean(b_returns)
+        
+        # 7. 回傳計算好的差異報酬
+        differential_return = (mu_p - mu_b) / beta_p
+        
+        
+
+        
+        return differential_return, beta_p
+
     def reset(self, prices:Prices, offset):
         assert offset >= self.bars_count - 1
-
-        self.canusecash = 1.0
-        self.open_price = 0.0
-        self.trade_bar = 0 
-        self.have_position = False
         self._prices = prices
-        self._offset = offset
+        self.have_position = False
+        self.portfolio_history_returns.clear()
+        self.benchmark_returns.clear()
+        self.canusecash = 1.0
+        self._offset = offset 
+        self.open_price = 0.0
         self.game_steps = 0 
-        self.cost_sum = 0.0
         self.closecash = 0.0
-        self.bar_dont_change_count = 0
-        self.pre_open_diff = 0.0
-
-
-        self.strategy_returns_buffer.clear()
-        self.benchmark_returns_buffer.clear()
+        self.cost_sum = 0.0
+        self.trade_bar = 0
+        self.TotalPortfolioPercent = 1.0
+        #         self.bar_dont_change_count = (
+        #             0  # 計算K棒之間轉換過了多久 感覺下一次實驗也可以將這個部份加入
+        #         )
 
     def step(self, action: Actions):
+        """
+            step return: we need the every step return
+
+
+            起始資金 (100 %) + 已平倉損益 + 未平倉損益 - 手許費用
+
+            Rate of Return
+        """
         assert isinstance(action, Actions)
-        self.current_step += 1
+        
         reward = 0.0 
         done = False        
-        time_cost = 0.0
-
-        # 獲取當前價格 (P_t) 和 上一根價格 (P_{t-1})
-        close = self._prices.close[self._offset]
-
-        # 用於計算 Benchmark Return
-        prev_close = self._prices.close[self._offset - 1] 
-        
-
-        
-        
-        # 獲取上一步的總淨值
-        previous_equity = self.canusecash 
-        
-
-        # 1. 計算規則懲罰
-        wrongTrade_reward = self.reward_function.wrongTrade(
-             self.have_position, action=action
-        )
-        # print("錯誤交易獎勵值:",wrongTrade_reward)
-        reward += wrongTrade_reward 
 
 
+        _close_price = self._prices.close[self._offset]
+        prev_close = self._prices.close[self._offset - 1]
 
-        # 3. 計算平倉損益
+        self.benchmark_returns.append((_close_price - prev_close) / prev_close)
+
+
+        # # 獲取上一步的總淨值
+        previous_PortfolioPercent = self.TotalPortfolioPercent 
+
+
+        # 3. 計算平倉損益 （不包含交易稅）
         closecash_diff = self.reward_help.CaculateCloseProfit(
             self.have_position,
             action=action,
             openPrice=self.open_price,
             default_slippage=self.max_default_slippage,
-            closePrcie=close,
+            closePrcie=_close_price,
         )
-
-
 
         # 4. 更新開倉價格
         self.open_price = self.reward_help.CaculateOpenPrcie(
@@ -541,9 +827,8 @@ class State_time_step(State_time_step_template):
             self.have_position,
             action=action,
             default_slippage=self.max_default_slippage,
-            closePrcie=close,
+            closePrcie=_close_price,
         )
-
 
         # 5. 預先計算「動作後」的持倉狀態
         next_have_position = self.reward_help.CaculatePostion(
@@ -551,8 +836,7 @@ class State_time_step(State_time_step_template):
         )
 
 
-
-        # 6. 計算交易成本
+        # # 6. 計算交易成本
         current_step_cost = self.reward_help.CaculateCost(
             havePostion=self.have_position, action=action, cost=self.max_commission
         )
@@ -565,14 +849,9 @@ class State_time_step(State_time_step_template):
         opencash_diff = self.reward_help.CaculateOpenProfit(
             next_have_position, 
             action=action,
-            closePrice=close,
+            closePrice=_close_price,
             OpenPrice=self.open_price,
         )
-
-
-        
-
-
 
         # 8. 更新統計數據
         self.trade_bar = self.reward_help.Caculatetrade_bar(
@@ -584,20 +863,49 @@ class State_time_step(State_time_step_template):
 
 
         # 10. 計算當前的總淨值 (Equity)
-        current_equity = 1.0 - self.cost_sum + self.closecash + opencash_diff
-        self.canusecash = current_equity 
+        self.TotalPortfolioPercent = 1.0 - self.cost_sum + self.closecash + opencash_diff 
 
-        
-        bench_ret_pct = (close / prev_close) - 1.0
-        
-        # 將這一步的百分比報酬存入 Buffer
-        self.strategy_returns_buffer.append(current_equity - previous_equity)
-        self.benchmark_returns_buffer.append(bench_ret_pct)
 
-        
-        reward = reward + (
-             current_equity - previous_equity
+        self.portfolio_history_returns.append(self.TotalPortfolioPercent - previous_PortfolioPercent)
+
+
+
+        # 獎勵計算=================================================================
+        # 1. 計算規則懲罰
+        wrongTrade_reward = self.reward_function.wrongTrade(
+             self.have_position, action=action
         )
+        # print("錯誤交易獎勵值:",wrongTrade_reward)
+        reward += wrongTrade_reward 
+
+
+
+
+
+        # Annualized Return
+        
+        AnnualizedReturn = self.calculate_geometric_annualized_return(self.portfolio_history_returns)
+        # print("年化報仇率獎勵：",AnnualizedReturn)
+
+
+        # Downside Risk
+        DownsideRisk = self.calculate_downside_risk_numpy(self.portfolio_history_returns)
+        # print("下行風險獎勵：",DownsideRisk)
+
+
+        # Differential Return
+        DifferentialReturn, beta_p = self.calculate_step_differential_return(current_p_return=self.TotalPortfolioPercent - previous_PortfolioPercent, current_b_return=(_close_price - prev_close) / prev_close)
+        # print("大盤差異性獎勵：",DifferentialReturn)
+
+
+
+        # 指標 4: 崔諾指標 (Treynor Ratio)
+        treynor = (AnnualizedReturn - self.risk_free_rate) / beta_p
+
+        # print("Treynor 指標獎勵：",treynor)
+
+
+
 
 
         # --- 11. 更新步數與結束判斷 ---
@@ -606,35 +914,52 @@ class State_time_step(State_time_step_template):
         done |= self._offset >= self._prices.close.shape[0] - 1
 
         if self.game_steps == self.N_steps and self.model_train:
-            done = True       
-
-        # ★ 13. Window-based DSR 考核時間！
-        # 如果存滿了指定的 Window 長度，或者是 Episode 結束了，就進行結算
-        if len(self.strategy_returns_buffer) >= self.dsr_window or done:
-                       
-            # 確保 Buffer 內有資料可以算
-            if len(self.strategy_returns_buffer) > 1:
-                dsr_score = self.dsr_calc.calculate(
-                    self.strategy_returns_buffer, 
-                    self.benchmark_returns_buffer
-                )
-                
-                # 計算這段區間的 DSR 獎金/罰款
-                # 因為是累積了 N 步才發一次，可以乘以 window 長度來平衡單步獎勵
-                window_reward = self.dsr_weight * dsr_score * len(self.strategy_returns_buffer)
-                
-                # 將這筆大獎勵加進當下的 reward 中
-                reward += window_reward
-                
-            
-            # 結算完畢，清空 Buffer，準備迎接下一個區間
-            self.strategy_returns_buffer.clear()
-            self.benchmark_returns_buffer.clear()
+            done = True     
 
 
+
+        # ==========================================
+        # 1. 內部數值對齊 (Internal Scaling)
+        # 把所有指標強制拉平到相似的量級，避免單一指標綁架神經網路
+        # 這些係數是根據你跑出來的資料分佈設定的固定值
+        # ==========================================
+        scale_ann_return = 1.0
+        scale_down_risk  = 100.0   # 放大 100 倍
+        scale_diff_return = 100.0  # 放大 100 倍
+        scale_treynor    = 0.3     # 縮小為 30%
+
+        norm_ann_return = AnnualizedReturn * scale_ann_return
+        norm_down_risk  = DownsideRisk * scale_down_risk
+        norm_diff_return = DifferentialReturn * scale_diff_return
+        norm_treynor    = treynor * scale_treynor
+
+        # 實務上建議你可以把對齊後的數字印出來看一下，確認它們是不是都在 0.1 到 1.0 的區間：
+        # print(f"對齊後 -> 年化:{norm_ann_return:.3f} | 風險:{norm_down_risk:.3f} | 差異:{norm_diff_return:.3f} | 崔諾:{norm_treynor:.3f}")
+
+        # ==========================================
+        # 2. 組合最終獎勵函數 (乘上你設定的固定權重)
+        # ==========================================
+        composite_reward = (
+            self.weights['w1_ann_return'] * norm_ann_return
+            - self.weights['w2_down_risk'] * norm_down_risk
+            + self.weights['w3_diff_return'] * norm_diff_return
+            + self.weights['w4_treynor'] * norm_treynor
+        )
+
+        # ==========================================
+        # 3. 總獎勵壓縮 (Reward Clipping / Global Scaling)
+        # 防止 Episode 走 1000 步累積幾千分，導致模型 Loss 爆炸
+        # 將每一步的綜合獎勵壓縮到較小的區間
+        # ==========================================
+        global_reward_scaling = 0.01  # 你可以依據實驗結果微調這個數字 (例如 0.05 或 0.001)
+
+        final_step_reward = composite_reward * global_reward_scaling
+        # print("最後獎勵值：",final_step_reward)
+        # print("*"*120)
+        reward += final_step_reward
 
         return reward, done
-        
+
 class BaseTradingEnv(gym.Env, ABC):
     """
     交易環境的抽象基礎類別。
@@ -717,7 +1042,7 @@ class TrainingEnv(BaseTradingEnv):
             "model_train": True,
             "default_slippage": self.config.DEFAULT_SLIPPAGE,
             "N_steps": self.config.N_STEPS,
-            "win_payoff_weight": self.config.WIN_PAYOFF_WEIGHT,
+            
         }
 
         super().__init__(state=State_time_step(**state_params))
