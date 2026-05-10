@@ -19,7 +19,7 @@ from utils.AppSetting import RLConfig, UpdateConfig
 from utils.Debug_tool import debug
 
 # --- 主執行流程 (重大修改) ---
-NUM_ACTORS = 1
+NUM_ACTORS = 4
 
 
 # those entries are emitted from ExperienceSourceFirstLast. Reward is discounted over the trajectory piece

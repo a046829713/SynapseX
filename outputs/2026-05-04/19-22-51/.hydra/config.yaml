@@ -1,0 +1,76 @@
+keyword:
+  algorithm: DQN
+  model: HOPE
+train:
+  device: cuda:0
+  steps: 100000
+  batch_size: 64
+  buffer_size: 50000
+  bars_count: 300
+  gamma: 0.99
+  target_update_freq: 1000
+  epsilon_start: 1.0
+  epsilon_end: 0.05
+  epsilon_decay: 20000
+  epsilon_steps_factor: 0
+  model_default_commission_perc_traing: 0.0045
+  default_slippage: 0.0025
+  n_steps: 1000
+  win_payoff_weight: 1.0
+  checkpoint:
+    enable: true
+    save_interval: 5000
+    saves_tag: saves
+    saves_path: ''
+  train_data_file_path:
+  - Brain
+  - simulation
+  - train_data
+  unique_symbols: []
+optim:
+  type: adamw
+  lr: 0.0003
+  weight_decay: 0.01
+  betas:
+  - 0.9
+  - 0.95
+logging:
+  project: hope-dqn-darkchess
+  name: pilot-run-001
+  log_interval: 100
+model:
+  state_dim: 12
+  action_dim: 3
+  dim: 256
+  num_layers: 4
+  heads: 4
+  gradient_checkpointing: false
+  teach_scale: 1.0
+  teach_clip: 1.0
+  titan_level:
+    name: titan
+    update_period: 8
+    optimizer_key: titan_opt
+  cms_levels:
+  - name: cms_fast
+    update_period: 1
+    optimizer_key: cms_opt
+  - name: cms_mid
+    update_period: 4
+    optimizer_key: cms_opt
+  - name: cms_slow
+    update_period: 16
+    optimizer_key: cms_opt
+  optimizers:
+    titan_opt:
+      type: deep_momentum
+      lr: 0.001
+      params:
+        beta: 0.9
+        beta2: 0.999
+    cms_opt:
+      type: deep_momentum
+      lr: 0.0005
+      params:
+        beta: 0.9
+        beta2: 0.999

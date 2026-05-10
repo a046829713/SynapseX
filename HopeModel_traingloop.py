@@ -26,6 +26,8 @@ from nested_learning.logging_utils import BaseLogger, NullLogger, init_logger
 import time
 from Brain.HopeDQN.lib.environment import TrainingEnv
 from utils.AppSetting import UpdateConfig
+from Brain.Common.optimization import opitmizar
+
 
 @dataclass
 class DistributedContext:
@@ -150,17 +152,18 @@ def run_dqn_training_loop(
         
     env = TrainingEnv(cfg.train)
 
-    print(cfg.model)
     # 2. 建立 Policy Network 和 Target Network
     policy_net = build_model_from_cfg(cfg.model).to(device)
-    print(policy_net)
-    time.sleep(100)
+
 
     target_net = build_model_from_cfg(cfg.model).to(device)
     target_net.load_state_dict(policy_net.state_dict())
     target_net.eval() # Target Net 不訓練
 
-    optimizer = torch.optim.AdamW(policy_net.parameters(), lr=cfg.optim.lr)
+
+    optimizer_instance = opitmizar(net = policy_net,learning_rate= cfg.optim.lr, lambda_l2=cfg.optim.weight_decay).get_optimizer()
+
+
     
     
     # 3. 初始化 Replay Buffer
@@ -181,6 +184,7 @@ def run_dqn_training_loop(
 
 
 
+
     metrics: Dict[str, float] = {}
     
     print(f"Start training DQN for {steps} steps...")
@@ -197,6 +201,11 @@ def run_dqn_training_loop(
                 q_values = policy_net(state_tensor)
                 action = q_values.max(1)[1].item()
         else:
+
+            
+            print(env.action_space)
+            np.
+            time.sleep(100)
             action = env.sample_action() # 隨機動作
 
         # --- Interaction ---
@@ -232,10 +241,10 @@ def run_dqn_training_loop(
         loss = F.mse_loss(current_q_a, expected_q)
 
         # 5. 優化
-        optimizer.zero_grad()
+        optimizer_instance.zero_grad()
         loss.backward()
         torch.nn.utils.clip_grad_norm_(policy_net.parameters(), max_norm=1.0)
-        optimizer.step()
+        optimizer_instance.step()
         
         # --- HOPE Special: Teach Signal Injection ---
         # 這裡我們再次執行一次 forward (不計算梯度)，但是帶入 teach_signal
@@ -269,7 +278,7 @@ def run_dqn_training_loop(
             print(f"[Step {step}] Loss: {loss.item():.4f} | Epsilon: {epsilon:.2f} | TeachNorm: {teach_signal_norm:.4f}")
 
         maybe_save_checkpoint(
-            cfg, policy_net, optimizer, 
+            cfg, policy_net, optimizer_instance, 
             step=step, total_steps=steps
         )
 
