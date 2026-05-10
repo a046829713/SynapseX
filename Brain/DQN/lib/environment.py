@@ -307,7 +307,7 @@ class State_time_step(State_time_step_template):
         norm_treynor    = treynor * scale_treynor
 
         # 實務上建議你可以把對齊後的數字印出來看一下，確認它們是不是都在 0.1 到 1.0 的區間：
-        print(f"對齊後 -> 年化:{norm_ann_return:.3f} | 風險:{norm_down_risk:.3f} | 差異:{norm_diff_return:.3f} | 崔諾:{norm_treynor:.3f}")
+        # print(f"對齊後 -> 年化:{norm_ann_return:.3f} | 風險:{norm_down_risk:.3f} | 差異:{norm_diff_return:.3f} | 崔諾:{norm_treynor:.3f}")
 
         # ==========================================
         # 2. 組合最終獎勵函數 (乘上你設定的固定權重)
@@ -327,8 +327,8 @@ class State_time_step(State_time_step_template):
         global_reward_scaling = 0.01  # 你可以依據實驗結果微調這個數字 (例如 0.05 或 0.001)
 
         final_step_reward = composite_reward * global_reward_scaling
-        print("最後獎勵值：",final_step_reward)
-        print("*"*120)
+        # print("最後獎勵值：",final_step_reward)
+        # print("*"*120)
         reward += final_step_reward
 
         return reward, done
