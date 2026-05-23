@@ -24,7 +24,7 @@ class DataProvider:
     """
 
     def __init__(self):
-        self.Binanceapp = custom.Binance_server()
+        self.c = custom.Binance_server()
         self.SQL = SQL_operate.DB_operate()
         self.datatransformer = Datatransformer()
 
