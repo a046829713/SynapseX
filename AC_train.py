@@ -293,7 +293,8 @@ class LearnerProcess(mp.Process):
 
             if not self.buffer.is_ready():
                 continue
-
+            
+            
             # 執行訓練
             self.step_idx += 1
             self.optimizer.zero_grad()            

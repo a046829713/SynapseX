@@ -308,7 +308,7 @@ class State_time_step(State_time_step_template):
         self.game_steps += 1
         done |= self._offset >= self._prices.close.shape[0] - 1
 
-        if self.TotalPortfolioPercent < 0.3:
+        if self.TotalPortfolioPercent < 0.1:
             done = True
             reward += -5.0  # 破產大懲罰
         

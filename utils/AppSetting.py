@@ -52,7 +52,7 @@ class RLConfig:
     BATCH_SIZE: int = 32
     REPLAY_SIZE: int = 800000
     EACH_REPLAY_SIZE: int = 50_000
-    REPLAY_INITIAL: int = 1000
+    REPLAY_INITIAL: int = 300
     EPSILON_START: float = 0.9
     EPSILON_STOP: float = 0.1
     EPSILON_STEPS_FACTOR: int = 1_000_000
