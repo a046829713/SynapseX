@@ -77,6 +77,7 @@ class State_time_step(State_time_step_template):
 
     def calculate_geometric_annualized_return(self, daily_returns):
         t_days = len(daily_returns)
+        print("T :",t_days)
         if t_days == 0:
             return 0.0
             
@@ -87,6 +88,7 @@ class State_time_step(State_time_step_template):
         
         # 2. 計算「標準年化」報酬率
         standard_ann_return = (cumulative_return ** (252 / t_days)) - 1
+        print("當下標準差：",standard_ann_return)
         
         # 3. 使用 Sigmoid 或線性權重進行動態混合
         # 當 t_days 接近 0 時，幾乎完全看累積報酬；當 t_days 接近 20 時，幾乎完全看年化報酬
@@ -259,9 +261,9 @@ class State_time_step(State_time_step_template):
         # 10. 計算當前的總淨值 (Equity)
         self.TotalPortfolioPercent = 1.0 - self.cost_sum + self.closecash + opencash_diff 
 
-        # 引入基底保護：當資產嚴重縮水時，分母錨定 1.0，防止 Return 暴走
-        current_p_return = (self.TotalPortfolioPercent - previous_PortfolioPercent) / max(previous_PortfolioPercent, 1.0)
-        self.portfolio_history_returns.append(current_p_return)
+        
+        current_p_return = self.TotalPortfolioPercent - previous_PortfolioPercent
+        # self.portfolio_history_returns.append(current_p_return)
 
 
 
@@ -279,23 +281,23 @@ class State_time_step(State_time_step_template):
 
         # Annualized Return
         
-        AnnualizedReturn = self.calculate_geometric_annualized_return(self.portfolio_history_returns)
+        # AnnualizedReturn = self.calculate_geometric_annualized_return(self.portfolio_history_returns)
         # print("年化報仇率獎勵：",AnnualizedReturn)
 
 
         # Downside Risk
-        DownsideRisk = self.calculate_downside_risk_numpy(self.portfolio_history_returns)
+        # DownsideRisk = self.calculate_downside_risk_numpy(self.portfolio_history_returns)
         # print("下行風險獎勵：",DownsideRisk)
 
 
         # Differential Return
-        DifferentialReturn, beta_p = self.calculate_step_differential_return(current_p_return=self.TotalPortfolioPercent - previous_PortfolioPercent, current_b_return=(_close_price - prev_close) / prev_close)
+        # DifferentialReturn, beta_p = self.calculate_step_differential_return(current_p_return=self.TotalPortfolioPercent - previous_PortfolioPercent, current_b_return=(_close_price - prev_close) / prev_close)
         # print("大盤差異性獎勵：",DifferentialReturn)
 
 
 
         # 指標 4: 崔諾指標 (Treynor Ratio)
-        treynor = (AnnualizedReturn - self.risk_free_rate) / beta_p
+        # treynor = (AnnualizedReturn - self.risk_free_rate) / beta_p
 
         # print("Treynor 指標獎勵：",treynor)
 
@@ -328,10 +330,10 @@ class State_time_step(State_time_step_template):
         scale_diff_return = 100.0  # 放大 100 倍
         scale_treynor    = 0.3     # 縮小為 30%
 
-        norm_ann_return = AnnualizedReturn * scale_ann_return
-        norm_down_risk  = DownsideRisk * scale_down_risk
-        norm_diff_return = DifferentialReturn * scale_diff_return
-        norm_treynor    = treynor * scale_treynor
+        norm_ann_return_step = scale_ann_return * current_p_return
+        # norm_down_risk  = DownsideRisk * scale_down_risk
+        # norm_diff_return = DifferentialReturn * scale_diff_return
+        # norm_treynor    = treynor * scale_treynor
 
         # 實務上建議你可以把對齊後的數字印出來看一下，確認它們是不是都在 0.1 到 1.0 的區間：
         # print(f"對齊後 -> 年化:{norm_ann_return:.3f}")
@@ -341,12 +343,12 @@ class State_time_step(State_time_step_template):
         # 2. 組合最終獎勵函數 (乘上你設定的固定權重)
         # ==========================================
         composite_reward = (
-            self.weights['w1_ann_return'] * norm_ann_return
+            self.weights['w1_ann_return'] * norm_ann_return_step
             # - self.weights['w2_down_risk'] * norm_down_risk
             # + self.weights['w3_diff_return'] * norm_diff_return
             # + self.weights['w4_treynor'] * norm_treynor
         )
-
+        
         # ==========================================
         # 3. 總獎勵壓縮 (Reward Clipping / Global Scaling)
         # 防止 Episode 走 1000 步累積幾千分，導致模型 Loss 爆炸
@@ -355,8 +357,8 @@ class State_time_step(State_time_step_template):
         global_reward_scaling = 0.01  # 你可以依據實驗結果微調這個數字 (例如 0.05 或 0.001)
 
         final_step_reward = composite_reward * global_reward_scaling
-        # print("最後獎勵值：",final_step_reward)
-        # print("*"*120)
+        print("最後獎勵值：",final_step_reward)
+        print("*"*120)
         reward += final_step_reward
 
 
