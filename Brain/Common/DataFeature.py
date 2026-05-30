@@ -71,7 +71,8 @@ class OriginalDataFrature:
         用來取得類神經網絡所需要的資料,正式交易的時候
         """
         out_dict = {}
-        self.df = self.add_time_feature(df, first_date)
+        self.df = self.add_average_metric(df)
+        self.df = self.add_time_feature(self.df, first_date)
         self.df = self.add_ATR(self.df)
         out_dict.update({symbol: self.load_relative()})
 

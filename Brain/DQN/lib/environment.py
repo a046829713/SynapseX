@@ -45,7 +45,7 @@ class State_time_step(State_time_step_template):
         self.reward_function = Reward()
         self.reward_help = RewardHelp()
 
-        self.lookbackDays = 30
+        self.lookbackDays = 120
 
         self.weights = {
             'w1_ann_return': 0.4,  # 年化報酬權重
