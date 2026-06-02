@@ -207,6 +207,12 @@ class State_time_step(State_time_step_template):
         # # 獲取上一步的總淨值
         previous_PortfolioPercent = self.TotalPortfolioPercent 
 
+        # 1. 計算規則懲罰
+        wrongTrade_reward = self.reward_function.wrongTrade(
+            self.have_position, action=action
+        )
+
+        reward += wrongTrade_reward 
 
         # 3. 計算平倉損益 （不包含交易稅）
         closecash_diff = self.reward_help.CaculateCloseProfit(
@@ -268,17 +274,6 @@ class State_time_step(State_time_step_template):
 
 
         # 獎勵計算=================================================================
-        # 1. 計算規則懲罰
-        wrongTrade_reward = self.reward_function.wrongTrade(
-            self.have_position, action=action
-        )
-
-        reward += wrongTrade_reward 
-
-
-
-
-
         # Annualized Return
         
         # AnnualizedReturn = self.calculate_geometric_annualized_return(self.portfolio_history_returns)
@@ -364,7 +359,9 @@ class State_time_step(State_time_step_template):
 
         # print("最後獎勵：",reward)
         return reward, done
+    
 
+    
 class BaseTradingEnv(gym.Env, ABC):
     """
     交易環境的抽象基礎類別。
