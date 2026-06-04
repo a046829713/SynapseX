@@ -4,8 +4,8 @@ import torch.nn as nn
 
 def t2v(tau, f, w, b, w0, b0, arg=None):
     """
-    Time2Vec helper function.
-    Computes the Time2Vec embedding.
+        Time2Vec helper function.
+        Computes the Time2Vec embedding.
     """
     if arg:
         v1 = f(torch.matmul(tau, w) + b, arg)

@@ -10,12 +10,18 @@ from torch.utils.checkpoint import checkpoint
 # 假設這些模組你已經有了，保持不變
 from nested_learning.hope.block import HOPEBlock, HOPEBlockConfig
 from nested_learning.levels import LevelSpec
-
+from Brain.Common.model_components import SineActivation
+import time
+from Brain.Common.dain import DAIN_Layer
 
 @dataclass
 class DQNConfig:
     state_dim: int        # 修改: 輸入狀態的維度 (例如: 遊戲畫面的特徵長度 或 感測器數據量)
     action_dim: int       # 修改: 動作空間的大小 (Q-values 的數量)
+    time_dim:int
+    time_features_out:int
+    mode:str
+    hidden_size: int
     dim: int
     num_layers: int
     heads: int
@@ -32,12 +38,32 @@ class HOPEDQN(nn.Module):
     def __init__(self, config: DQNConfig):
         super().__init__()
         self.config = config
+        self.time_embedding = SineActivation(in_features=config.time_dim, out_features=config.time_features_out)
+        self.time_emb_projection = nn.Linear(config.time_features_out, config.hidden_size)
+
+        self.dean = DAIN_Layer(mode=config.mode, input_dim=config.state_dim) # DAIN 只處理市場數據
+
+        self.market_embedding = nn.Linear(config.state_dim, config.hidden_size)
         
-        # 修改 1: 輸入層
-        # RL 的輸入通常是連續數值 (Float)，而非離散 Token (Int)
-        # 我們使用一個 Linear 層將 State 投影到模型的內部維度 dim
-        self.state_encoder = nn.Linear(config.state_dim, config.dim)
-        
+
+
+        # 門控層: 學習如何結合兩種資訊
+        self.gate_layer = nn.Sequential(
+            nn.Linear(config.hidden_size * 2, config.hidden_size),
+            nn.Sigmoid()
+        )
+
+        # 最終的特徵轉換
+        self.feature_embedding = nn.Sequential(
+            nn.Linear(config.hidden_size, config.hidden_size),
+            nn.GELU()
+        )
+
+
+
+
+
+
         self.base_teach_scale = config.teach_scale
         self.base_teach_clip = config.teach_clip
         self._runtime_teach_scale = config.teach_scale
@@ -92,27 +118,38 @@ class HOPEDQN(nn.Module):
 
     def forward(
         self,
-        state: torch.Tensor,
-        *,
+        src: torch.Tensor,
+        time_state: torch.Tensor,
         teach_signal: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         Args:
             state: 形狀為 (Batch_Size, State_Dim) 的張量
             teach_signal: 可選的教學信號，用於 HOPE 架構的內部調整
+        
+        
+        
         Returns:
             q_values: 形狀為 (Batch_Size, Action_Dim) 的張量
         """
         
-        # 1. Encode State
-        # state shape: [Batch, State_Dim] -> x shape: [Batch, Dim]
-        x = self.state_encoder(state)
+        time_emb = self.time_embedding(time_state)
+        time_emb_proj = self.time_emb_projection(time_emb) # [B, L, hidden_size]
+        
+        # 市場數據流
+        market_data = src.transpose(1, 2)
+        market_data = self.dean(market_data)
+        market_data = market_data.transpose(1, 2)
+        market_emb = self.market_embedding(market_data) # [B, L, hidden_size]
 
-        # 重要: 如果 HOPEBlock 內部包含 Attention 機制，它通常預期輸入為 (Batch, Sequence, Dim)
-        # 如果 DQN 處理的是單一時間步，我們需要增加一個虛擬的序列維度
-        # 如果你的 HOPEBlock 是純 MLP 結構，這行可能不需要，但在 Transformer 架構下通常需要。
-        if x.dim() == 2:
-            x = x.unsqueeze(1) # [Batch, 1, Dim]
+        # 計算門控值
+        gate = self.gate_layer(torch.cat([market_emb, time_emb_proj], dim=-1))
+        
+        # 融合特徵
+        fused_emb = gate * market_emb + (1 - gate) * time_emb_proj
+        x = self.feature_embedding(fused_emb)
+
+
 
         surprise_value: float | None = None
         
@@ -143,6 +180,10 @@ class HOPEDQN(nn.Module):
                 x = checkpoint(block_call, x, use_reentrant=False)
             else:
                 x = block_call(x)
+
+        print(x)
+        print(x.size())
+        time.sleep(100)
 
         # 輸出前標準化
         x = self.norm(x)

@@ -12,7 +12,6 @@ keyword:
 # 2. 訓練設定 (RL Hyperparameters)
 train:
   device: "cuda:0"         # 指定訓練設備
-  steps: 100000            # 總訓練步數
   batch_size: 64           # 每次從 Replay Buffer 採樣的大小
   buffer_size: 50000       # Replay Buffer 的最大容量
   

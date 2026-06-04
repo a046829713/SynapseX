@@ -8,7 +8,6 @@ import numpy as np
 import itertools
 from collections import namedtuple, deque
 import time
-from .agent import BaseAgent
 from .common import utils
 
 # one single experience step
@@ -33,7 +32,6 @@ class ExperienceSource:
         :param vectorized: support of vectorized envs from OpenAI universe
         """
         assert isinstance(env, (gym.Env, list, tuple))
-        assert isinstance(agent, BaseAgent)
         assert isinstance(steps_count, int)
         assert steps_count >= 1
         assert isinstance(vectorized, bool)
@@ -258,7 +256,6 @@ class ExperienceSourceRollouts:
         :param steps_count: how many steps to perform rollouts
         """
         assert isinstance(env, (gym.Env, list, tuple))
-        assert isinstance(agent, BaseAgent)
         assert isinstance(gamma, float)
         assert isinstance(steps_count, int)
         assert steps_count >= 1
