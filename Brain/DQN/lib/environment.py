@@ -58,48 +58,27 @@ class State_time_step(State_time_step_template):
         self.portfolio_history_returns = deque()
         self.benchmark_returns = deque()
 
-    def calculate_geometric_annualized_return(self, daily_returns):
+
+        self.window_size = 60
+        self.STEPS_PER_YEAR = 252 * 48  
+        self.prev_ann_return = 0.0
+
+        # 為了方便計算，我們維持一個總淨值的滾動歷史
+        self.return_history = deque(maxlen=self.window_size) # 改為儲存每一期的 return
+
+    def calculate_rolling_return(self, returns_list):
         """
-        計算精確的幾何年化報酬率（考慮複利）
-        :param daily_returns: 一維的 numpy array 或 list，包含這段期間每天的報酬率 (例如 0.01 代表 1%)
+            直接用每一步的百分比報酬率計算幾何累積，完全避開淨值基數問題
         """
-        if len(daily_returns) == 0:
+        if len(returns_list) == 0:
             return 0.0
         
-        t_days = len(daily_returns)
-        # 將每天的報酬率加上 1，然後全部乘起來 (計算累積淨值)
-        cumulative_return = np.prod(1 + np.array(daily_returns))
-        
-        # 開次方並年化
-        ann_return = (cumulative_return ** (252 / t_days)) - 1
-        
-        return ann_return
+        cumulative_multiplier = np.prod(1 + np.array(returns_list))
 
-    # def calculate_geometric_annualized_return(self, daily_returns):
-    #     t_days = len(daily_returns)
-    #     print("T :",t_days)
-    #     if t_days == 0:
-    #         return 0.0
-            
-    #     cumulative_return = np.prod(1 + np.array(daily_returns))
-        
-    #     # 1. 先計算「不年化」的基礎累積報酬率
-    #     raw_cum_return = cumulative_return - 1.0
-        
-    #     # 2. 計算「標準年化」報酬率
-    #     standard_ann_return = (cumulative_return ** (252 / t_days)) - 1
-    #     print("當下標準差：",standard_ann_return)
-        
-    #     # 3. 使用 Sigmoid 或線性權重進行動態混合
-    #     # 當 t_days 接近 0 時，幾乎完全看累積報酬；當 t_days 接近 20 時，幾乎完全看年化報酬
-    #     # 這裡使用簡單的線性混合（20天內按比例過渡）
-    #     if t_days < 20:
-    #         weight_ann = t_days / 20.0  # 從 0.05 漸進到 1.0
-    #         ann_return = (weight_ann * standard_ann_return) + ((1 - weight_ann) * raw_cum_return)
-    #     else:
-    #         ann_return = standard_ann_return
-            
-    #     return ann_return
+        return cumulative_multiplier -1 
+    
+
+    
 
     def calculate_downside_risk_numpy(self,returns):
         """
@@ -179,6 +158,9 @@ class State_time_step(State_time_step_template):
         self.cost_sum = 0.0
         self.trade_bar = 0
         self.TotalPortfolioPercent = 1.0
+
+        self.return_history.clear()
+        self.prev_ann_return = 0.0
         #         self.bar_dont_change_count = (
         #             0  # 計算K棒之間轉換過了多久 感覺下一次實驗也可以將這個部份加入
         #         )
@@ -269,13 +251,29 @@ class State_time_step(State_time_step_template):
 
         
         current_p_return = self.TotalPortfolioPercent - previous_PortfolioPercent
-        self.portfolio_history_returns.append(current_p_return)
+        self.return_history.append(current_p_return)
+
+       
+
+        # 計算移動窗格年化差值
+        if len(self.return_history) >= 2:
+            # 傳入的是純回報率的 list
+            current_ann_return = self.calculate_rolling_return(list(self.return_history))
+            
+            # 差值獎勵 = 當前年化 - 上一步年化
+            diff_ann_return_reward = current_ann_return - self.prev_ann_return
+            
+            # 更新歷史
+            self.prev_ann_return = current_ann_return
+        else:
+            diff_ann_return_reward = 0.0
 
 
+        # --- 最終獎勵組合 ---
+        reward = diff_ann_return_reward + wrongTrade_reward
 
-
-
-
+        # print("diff:",diff_ann_return_reward)
+        # print("目前獎勵設計：",reward)
         # Downside Risk
         # DownsideRisk = self.calculate_downside_risk_numpy(self.portfolio_history_returns)
         # print("下行風險獎勵：",DownsideRisk)
@@ -307,47 +305,45 @@ class State_time_step(State_time_step_template):
             done = True     
 
 
-        if done:
-            # 獎勵計算=================================================================
-            # Annualized Return
+        # if done:
+        #     # 獎勵計算=================================================================
+        #     # Annualized Return
             
-            AnnualizedReturn = self.calculate_geometric_annualized_return(self.portfolio_history_returns)
-            print("年化報仇率獎勵：",AnnualizedReturn)
-            # ==========================================
-            # 1. 內部數值對齊 (Internal Scaling)
-            # 把所有指標強制拉平到相似的量級，避免單一指標綁架神經網路
-            # 這些係數是根據你跑出來的資料分佈設定的固定值
-            # ==========================================
-            scale_ann_return = 10.0
-            scale_down_risk  = 100.0   # 放大 100 倍
-            scale_diff_return = 100.0  # 放大 100 倍
-            scale_treynor    = 0.3     # 縮小為 30%
+        #     AnnualizedReturn = self.calculate_geometric_annualized_return(self.portfolio_history_returns)
+        #     print("年化報仇率獎勵：",AnnualizedReturn)
+        #     # ==========================================
+        #     # 1. 內部數值對齊 (Internal Scaling)
+        #     # 把所有指標強制拉平到相似的量級，避免單一指標綁架神經網路
+        #     # 這些係數是根據你跑出來的資料分佈設定的固定值
+        #     # ==========================================
+        #     scale_ann_return = 10.0
+        #     scale_down_risk  = 100.0   # 放大 100 倍
+        #     scale_diff_return = 100.0  # 放大 100 倍
+        #     scale_treynor    = 0.3     # 縮小為 30%
 
-            norm_ann_return_step = scale_ann_return * AnnualizedReturn
-            # norm_down_risk  = DownsideRisk * scale_down_risk
-            # norm_diff_return = DifferentialReturn * scale_diff_return
-            # norm_treynor    = treynor * scale_treynor
+        #     norm_ann_return_step = scale_ann_return * AnnualizedReturn
+        #     # norm_down_risk  = DownsideRisk * scale_down_risk
+        #     # norm_diff_return = DifferentialReturn * scale_diff_return
+        #     # norm_treynor    = treynor * scale_treynor
 
-            # 實務上建議你可以把對齊後的數字印出來看一下，確認它們是不是都在 0.1 到 1.0 的區間：
-            # print(f"對齊後 -> 年化:{norm_ann_return:.3f}")
-                #   | 風險:{norm_down_risk:.3f} | 差異:{norm_diff_return:.3f} | 崔諾:{norm_treynor:.3f}")
+        #     # 實務上建議你可以把對齊後的數字印出來看一下，確認它們是不是都在 0.1 到 1.0 的區間：
+        #     # print(f"對齊後 -> 年化:{norm_ann_return:.3f}")
+        #         #   | 風險:{norm_down_risk:.3f} | 差異:{norm_diff_return:.3f} | 崔諾:{norm_treynor:.3f}")
 
-            # ==========================================
-            # 2. 組合最終獎勵函數 (乘上你設定的固定權重)
-            # ==========================================
-            composite_reward = (
-                self.weights['w1_ann_return'] * norm_ann_return_step
-                # - self.weights['w2_down_risk'] * norm_down_risk
-                # + self.weights['w3_diff_return'] * norm_diff_return
-                # + self.weights['w4_treynor'] * norm_treynor
-            )
+        #     # ==========================================
+        #     # 2. 組合最終獎勵函數 (乘上你設定的固定權重)
+        #     # ==========================================
+        #     composite_reward = (
+        #         self.weights['w1_ann_return'] * norm_ann_return_step
+        #         # - self.weights['w2_down_risk'] * norm_down_risk
+        #         # + self.weights['w3_diff_return'] * norm_diff_return
+        #         # + self.weights['w4_treynor'] * norm_treynor
+        #     )
             
 
-            final_step_reward = composite_reward
-            reward += final_step_reward
+        #     final_step_reward = composite_reward
+        #     reward += final_step_reward
 
-        
-        reward += current_p_return
         return reward, done
     
 
