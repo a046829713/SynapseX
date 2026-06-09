@@ -22,6 +22,8 @@ class DQNConfig:
     time_features_out:int
     mode:str
     hidden_size: int
+    seq_dim :int
+    dropout :float
     dim: int
     num_layers: int
     heads: int
@@ -60,6 +62,31 @@ class HOPEDQN(nn.Module):
         )
 
 
+        # 狀態值網絡
+        self.fc_val = nn.Sequential(
+            nn.Linear(config.seq_dim * config.hidden_size, 512),
+            nn.LayerNorm(512),
+            nn.ReLU(),
+            nn.Dropout(config.dropout),
+            nn.Linear(512, 256),
+            nn.LayerNorm(256),
+            nn.ReLU(),
+            nn.Dropout(config.dropout),
+            nn.Linear(256, 1)
+        )
+
+        # 優勢網絡
+        self.fc_adv = nn.Sequential(
+            nn.Linear(config.seq_dim * config.hidden_size, 512),
+            nn.LayerNorm(512),
+            nn.ReLU(),
+            nn.Dropout(config.dropout),
+            nn.Linear(512, 256),
+            nn.LayerNorm(256),
+            nn.ReLU(),
+            nn.Dropout(config.dropout),
+            nn.Linear(256, config.action_dim)
+        )
 
 
 
@@ -181,20 +208,17 @@ class HOPEDQN(nn.Module):
             else:
                 x = block_call(x)
 
-        print(x)
-        print(x.size())
-        time.sleep(100)
 
         # 輸出前標準化
         x = self.norm(x)
+
+        x = x.view(x.size(0), -1)
+
+        value = self.fc_val(x)       # [B, 1]
+        advantage = self.fc_adv(x)   # [B, num_actions]
+
         
-        # 如果我們之前增加了一個序列維度，現在把它拿掉
-        if x.dim() == 3 and x.shape[1] == 1:
-            x = x.squeeze(1) # 回到 [Batch, Dim]
-
-        # 計算 Q-Values
-        q_values = self.action_head(x) # [Batch, Action_Dim]
-
+        q_values = value + (advantage - advantage.mean(dim=1, keepdim=True))
         if teach_signal is not None:
             self._latest_update_metrics = self._gather_block_stats()
 

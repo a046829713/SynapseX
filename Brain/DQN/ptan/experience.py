@@ -63,11 +63,16 @@ class ExperienceSource:
         return res
 
     def _prepare(self):
-        states, agent_states, histories, cur_rewards, cur_steps, infos = [], [], [], [], [], [{}]
+        states, histories, cur_rewards, cur_steps, infos = [], [], [], [], [{}]
         env_lens = []
         
         for env in self.pool:
             obs = env.reset()
+
+            
+
+
+            
             # if the environment is vectorized, all it's output is lists of results.
             # Details are here: https://github.com/openai/universe/blob/master/doc/env_semantics.rst
             if self.vectorized:
@@ -83,17 +88,21 @@ class ExperienceSource:
                 histories.append(deque(maxlen=self.steps_count))
                 cur_rewards.append(0.0)
                 cur_steps.append(0)
-                agent_states.append(self.agent.initial_state())
+                
         
-        return states, agent_states, histories, cur_rewards, cur_steps, env_lens, infos
+        return states, histories, cur_rewards, cur_steps, env_lens, infos
 
     def __iter__(self):
-        states, agent_states, histories, cur_rewards, cur_steps, env_lens, infos = self._prepare()
+        states, histories, cur_rewards, cur_steps, env_lens, infos = self._prepare()
+
+
+        
         iter_idx = 0
         while True: 
             actions = [None] * len(states)  # [None]
             states_input = []
             states_indices = []
+            
             for idx, state in enumerate(states):
                 if state is None:
                     # assume that all envs are from the same family
@@ -101,16 +110,15 @@ class ExperienceSource:
                 else:
                     states_input.append(state)  # 狀態
                     states_indices.append(idx)  # 索引
+            
 
+        
             if states_input:
-                # 會吐出動作和新狀態[2] [None] # 不過原作者這邊好似沒有使用到agent_states
-                states_actions, new_agent_states = self.agent(
-                    states_input, agent_states, infos)                
-
+                states_actions = self.agent(states_input)                
                 for idx, action in enumerate(states_actions):
                     g_idx = states_indices[idx]
                     actions[g_idx] = action
-                    agent_states[g_idx] = new_agent_states[idx]
+
 
             # [[2]]
             grouped_actions = self._group_list(actions, env_lens)
@@ -156,8 +164,7 @@ class ExperienceSource:
                         # vectorized envs are reset automatically
                         states[idx] = env.reset(
                         ) if not self.vectorized else None
-                        agent_states[idx] = self.agent.initial_state()
-
+                        
                         history.clear()
 
                 global_ofs += len(action_n)

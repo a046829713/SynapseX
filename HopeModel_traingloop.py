@@ -29,7 +29,10 @@ from utils.AppSetting import UpdateConfig
 from Brain.Common.optimization import opitmizar
 from Brain.Common.agent import DQNAgent
 from Brain.Common.actions import EpsilonGreedyActionSelector
-
+from Brain.Common.experience import SequentialExperienceReplayBuffer
+from Brain.DQN.ptan.experience import ExperienceSourceFirstLast
+from Brain.HopeDQN.experience import SequentialReplayBuffer
+import torch.nn as nn
 
 @dataclass
 class DistributedContext:
@@ -37,40 +40,152 @@ class DistributedContext:
     world_size: int
     device: torch.device
 
+def unpack_batch(batch):
+    (
+        first_states,
+        first_time_states,
+        actions,
+        rewards,
+        dones,
+        last_states,
+        last_time_states,
+        infos,
+        last_infos,
+        
+    ) = ([], [], [], [], [], [], [], [], [])
 
-class ReplayBuffer:
+    for exp in batch:
+        first_state, first_time_state = exp.state
+        first_states.append(first_state)
+        first_time_states.append(first_time_state)
+
+        actions.append(exp.action)
+        rewards.append(exp.reward)
+        dones.append(exp.last_state is None)
+        infos.append(exp.info)
+        last_infos.append(exp.last_info)
+
+        if exp.last_state is None:
+            # the result will be masked anyway
+            last_states.append(first_state)
+            last_time_states.append(first_time_state)
+
+        else:
+            last_state, last_time_state = exp.last_state
+            last_states.append(last_state)
+            last_time_states.append(last_time_state)
+
+    return (
+        np.array(first_states, copy=False),
+        np.array(first_time_states, copy=False),
+        np.array(actions),
+        np.array(rewards, dtype=np.float32),
+        np.array(dones, dtype=np.uint8),
+        np.array(last_states, copy=False),
+        np.array(last_time_states, copy=False),
+        np.array(infos, copy=False),
+        np.array(last_infos, copy=False),
+        
+    )
+
+def update_policy(
+    batch,
+    net,
+    tgt_net,
+    gamma,
+    optimizer_instance,
+    imag_loss_weight=0.1,
+    moe_loss_coeff=0.01,
+    device="cpu",
+):
     """
-
-    標準的 DQN Replay Buffer
-
+        計算 DQN 的 MSE loss，並同時計算每筆 transition 的 TD‐error，並整合 MoE 的輔助損失 (auxiliary loss)。
     """
+    (
+        first_states,
+        first_time_states,
+        actions,
+        rewards,
+        dones,
+        last_states,
+        last_time_states,
+        _,
+        _,
+    ) = unpack_batch(batch)
 
-    def __init__(self, capacity: int, state_dim: int):
-        self.buffer = deque(maxlen=capacity)
+    first_states_v = torch.tensor(first_states, device=device, dtype=torch.float32)
+    
+    first_time_states_v = torch.tensor(first_time_states, device=device, dtype=torch.float32 )
 
-    def push(self, state, action, reward, next_state, done):
-        self.buffer.append((state, action, reward, next_state, done))
+    last_states_v = torch.tensor(last_states, device=device, dtype=torch.float32)
+    last_time_states_v = torch.tensor(
+        last_time_states, device=device, dtype=torch.float32
+    )
 
-    def sample(self, batch_size: int, device: torch.device):
-        batch = random.sample(self.buffer, batch_size)
-        state, action, reward, next_state, done = zip(*batch)
+    actions_v = torch.tensor(actions, device=device, dtype=torch.long)
+    rewards_v = torch.tensor(rewards, device=device, dtype=torch.float32)
+    done_mask = torch.tensor(dones, device=device, dtype=torch.bool)
+    
 
-        return (
-            torch.as_tensor(np.array(state), dtype=torch.float32, device=device),
-            torch.as_tensor(
-                np.array(action), dtype=torch.long, device=device
-            ).unsqueeze(1),
-            torch.as_tensor(
-                np.array(reward), dtype=torch.float32, device=device
-            ).unsqueeze(1),
-            torch.as_tensor(np.array(next_state), dtype=torch.float32, device=device),
-            torch.as_tensor(
-                np.array(done), dtype=torch.float32, device=device
-            ).unsqueeze(1),
+
+    # --- 線上網路 (net) ---
+    q_values = net(first_states_v, first_time_states_v)
+
+    # 2. 獲取實際採取動作的 Q 值: Q(s,a)
+    state_action_values = q_values.gather(1, actions_v.unsqueeze(-1)).squeeze(-1)
+
+    # ---目標網路 (tgt_net) & Double DQN ---
+    with torch.no_grad():
+        # 3. 使用線上網路 `net` 選擇下一狀態的最佳動作 a_max
+        next_q_values = net(last_states_v, last_time_states_v)
+        next_actions = next_q_values.max(1)[1]
+
+        # 4. 使用目標網路 `tgt_net` 評估 a_max 的 Q 值: Q_target(s', a_max)
+        next_state_q_values = tgt_net(last_states_v, last_time_states_v)
+        
+        next_state_values = next_state_q_values.gather(
+            1, next_actions.unsqueeze(-1)
+        ).squeeze(-1)
+
+        # 5. 對於終止狀態，其未來價值為 0
+        next_state_values[done_mask] = 0.0
+
+        # 6. 計算 TD 目標 (y)
+        q_targets = rewards_v + gamma * next_state_values
+
+
+    loss = nn.MSELoss()(state_action_values, q_targets)
+    
+    # 5. 優化
+    optimizer_instance.zero_grad()
+    loss.backward()
+    torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=1.0)
+    optimizer_instance.step()
+    
+    
+
+
+    # --- HOPE Special: Teach Signal Injection ---
+    # 這裡我們再次執行一次 forward (不計算梯度)，但是帶入 teach_signal
+    # 這樣可以讓 HOPE Block 內部的 Slow/Fast weights 根據 "Surprise" 進行更新
+    update_metrics = {}
+    with torch.no_grad():
+        # 計算 RL 版本的 Teach Signal (基於 TD Error 的梯度方向)
+        teach_signal = compute_rl_teach_signal(
+            net, current_q_values, b_action, expected_q
         )
+        teach_signal_norm = teach_signal.norm(dim=-1).mean().item()
 
-    def __len__(self):
-        return len(self.buffer)
+        # 將訊號注入模型，觸發 HOPE Block 內部更新
+        net(b_state, teach_signal=teach_signal)
+
+        if hasattr(policy_net, "pop_update_metrics"):
+            update_metrics = policy_net.pop_update_metrics()
+
+
+
+    return 
+
 
 
 def build_model_from_cfg(model_cfg: DictConfig) -> torch.nn.Module:
@@ -83,6 +198,8 @@ def build_model_from_cfg(model_cfg: DictConfig) -> torch.nn.Module:
         torch.nn.Module: _description_
     """
     optimizer_cfg = {}
+
+
 
     if "optimizers" in model_cfg:
         optimizer_cfg = OmegaConf.to_container(model_cfg.optimizers, resolve=True)
@@ -98,6 +215,8 @@ def build_model_from_cfg(model_cfg: DictConfig) -> torch.nn.Module:
         time_features_out = model_cfg.time_features_out,
         mode = model_cfg.mode,
         hidden_size = model_cfg.hidden_size,
+        seq_dim = model_cfg.seq_dim,
+        dropout = model_cfg.dropout,
         dim=model_cfg.dim,
         num_layers=model_cfg.num_layers,
         heads=model_cfg.heads,
@@ -207,20 +326,22 @@ def run_dqn_training_loop(
     target_update_freq = cfg.train.get("target_update_freq", 1000)
     log_interval = cfg.train.get("log_interval", 100)
     logger = init_logger(getattr(cfg, "logging", None), cfg)
-    buffer_size = cfg.train.get("buffer_size", 100000)
     gamma = cfg.train["gamma"]
     step = 0
 
 
 
     # 2.建立環境
-    env = TrainingEnv(cfg.train)
+    train_env = TrainingEnv(cfg.train)
     
-    # update env config
-    cfg.model.state_dim = env.engine_info()["data_input_size"]
-    cfg.model.action_dim = int(env.engine_info()["action_space_n"])
-    cfg.model.time_dim = env.engine_info()["time_input_size"]
 
+    # update env config
+    cfg.model.state_dim = train_env.engine_info()["data_input_size"]
+    cfg.model.action_dim = int(train_env.engine_info()["action_space_n"])
+    cfg.model.time_dim = train_env.engine_info()["time_input_size"]
+    cfg.model.seq_dim = cfg.train.bars_count
+
+    
 
     # 3. 建立 Policy Network 和 Target Network
     policy_net = build_model_from_cfg(cfg.model).to(device)
@@ -242,16 +363,36 @@ def run_dqn_training_loop(
         net=policy_net, learning_rate=cfg.optim.lr, lambda_l2=cfg.optim.weight_decay
     ).get_optimizer()
 
+    
+    
+    
     # 3. 初始化 Replay Buffer
+    # memory = SequentialReplayBuffer(
+    #     buffer_size= cfg.train.buffer_size,
+    #     each_buffer_size=cfg.train.each_buffer_size,
+    #     stanstandard_size=cfg.train.stanstandard_size,       
+    # )
+    
+    exp_source = ExperienceSourceFirstLast(
+        train_env, agent, cfg.train.gamma, steps_count=cfg.train.REWARD_STEPS)
 
-    memory = ReplayBuffer(buffer_size, cfg.model.state_dim)
 
-    state = env.reset()
+    buffer = SequentialExperienceReplayBuffer(
+        exp_source,
+        buffer_size = cfg.train.buffer_size,
+        each_buffer_size = cfg.train.each_buffer_size,
+        stanstandard_size = cfg.train.stanstandard_size
+    )
 
-    metrics: Dict[str, float] = {}
+
+
+
+
+
 
     
     while True:
+        print("step :",step)
         step +=1
 
         # --- Action Selection (Epsilon Greedy) ---
@@ -260,71 +401,50 @@ def run_dqn_training_loop(
         ),epsilon_end) 
 
 
-
-
         agent.action_selector.update_epsilon(epsilon)
-        action = agent(state)
-        # --- Interaction ---
-        next_state, reward, terminated, truncated, _ = env.step(action)
-        done = terminated or truncated
-
-        memory.push(state, action, reward, next_state, done)
-        state = next_state
-
-        if done:
-            state, _ = env.reset()
+        
+        buffer.populate(1)
 
         # --- Training Step ---
-        if len(memory) < batch_size:
+        if not buffer.is_ready():
             continue
+        
+        
 
-        # 1. 取樣
-        b_state, b_action, b_reward, b_next_state, b_done = memory.sample(
-            batch_size, device
-        )
 
-        # 2. 計算 Current Q
-        # [Batch, Action_Dim]
-        current_q_values = policy_net(b_state)
-        # [Batch, 1], 取出對應動作的 Q 值
-        current_q_a = current_q_values.gather(1, b_action)
+        batch_exp = buffer.sample(batch_size = cfg.train.batch_size)
 
-        # 3. 計算 Target Q (使用 Double DQN 或標準 DQN)
-        with torch.no_grad():
-            next_q_values = target_net(b_next_state)
-            max_next_q = next_q_values.max(1)[0].unsqueeze(1)
-            expected_q = b_reward + (gamma * max_next_q * (1 - b_done))
 
-        # 4. 計算 Loss
-        loss = F.mse_loss(current_q_a, expected_q)
+        loss_v, td_errors = update_policy(
+            batch_exp, policy_net, target_net, cfg.train.gamma ** cfg.train.REWARD_STEPS, optimizer_instance=optimizer_instance ,device=device)
+        
 
-        # 5. 優化
-        optimizer_instance.zero_grad()
-        loss.backward()
-        torch.nn.utils.clip_grad_norm_(policy_net.parameters(), max_norm=1.0)
-        optimizer_instance.step()
+        
+        print(loss_v)
+        time.sleep(100)
+        
+        
 
-        # --- HOPE Special: Teach Signal Injection ---
-        # 這裡我們再次執行一次 forward (不計算梯度)，但是帶入 teach_signal
-        # 這樣可以讓 HOPE Block 內部的 Slow/Fast weights 根據 "Surprise" 進行更新
-        update_metrics = {}
-        with torch.no_grad():
-            # 計算 RL 版本的 Teach Signal (基於 TD Error 的梯度方向)
-            teach_signal = compute_rl_teach_signal(
-                policy_net, current_q_values, b_action, expected_q
-            )
-            teach_signal_norm = teach_signal.norm(dim=-1).mean().item()
 
-            # 將訊號注入模型，觸發 HOPE Block 內部更新
-            policy_net(b_state, teach_signal=teach_signal)
 
-            if hasattr(policy_net, "pop_update_metrics"):
-                update_metrics = policy_net.pop_update_metrics()
+
+
+
+        
+        
+        
+        
+        
+        
+
 
         # --- Target Net Update ---
         if step % target_update_freq == 0:
             target_net.load_state_dict(policy_net.state_dict())
 
+        
+        
+        
         # --- Logging ---
         if step % log_interval == 0:
             metrics_payload = {
@@ -343,8 +463,8 @@ def run_dqn_training_loop(
             cfg, policy_net, optimizer_instance, step=step, total_steps=steps
         )
 
-    logger.finish()
-    return metrics
+
+
 
 
 @hydra.main(config_path="configs", config_name="dqn_pilot", version_base=None)

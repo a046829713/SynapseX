@@ -3,7 +3,7 @@
 state_dim: 0           # 輸入狀態維度 
 action_dim: 3           # 動作空間大小 (總共有多少種可能的動作)
 time_dim: 0
-
+seq_dim: 0
 
 # SineActivation
 time_features_out: 32
@@ -12,18 +12,10 @@ time_features_out: 32
 mode: 'full'
 
 
-
-
 # --- Transformer/HOPE 基礎設定 ---
 dim: 256                 # 內部的 Hidden Size
 hidden_size: 256
-
-
-
-
-
-
-
+dropout: 0.3
 
 
 num_layers: 4            # 總共有幾層 HOPE Block

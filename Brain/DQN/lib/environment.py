@@ -82,14 +82,18 @@ class State_time_step(State_time_step_template):
 
     def calculate_downside_risk_numpy(self,returns):
         """
-        計算投資組合的下行風險 (Downside Risk)
-        
-        參數:
-        returns (np.ndarray): 包含一段時間內報酬率的陣列，例如 [0.05, -0.02, -0.05, 0.01]
-        
-        回傳:
-        float: 下行風險值
+            計算投資組合的下行風險 (Downside Risk)
+            
+            參數:
+            returns (np.ndarray): 包含一段時間內報酬率的陣列，例如 [0.05, -0.02, -0.05, 0.01]
+            
+            回傳:
+            float: 下行風險值
         """
+        if len(returns) == 0:
+            return 0.0
+        
+
         # 步驟 1: 實作 max(0, -R_{p,t})
         # np.maximum 會逐一比較陣列元素與 0，只保留正數（也就是虧損的部分，因為前面加了負號）
         downside_diff = np.maximum(0, - np.array(returns))
@@ -100,7 +104,6 @@ class State_time_step(State_time_step_template):
         
         # 步驟 3: 加總平均後開根號 (Root Mean Square)
         downside_risk = np.sqrt(np.mean(squared_downside))
-        
         return downside_risk
 
 
@@ -161,6 +164,7 @@ class State_time_step(State_time_step_template):
 
         self.return_history.clear()
         self.prev_ann_return = 0.0
+        self.prev_downside_risk = 0.0
         #         self.bar_dont_change_count = (
         #             0  # 計算K棒之間轉換過了多久 感覺下一次實驗也可以將這個部份加入
         #         )
@@ -269,14 +273,22 @@ class State_time_step(State_time_step_template):
             diff_ann_return_reward = 0.0
 
 
-        # --- 最終獎勵組合 ---
-        reward = diff_ann_return_reward + wrongTrade_reward
 
-        # print("diff:",diff_ann_return_reward)
+        # 差值化風險（這一步的下行風險，比上一步增加了還是減少了）
+        current_downside_risk = self.calculate_downside_risk_numpy(self.return_history)
+        diff_downside_risk = current_downside_risk - self.prev_downside_risk
+        self.prev_downside_risk = current_downside_risk
+
+        # 對齊後的組合
+        reward = diff_ann_return_reward - self.weights['w2_down_risk'] * diff_downside_risk + wrongTrade_reward
+
+        # print("調整前年化獎勵：",diff_ann_return_reward)
+        # print("調整前下行風險：",diff_downside_risk)
+        # print("調整後下行風險：",self.weights['w2_down_risk'] * diff_downside_risk)
+        # --- 最終獎勵組合 ---
         # print("目前獎勵設計：",reward)
-        # Downside Risk
-        # DownsideRisk = self.calculate_downside_risk_numpy(self.portfolio_history_returns)
-        # print("下行風險獎勵：",DownsideRisk)
+        # print("*"*120)
+        # time.sleep(1)
 
 
         # Differential Return

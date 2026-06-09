@@ -13,11 +13,18 @@ keyword:
 train:
   device: "cuda:0"         # 指定訓練設備
   batch_size: 64           # 每次從 Replay Buffer 採樣的大小
-  buffer_size: 50000       # Replay Buffer 的最大容量
+  
+
+
+  buffer_size: 800000       # Replay Buffer 的最大容量(所有的各商品)
+  each_buffer_size: 50000   # Replay Buffer 的容量(每個商品)
+  stanstandard_size: 1000
+
   
   # --- DQN 參數 ---
   bars_count : 300
   gamma: 0.99              # 折扣因子 (Discount Factor)
+  REWARD_STEPS: 2
   target_update_freq: 1000 # 多久更新一次 Target Network (步數)
   
   # --- Epsilon-Greedy (探索策略) ---

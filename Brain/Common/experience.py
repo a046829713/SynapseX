@@ -235,16 +235,17 @@ class SequentialExperienceReplayBuffer:
     def __init__(
         self,
         experience_source,
-        buffer_size,
-        replay_initial_size: int,
+        buffer_size :int,
+        each_buffer_size :int,
+        stanstandard_size: int,
     ):
         """
-        Initialize the buffer with a source, capacity, and symbol count.
-        :param batch_size: 總的批次大小。
-        _count (int) : count the times.
+            Initialize the buffer with a source, capacity, and symbol count.
+            :param batch_size: 總的批次大小。
+            _count (int) : count the times.
         """
         assert isinstance(experience_source, (ExperienceSource, type(None)))
-        assert isinstance(buffer_size, int)
+        assert isinstance(each_buffer_size, int)
 
         self.experience_source_iter = (
             None if experience_source is None else iter(experience_source)
@@ -254,16 +255,18 @@ class SequentialExperienceReplayBuffer:
         self.buffer = {}
         self.sample_count_buffer = {}
         self.capacity = buffer_size
-        self.replay_initial_size = replay_initial_size
+        self.stanstandard_size = stanstandard_size
+        
+        
         assert (
-            self.capacity > replay_initial_size
+            self.capacity > stanstandard_size
         ), "The capacity is smaller than init_size, please change the capacity"
 
         self._count = 0
         self._del_critical_len = 1000000
 
     def is_ready(self):
-        if self._count > self.replay_initial_size:
+        if self._count > self.stanstandard_size:
             return True
         else:
             return False
@@ -279,7 +282,7 @@ class SequentialExperienceReplayBuffer:
             [
                 symbolName
                 for symbolName, data in self.buffer.items()
-                if len(data) > self.replay_initial_size
+                if len(data) > self.stanstandard_size
             ]
         )
 
