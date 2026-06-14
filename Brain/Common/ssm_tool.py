@@ -24,12 +24,6 @@ from torch.distributions.normal import Normal
 import time
 import torch
 
-from soft_moe_pytorch import SoftMoE
-
-
-
-
-
 class Block(nn.Module):
     def __init__(
         self, dim, mixer_cls, mlp_cls, norm_cls=nn.LayerNorm, fused_add_norm=False, residual_in_fp32=False
@@ -39,6 +33,8 @@ class Block(nn.Module):
         self.fused_add_norm = fused_add_norm
         self.norm = norm_cls(dim)
         self.mixer = mixer_cls(dim) # Mamba or MHA
+        
+        
         # mlp_cls 可以是 GatedMLP 也可以是 MoELayer
         self.mlp = mlp_cls() if mlp_cls is not nn.Identity else nn.Identity()
 
@@ -211,9 +207,12 @@ def create_block(
             **ssm_cfg,
             **factory_kwargs
         )
+
+
     else:
         # 如果這一層需要 Attention，就建立一個 MHA (Multi-Head Attention)
         mixer_cls = partial(MHA, layer_idx=layer_idx, **attn_cfg, **factory_kwargs)
+
 
     # 決定要用哪種 Norm 函式（LayerNorm 或 RMSNorm）
     norm_cls = partial(
@@ -225,12 +224,13 @@ def create_block(
         mlp_cls = nn.Identity    
 
     elif moe_cfg and moe_cfg.get("num_experts", 0) > 0:
-        mlp_cls = partial(            
-            SoftMoE,
-            dim = d_model, # # max sequence length (will automatically calculate number of slots as seq_len // num_experts) - you can also set num_slots directly
-            num_experts = moe_cfg.get("num_experts"), # # number of experts - (they suggest number of experts should be high enough that each of them get only 1 slot. wonder if that is the weakness of the paper?)
-            seq_len = 1024     
-        )
+        raise ValueError("please check the setting. because i dropped that SoftMoe option. ")
+        # mlp_cls = partial(            
+        #     SoftMoE,
+        #     dim = d_model, # # max sequence length (will automatically calculate number of slots as seq_len // num_experts) - you can also set num_slots directly
+        #     num_experts = moe_cfg.get("num_experts"), # # number of experts - (they suggest number of experts should be high enough that each of them get only 1 slot. wonder if that is the weakness of the paper?)
+        #     seq_len = 1024     
+        # )
 
     else:
         

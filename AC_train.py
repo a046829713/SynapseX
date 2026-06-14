@@ -19,7 +19,7 @@ from utils.AppSetting import RLConfig, UpdateConfig
 from utils.Debug_tool import debug
 
 # --- 主執行流程 (重大修改) ---
-NUM_ACTORS = 4
+NUM_ACTORS = 1
 
 
 # those entries are emitted from ExperienceSourceFirstLast. Reward is discounted over the trajectory piece
@@ -203,7 +203,21 @@ class LearnerProcess(mp.Process):
                 dropout=0.3,
                 ssm_cfg=ssm_cfg                
             ).to(self.config.DEVICE)            
-            
+        elif  self.config.KEYWORD == "Mamba2":
+            ssm_cfg = {
+                "expand":2,
+                "layer":"Mamba2",         
+            }
+
+            self.net = model.mambaDuelingModel(
+                d_model=data_input_size,
+                nlayers=4,
+                num_actions=action_space_n,
+                time_features_in=self.engine_info["time_input_size"],
+                seq_dim=self.config.BARS_COUNT,
+                dropout=0.3,
+                ssm_cfg=ssm_cfg                
+            ).to(self.config.DEVICE)   
         else:
             raise ValueError(f"Unknown model KEYWORD: {self.config.KEYWORD}")
 

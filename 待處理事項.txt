@@ -18,3 +18,6 @@ re: It is work, but need more experiment.
 20250906: i change MLP to Soft Moe
 
 2.i want to try change the reward function, i want to know if do not consider the in time reward, only provider the eventually reward.
+
+
+

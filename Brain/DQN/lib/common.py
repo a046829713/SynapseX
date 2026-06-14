@@ -161,16 +161,17 @@ def unpack_batch(batch):
             last_states.append(last_state)
             last_time_states.append(last_time_state)
 
+
     return (
-        np.array(first_states, copy=False),
-        np.array(first_time_states, copy=False),
+        np.array(first_states),
+        np.array(first_time_states),
         np.array(actions),
         np.array(rewards, dtype=np.float32),
         np.array(dones, dtype=np.uint8),
-        np.array(last_states, copy=False),
-        np.array(last_time_states, copy=False),
-        np.array(infos, copy=False),
-        np.array(last_infos, copy=False),
+        np.array(last_states),
+        np.array(last_time_states),
+        np.array(infos),
+        np.array(last_infos),
         np.array(model_base_features, dtype=np.float32),
     )
 

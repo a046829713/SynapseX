@@ -55,8 +55,7 @@ class State_time_step(State_time_step_template):
         }
         self.risk_free_rate = 0.0
 
-        self.portfolio_history_returns = deque()
-        self.benchmark_returns = deque()
+        
 
 
         self.window_size = 60
@@ -64,6 +63,7 @@ class State_time_step(State_time_step_template):
         self.prev_ann_return = 0.0
 
         # 為了方便計算，我們維持一個總淨值的滾動歷史
+        self.benchmark_returns = deque(maxlen=self.window_size)
         self.return_history = deque(maxlen=self.window_size) # 改為儲存每一期的 return
 
     def calculate_rolling_return(self, returns_list):
@@ -113,14 +113,15 @@ class State_time_step(State_time_step_template):
             計算簡化差異報酬 (Simplified Differential Return)
         """
         # 2. 防呆機制：如果歷史資料少於 2 筆，無法計算 Beta
-        if len(self.portfolio_history_returns) < 2:
+        if len(self.return_history) < 2:
             # 資料不足時，退化成最簡單的「絕對超額報酬」，不除以 Beta
             return current_p_return - current_b_return, 1
             
         # 3. 資料足夠，轉成 NumPy 陣列準備計算
-        p_returns = np.array(self.portfolio_history_returns)
+        p_returns = np.array(self.return_history)
         b_returns = np.array(self.benchmark_returns)
         
+
         # 4. 防呆機制：檢查大盤是否完全沒有波動 (例如連續幾天假日或停牌)
         benchmark_variance = np.var(b_returns, ddof=1)
         if benchmark_variance < 1e-8:
@@ -141,17 +142,12 @@ class State_time_step(State_time_step_template):
         
         # 7. 回傳計算好的差異報酬
         differential_return = (mu_p - mu_b) / beta_p
-        
-        
-
-        
         return differential_return, beta_p
 
     def reset(self, prices:Prices, offset):
         assert offset >= self.bars_count - 1
         self._prices = prices
         self.have_position = False
-        self.portfolio_history_returns.clear()
         self.benchmark_returns.clear()
         self.canusecash = 1.0
         self._offset = offset 
@@ -165,6 +161,7 @@ class State_time_step(State_time_step_template):
         self.return_history.clear()
         self.prev_ann_return = 0.0
         self.prev_downside_risk = 0.0
+        self.prev_differentialReturn =0.0
         #         self.bar_dont_change_count = (
         #             0  # 計算K棒之間轉換過了多久 感覺下一次實驗也可以將這個部份加入
         #         )
@@ -279,20 +276,28 @@ class State_time_step(State_time_step_template):
         diff_downside_risk = current_downside_risk - self.prev_downside_risk
         self.prev_downside_risk = current_downside_risk
 
+        
+        
+        
+        current_differentialReturn, beta_p = self.calculate_step_differential_return(current_p_return=self.TotalPortfolioPercent - previous_PortfolioPercent, current_b_return=(_close_price - prev_close) / prev_close)
+        diff_differentialReturn = current_differentialReturn - self.prev_differentialReturn
+        self.prev_differentialReturn = current_differentialReturn
+        
+        
         # 對齊後的組合
-        reward = diff_ann_return_reward - self.weights['w2_down_risk'] * diff_downside_risk + wrongTrade_reward
+        reward = diff_ann_return_reward - self.weights['w2_down_risk'] * diff_downside_risk + \
+                self.weights['w3_diff_return'] * diff_differentialReturn + wrongTrade_reward
 
-        # print("調整前年化獎勵：",diff_ann_return_reward)
-        # print("調整前下行風險：",diff_downside_risk)
-        # print("調整後下行風險：",self.weights['w2_down_risk'] * diff_downside_risk)
-        # --- 最終獎勵組合 ---
+        # print("diff_ann_return_reward :",diff_differentialReturn)
+        # print("self.weights['w2_down_risk'] * diff_downside_risk:",self.weights['w2_down_risk'] * diff_downside_risk)
+        # print("self.weights['w3_diff_return'] * diff_differentialReturn:",self.weights['w3_diff_return'] * diff_differentialReturn)
         # print("目前獎勵設計：",reward)
         # print("*"*120)
         # time.sleep(1)
 
 
         # Differential Return
-        # DifferentialReturn, beta_p = self.calculate_step_differential_return(current_p_return=self.TotalPortfolioPercent - previous_PortfolioPercent, current_b_return=(_close_price - prev_close) / prev_close)
+        
         # print("大盤差異性獎勵：",DifferentialReturn)
 
 
@@ -316,45 +321,6 @@ class State_time_step(State_time_step_template):
         if self.game_steps == self.N_steps and self.model_train:
             done = True     
 
-
-        # if done:
-        #     # 獎勵計算=================================================================
-        #     # Annualized Return
-            
-        #     AnnualizedReturn = self.calculate_geometric_annualized_return(self.portfolio_history_returns)
-        #     print("年化報仇率獎勵：",AnnualizedReturn)
-        #     # ==========================================
-        #     # 1. 內部數值對齊 (Internal Scaling)
-        #     # 把所有指標強制拉平到相似的量級，避免單一指標綁架神經網路
-        #     # 這些係數是根據你跑出來的資料分佈設定的固定值
-        #     # ==========================================
-        #     scale_ann_return = 10.0
-        #     scale_down_risk  = 100.0   # 放大 100 倍
-        #     scale_diff_return = 100.0  # 放大 100 倍
-        #     scale_treynor    = 0.3     # 縮小為 30%
-
-        #     norm_ann_return_step = scale_ann_return * AnnualizedReturn
-        #     # norm_down_risk  = DownsideRisk * scale_down_risk
-        #     # norm_diff_return = DifferentialReturn * scale_diff_return
-        #     # norm_treynor    = treynor * scale_treynor
-
-        #     # 實務上建議你可以把對齊後的數字印出來看一下，確認它們是不是都在 0.1 到 1.0 的區間：
-        #     # print(f"對齊後 -> 年化:{norm_ann_return:.3f}")
-        #         #   | 風險:{norm_down_risk:.3f} | 差異:{norm_diff_return:.3f} | 崔諾:{norm_treynor:.3f}")
-
-        #     # ==========================================
-        #     # 2. 組合最終獎勵函數 (乘上你設定的固定權重)
-        #     # ==========================================
-        #     composite_reward = (
-        #         self.weights['w1_ann_return'] * norm_ann_return_step
-        #         # - self.weights['w2_down_risk'] * norm_down_risk
-        #         # + self.weights['w3_diff_return'] * norm_diff_return
-        #         # + self.weights['w4_treynor'] * norm_treynor
-        #     )
-            
-
-        #     final_step_reward = composite_reward
-        #     reward += final_step_reward
 
         return reward, done
     
