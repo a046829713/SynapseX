@@ -50,7 +50,7 @@ class State_time_step(State_time_step_template):
         self.weights = {
             'w1_ann_return': 0.4,  # 年化報酬權重
             'w2_down_risk': 0.1,   # 下行風險權重 (懲罰項)
-            'w3_diff_return': 0.35, # 差異報酬權重
+            'w3_diff_return': 0.2, # 差異報酬權重 
             'w4_treynor': 0.15      # 崔諾指標權重
         }
         self.risk_free_rate = 0.0
@@ -58,9 +58,9 @@ class State_time_step(State_time_step_template):
         
 
 
-        self.window_size = 60
+        self.window_size = 120
         self.STEPS_PER_YEAR = 252 * 48  
-        self.prev_ann_return = 0.0
+
 
         # 為了方便計算，我們維持一個總淨值的滾動歷史
         self.benchmark_returns = deque(maxlen=self.window_size)
@@ -288,12 +288,18 @@ class State_time_step(State_time_step_template):
         reward = diff_ann_return_reward - self.weights['w2_down_risk'] * diff_downside_risk + \
                 self.weights['w3_diff_return'] * diff_differentialReturn + wrongTrade_reward
 
-        # print("diff_ann_return_reward :",diff_differentialReturn)
+        # print("diff_ann_return_reward :",diff_ann_return_reward)
         # print("self.weights['w2_down_risk'] * diff_downside_risk:",self.weights['w2_down_risk'] * diff_downside_risk)
         # print("self.weights['w3_diff_return'] * diff_differentialReturn:",self.weights['w3_diff_return'] * diff_differentialReturn)
+        # print("wrongTrade_reward :",wrongTrade_reward)
+
+        if diff_ann_return_reward !=0 :
+            print("目前是幾倍A:",self.weights['w2_down_risk'] * diff_downside_risk / diff_ann_return_reward)
+            print("目前是幾倍B:",self.weights['w3_diff_return'] * diff_differentialReturn / diff_ann_return_reward)
+            print("目前是幾倍C:",(self.weights['w2_down_risk'] * diff_downside_risk) / (self.weights['w3_diff_return'] * diff_differentialReturn))
         # print("目前獎勵設計：",reward)
-        # print("*"*120)
-        # time.sleep(1)
+            print("*"*120)
+            time.sleep(0.1)
 
 
         # Differential Return
