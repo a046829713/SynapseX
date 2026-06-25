@@ -161,7 +161,7 @@ class State_time_step(State_time_step_template):
         self.return_history.clear()
         self.prev_ann_return = 0.0
         self.prev_downside_risk = 0.0
-        self.prev_differentialReturn =0.0
+        
         #         self.bar_dont_change_count = (
         #             0  # 計算K棒之間轉換過了多久 感覺下一次實驗也可以將這個部份加入
         #         )
@@ -280,26 +280,25 @@ class State_time_step(State_time_step_template):
         
         
         current_differentialReturn, beta_p = self.calculate_step_differential_return(current_p_return=self.TotalPortfolioPercent - previous_PortfolioPercent, current_b_return=(_close_price - prev_close) / prev_close)
-        diff_differentialReturn = current_differentialReturn - self.prev_differentialReturn
-        self.prev_differentialReturn = current_differentialReturn
+
         
         
         # 對齊後的組合
         reward = diff_ann_return_reward - self.weights['w2_down_risk'] * diff_downside_risk + \
-                self.weights['w3_diff_return'] * diff_differentialReturn + wrongTrade_reward
+                self.weights['w3_diff_return'] * current_differentialReturn + wrongTrade_reward
 
         # print("diff_ann_return_reward :",diff_ann_return_reward)
         # print("self.weights['w2_down_risk'] * diff_downside_risk:",self.weights['w2_down_risk'] * diff_downside_risk)
         # print("self.weights['w3_diff_return'] * diff_differentialReturn:",self.weights['w3_diff_return'] * diff_differentialReturn)
         # print("wrongTrade_reward :",wrongTrade_reward)
 
-        if diff_ann_return_reward !=0 :
-            print("目前是幾倍A:",self.weights['w2_down_risk'] * diff_downside_risk / diff_ann_return_reward)
-            print("目前是幾倍B:",self.weights['w3_diff_return'] * diff_differentialReturn / diff_ann_return_reward)
-            print("目前是幾倍C:",(self.weights['w2_down_risk'] * diff_downside_risk) / (self.weights['w3_diff_return'] * diff_differentialReturn))
-        # print("目前獎勵設計：",reward)
-            print("*"*120)
-            time.sleep(0.1)
+        # if diff_ann_return_reward !=0 :
+        #     print("self.weights['w3_diff_return'] * current_differentialReturn:",self.weights['w3_diff_return'] * current_differentialReturn)
+        #     print("目前是幾倍A:",self.weights['w2_down_risk'] * diff_downside_risk / diff_ann_return_reward)
+        #     print("目前是幾倍B:",self.weights['w3_diff_return'] * current_differentialReturn / diff_ann_return_reward)
+        #     print("目前獎勵設計：",reward)
+        #     print("*"*120)
+        #     time.sleep(0.1)
 
 
         # Differential Return
