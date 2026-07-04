@@ -48,8 +48,8 @@ class State_time_step(State_time_step_template):
 
 
         self.weights = {
-            'w1_ann_return': 0.4,  # 年化報酬權重
-            'w2_down_risk': 0.1,   # 下行風險權重 (懲罰項)
+            'w1_step_return': 1,  # 年化報酬權重
+            'w2_downside_ratio': 0.3,   # 下行風險權重 (懲罰項)
             'w3_diff_return': 0.2, # 差異報酬權重 
             'w4_treynor': 0.15      # 崔諾指標權重
         }
@@ -66,19 +66,6 @@ class State_time_step(State_time_step_template):
         self.benchmark_returns = deque(maxlen=self.window_size)
         self.return_history = deque(maxlen=self.window_size) # 改為儲存每一期的 return
 
-    def calculate_rolling_return(self, returns_list):
-        """
-            直接用每一步的百分比報酬率計算幾何累積，完全避開淨值基數問題
-        """
-        if len(returns_list) == 0:
-            return 0.0
-        
-        cumulative_multiplier = np.prod(1 + np.array(returns_list))
-
-        return cumulative_multiplier -1 
-    
-
-    
 
     def calculate_downside_risk_numpy(self,returns):
         """
@@ -160,11 +147,14 @@ class State_time_step(State_time_step_template):
 
         self.return_history.clear()
         self.prev_ann_return = 0.0
-        self.prev_downside_risk = 0.0
+
         
         #         self.bar_dont_change_count = (
         #             0  # 計算K棒之間轉換過了多久 感覺下一次實驗也可以將這個部份加入
         #         )
+
+        self.maxValue =0
+        self.minValue =0
 
     def step(self, action: Actions):
         """
@@ -249,56 +239,38 @@ class State_time_step(State_time_step_template):
 
         # 10. 計算當前的總淨值 (Equity)
         self.TotalPortfolioPercent = 1.0 - self.cost_sum + self.closecash + opencash_diff 
-
-        
         current_p_return = self.TotalPortfolioPercent - previous_PortfolioPercent
         self.return_history.append(current_p_return)
 
        
-
-        # 計算移動窗格年化差值
         if len(self.return_history) >= 2:
-            # 傳入的是純回報率的 list
-            current_ann_return = self.calculate_rolling_return(list(self.return_history))
+            # A. 基礎回報獎勵（加上 np.clip 限制極端值，保護模型不爆炸）
+            return_reward = np.clip(current_p_return, -0.05, 0.05)
             
-            # 差值獎勵 = 當前年化 - 上一步年化
-            diff_ann_return_reward = current_ann_return - self.prev_ann_return
+            # B. 差值化下行風險懲罰 
+            current_downside_risk = self.calculate_downside_risk_numpy(list(self.return_history))
             
-            # 更新歷史
-            self.prev_ann_return = current_ann_return
+            # 只有在當期真正虧損時，才引入下行風險懲罰，且對懲罰項也做 clip
+            if current_p_return < 0:
+                downside_penalty = np.clip(current_downside_risk * abs(current_p_return), 0, 0.02)
+            else:
+                downside_penalty = 0.0
+                
+            # C. 差異報酬 (對抗大盤)
+            current_differentialReturn, beta_p = self.calculate_step_differential_return(
+                current_p_return=current_p_return, current_b_return=(_close_price - prev_close) / prev_close
+            )
+            current_differentialReturn = np.clip(current_differentialReturn, -0.05, 0.05)
+            
+            
+
+            # 總獎勵組合
+            reward = (self.weights['w1_step_return'] * return_reward 
+                      - self.weights['w2_downside_ratio'] * downside_penalty 
+                      + self.weights['w3_diff_return'] * current_differentialReturn                       
+                      + wrongTrade_reward)
         else:
-            diff_ann_return_reward = 0.0
-
-
-
-        # 差值化風險（這一步的下行風險，比上一步增加了還是減少了）
-        current_downside_risk = self.calculate_downside_risk_numpy(self.return_history)
-        diff_downside_risk = current_downside_risk - self.prev_downside_risk
-        self.prev_downside_risk = current_downside_risk
-
-        
-        
-        
-        current_differentialReturn, beta_p = self.calculate_step_differential_return(current_p_return=self.TotalPortfolioPercent - previous_PortfolioPercent, current_b_return=(_close_price - prev_close) / prev_close)
-
-        
-        
-        # 對齊後的組合
-        reward = diff_ann_return_reward - self.weights['w2_down_risk'] * diff_downside_risk + \
-                self.weights['w3_diff_return'] * current_differentialReturn + wrongTrade_reward
-
-        # print("diff_ann_return_reward :",diff_ann_return_reward)
-        # print("self.weights['w2_down_risk'] * diff_downside_risk:",self.weights['w2_down_risk'] * diff_downside_risk)
-        # print("self.weights['w3_diff_return'] * diff_differentialReturn:",self.weights['w3_diff_return'] * diff_differentialReturn)
-        # print("wrongTrade_reward :",wrongTrade_reward)
-
-        # if diff_ann_return_reward !=0 :
-        #     print("self.weights['w3_diff_return'] * current_differentialReturn:",self.weights['w3_diff_return'] * current_differentialReturn)
-        #     print("目前是幾倍A:",self.weights['w2_down_risk'] * diff_downside_risk / diff_ann_return_reward)
-        #     print("目前是幾倍B:",self.weights['w3_diff_return'] * current_differentialReturn / diff_ann_return_reward)
-        #     print("目前獎勵設計：",reward)
-        #     print("*"*120)
-        #     time.sleep(0.1)
+            reward = wrongTrade_reward
 
 
         # Differential Return
