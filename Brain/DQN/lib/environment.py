@@ -49,7 +49,7 @@ class State_time_step(State_time_step_template):
 
         self.weights = {
             'w1_step_return': 1,  # 年化報酬權重
-            'w2_downside_ratio': 0.3,   # 下行風險權重 (懲罰項)
+            'w2_downside_ratio': 30,   # 下行風險權重 (懲罰項)
             'w3_diff_return': 0.2, # 差異報酬權重 
             'w4_treynor': 0.15      # 崔諾指標權重
         }
@@ -246,15 +246,6 @@ class State_time_step(State_time_step_template):
         if len(self.return_history) >= 2:
             # A. 基礎回報獎勵（加上 np.clip 限制極端值，保護模型不爆炸）
             return_reward = np.clip(current_p_return, -0.05, 0.05)
-            
-            # B. 差值化下行風險懲罰 
-            current_downside_risk = self.calculate_downside_risk_numpy(list(self.return_history))
-            
-            # 只有在當期真正虧損時，才引入下行風險懲罰，且對懲罰項也做 clip
-            if current_p_return < 0:
-                downside_penalty = np.clip(current_downside_risk * abs(current_p_return), 0, 0.02)
-            else:
-                downside_penalty = 0.0
                 
             # C. 差異報酬 (對抗大盤)
             current_differentialReturn, beta_p = self.calculate_step_differential_return(
@@ -262,11 +253,9 @@ class State_time_step(State_time_step_template):
             )
             current_differentialReturn = np.clip(current_differentialReturn, -0.05, 0.05)
             
-            
 
             # 總獎勵組合
             reward = (self.weights['w1_step_return'] * return_reward 
-                      - self.weights['w2_downside_ratio'] * downside_penalty 
                       + self.weights['w3_diff_return'] * current_differentialReturn                       
                       + wrongTrade_reward)
         else:
@@ -298,7 +287,14 @@ class State_time_step(State_time_step_template):
         if self.game_steps == self.N_steps and self.model_train:
             done = True     
 
-
+        # --- 遊戲結束，結算總下行風險 ---
+        if done:
+            # 針對整場遊戲 1000 步的 return_history 計算最終的下行風險
+            final_downside_risk = self.calculate_downside_risk_numpy(list(self.return_history))
+            # 結算懲罰項：給予一個最終的負回饋
+            final_penalty = np.clip(final_downside_risk, 0, 0.5) # 邊界值可依實驗調整
+            reward -= self.weights['w2_downside_ratio'] * final_penalty
+        
         return reward, done
     
 

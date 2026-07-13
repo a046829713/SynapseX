@@ -112,8 +112,7 @@ class RL_evaluate:
             commission_perc=self.config.MODEL_DEFAULT_COMMISSION_PERC_TEST,
             model_train=False,
             default_slippage=self.config.DEFAULT_SLIPPAGE,
-            N_steps = self.config.N_STEPS,
-            win_payoff_weight = self.config.WIN_PAYOFF_WEIGHT,
+            N_steps = self.config.N_STEPS
         )
 
         # 製作環境
