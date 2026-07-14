@@ -56,15 +56,9 @@ class State_time_step(State_time_step_template):
         self.risk_free_rate = 0.0
 
         
-
-
-        self.window_size = 120
-        self.STEPS_PER_YEAR = 252 * 48  
-
-
         # 為了方便計算，我們維持一個總淨值的滾動歷史
-        self.benchmark_returns = deque(maxlen=self.window_size)
-        self.return_history = deque(maxlen=self.window_size) # 改為儲存每一期的 return
+        self.benchmark_returns = deque(maxlen=N_steps)
+        self.return_history = deque(maxlen=N_steps) # 改為儲存每一期的 return
 
 
     def calculate_downside_risk_numpy(self,returns):
@@ -245,19 +239,20 @@ class State_time_step(State_time_step_template):
        
         if len(self.return_history) >= 2:
             # A. 基礎回報獎勵（加上 np.clip 限制極端值，保護模型不爆炸）
-            return_reward = np.clip(current_p_return, -0.05, 0.05)
+            # return_reward = np.clip(current_p_return, -0.05, 0.05)
                 
             # C. 差異報酬 (對抗大盤)
-            current_differentialReturn, beta_p = self.calculate_step_differential_return(
-                current_p_return=current_p_return, current_b_return=(_close_price - prev_close) / prev_close
-            )
-            current_differentialReturn = np.clip(current_differentialReturn, -0.05, 0.05)
+            # current_differentialReturn, beta_p = self.calculate_step_differential_return(
+            #     current_p_return=current_p_return, current_b_return=(_close_price - prev_close) / prev_close
+            # )
+            # current_differentialReturn = np.clip(current_differentialReturn, -0.05, 0.05)
             
 
             # 總獎勵組合
-            reward = (self.weights['w1_step_return'] * return_reward 
-                      + self.weights['w3_diff_return'] * current_differentialReturn                       
+            reward = (self.weights['w1_step_return'] * current_p_return 
+                    #   + self.weights['w3_diff_return'] * current_differentialReturn                       
                       + wrongTrade_reward)
+            
         else:
             reward = wrongTrade_reward
 
