@@ -119,7 +119,7 @@ class OriginalDataFrature:
             df.drop(columns=[ma_col_name], inplace=True)
 
         # 因為 rolling 會產生 NaN (例如 MA_360 前 359 筆是空的)，這裡需要清除
-        df = df.dropna()
+        df = df.dropna().copy()
         return df
 
     def add_ATR(self, df: pd.DataFrame, period: int = 14):
