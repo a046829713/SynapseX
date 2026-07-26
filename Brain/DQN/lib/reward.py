@@ -54,7 +54,7 @@ class DSR_Calculator:
         self.B += self.eta * (r_t**2 - self.B)
 
     def step(self, r_t: float) -> float:
-        """
+        r"""
         接收一個時間步的報酬率 r_t，返回 DSR 獎勵。
         
         Args:
@@ -129,7 +129,7 @@ class DSR_Calculator:
 
 
 class RelativeDSR_Calculator:
-    """
+    r"""
     計算相對微分夏普比率 (Relative Differential Sharpe Ratio)
     
     這個版本的 DSR 不是優化絕對回報，而是優化「超額回報」(Excess Return)。
