@@ -83,7 +83,7 @@ class State_time_step_template(BasicState):
         if self.have_position:
             data_res[:, len(self.info_list)] = 1.0
             data_res[:, len(self.info_list) + 1] = (
-                self._prices.close[self._offset] - self.open_price
+                self._prices.close[self._offset - 1] - self.open_price
             ) / self.open_price
             data_res[:, len(self.info_list) + 2] = self.trade_bar
 

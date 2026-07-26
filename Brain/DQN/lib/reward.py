@@ -593,10 +593,10 @@ class Reward:
         """
         _reward = 0
         if havePostion and action == Actions.Buy:
-            _reward = 0.01
+            _reward = 0.001
 
         elif not (havePostion) and action == Actions.Sell:
-            _reward = 0.01
+            _reward = 0.001
 
         return self.wrongTrade_weight * _reward * -1
 

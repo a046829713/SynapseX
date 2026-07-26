@@ -51,7 +51,8 @@ class State_time_step(State_time_step_template):
             'w1_step_return': 1,  # 年化報酬權重
             'w2_downside_ratio': 30,   # 下行風險權重 (懲罰項)
             'w3_diff_return': 0.2, # 差異報酬權重 
-            'w4_treynor': 0.15      # 崔諾指標權重
+            'w4_treynor': 0.15,     # 崔諾指標權重
+            'w5_wrong_trade': 1.0   # 違規交易懲罰權重
         }
         self.risk_free_rate = 0.0
 
@@ -177,9 +178,7 @@ class State_time_step(State_time_step_template):
         # 1. 計算規則懲罰
         wrongTrade_reward = self.reward_function.wrongTrade(
             self.have_position, action=action
-        )
-
-        reward += wrongTrade_reward 
+        ) 
 
         # 3. 計算平倉損益 （不包含交易稅）
         closecash_diff = self.reward_help.CaculateCloseProfit(
@@ -237,40 +236,8 @@ class State_time_step(State_time_step_template):
         self.return_history.append(current_p_return)
 
        
-        if len(self.return_history) >= 2:
-            # A. 基礎回報獎勵（加上 np.clip 限制極端值，保護模型不爆炸）
-            # return_reward = np.clip(current_p_return, -0.05, 0.05)
-                
-            # C. 差異報酬 (對抗大盤)
-            # current_differentialReturn, beta_p = self.calculate_step_differential_return(
-            #     current_p_return=current_p_return, current_b_return=(_close_price - prev_close) / prev_close
-            # )
-            # current_differentialReturn = np.clip(current_differentialReturn, -0.05, 0.05)
-            
 
-            # 總獎勵組合
-            reward = (self.weights['w1_step_return'] * current_p_return 
-                    #   + self.weights['w3_diff_return'] * current_differentialReturn                       
-                      + wrongTrade_reward)
-            
-        else:
-            reward = wrongTrade_reward
-
-
-        # Differential Return
-        
-        # print("大盤差異性獎勵：",DifferentialReturn)
-
-
-
-        # 指標 4: 崔諾指標 (Treynor Ratio)
-        # treynor = (AnnualizedReturn - self.risk_free_rate) / beta_p
-
-        # print("Treynor 指標獎勵：",treynor)
-
-
-
-
+        reward = (self.weights['w1_step_return'] * current_p_return + self.weights['w5_wrong_trade'] * wrongTrade_reward)
 
         # --- 11. 更新步數與結束判斷 ---
         self._offset += 1
@@ -283,12 +250,12 @@ class State_time_step(State_time_step_template):
             done = True     
 
         # --- 遊戲結束，結算總下行風險 ---
-        if done:
+        # if done:
             # 針對整場遊戲 1000 步的 return_history 計算最終的下行風險
-            final_downside_risk = self.calculate_downside_risk_numpy(list(self.return_history))
+            # final_downside_risk = self.calculate_downside_risk_numpy(list(self.return_history))
             # 結算懲罰項：給予一個最終的負回饋
-            final_penalty = np.clip(final_downside_risk, 0, 0.5) # 邊界值可依實驗調整
-            reward -= self.weights['w2_downside_ratio'] * final_penalty
+            # final_penalty = np.clip(final_downside_risk, 0, 0.5) # 邊界值可依實驗調整
+            # reward -= self.weights['w2_downside_ratio'] * final_penalty
         
         return reward, done
     
@@ -396,10 +363,10 @@ class TrainingEnv(BaseTradingEnv):
         all_prices = self._load_data_for_instrument(self._instrument)
         prices = all_prices[self._instrument]
 
-        offset = (
-            np.random.choice(prices.high.shape[0] - self._state.bars_count * 10)
-            + self._state.bars_count
-        )
+        max_offset = prices.high.shape[0] - self._state.N_steps - 1
+        min_offset = self._state.bars_count
+        assert max_offset > min_offset, f"Dataset length {prices.high.shape[0]} too short for N_steps={self._state.N_steps}"
+        offset = np.random.randint(min_offset, max_offset)
 
         print(
             f"[{self.data_type_name}] Actor resetting env with symbol: {self._instrument} at offset: {offset}"
