@@ -19,7 +19,7 @@ from utils.AppSetting import RLConfig, UpdateConfig
 from utils.Debug_tool import debug
 
 # --- 主執行流程 (重大修改) ---
-NUM_ACTORS = 4
+NUM_ACTORS = 1
 
 
 # those entries are emitted from ExperienceSourceFirstLast. Reward is discounted over the trajectory piece
@@ -497,7 +497,10 @@ def main():
     symbolNames = [_fileName.split('.')[0] for _fileName in symbolNames]
 
 
-    unique_symbols = list(set(symbolNames))
+    # unique_symbols = list(set(symbolNames))
+    unique_symbols = ["BTCUSDT-F-30-Min"]
+
+
     config.update_steps_by_symbols(len(unique_symbols))
     config.create_saves_path()
     config.UNIQUE_SYMBOLS = unique_symbols
