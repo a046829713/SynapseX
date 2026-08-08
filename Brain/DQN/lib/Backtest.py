@@ -13,6 +13,7 @@ import quantstats as qs
 from pathlib import Path
 import time
 from utils.AppSetting import RLConfig
+import json
 
 
 class Strategy(object):
@@ -91,6 +92,25 @@ class Strategy(object):
         return f"{self.strategytype}-{self.symbol_name}-{self.freq_time}"
 
 
+def load_from_json(filename="data.json"):
+    with open(filename, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def save_to_json(data, filename="data.json"):
+    """
+    將資料保存為本地端的 JSON 檔案
+
+    :param data: 要保存的資料（字典、列表等可 JSON 化的物件）
+    :param filename: 保存的檔案名稱或路徑
+    """
+    with open(filename, "w", encoding="utf-8") as f:
+        # indent=4 可以讓產生的 JSON 檔案自動排版，方便閱讀
+        # ensure_ascii=False 確保中文字元不會被轉成 Unicode 碼
+        json.dump(data, f, ensure_ascii=False, indent=4)
+    print(f"資料已成功保存至：{filename}")
+
+
 class RL_evaluate:
     def __init__(self, strategy: Strategy, formal: bool) -> None:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -112,7 +132,7 @@ class RL_evaluate:
             commission_perc=self.config.MODEL_DEFAULT_COMMISSION_PERC_TEST,
             model_train=False,
             default_slippage=self.config.DEFAULT_SLIPPAGE,
-            N_steps = self.config.N_STEPS
+            N_steps=self.config.N_STEPS,
         )
 
         # 製作環境
@@ -144,36 +164,41 @@ class RL_evaluate:
         return net
 
     def test(self):
-        done = False
-        rewards = []
-        record_orders = []
-        info = [{}]
-        obs = self.evaluate_env.reset()
-        state, time_state = obs
+        # done = False
+        # rewards = []
+        # record_orders = []
+        # info = [{}]
+        # obs = self.evaluate_env.reset()
+        # state, time_state = obs
 
-        state = torch.from_numpy(state).to(self.device)
-        state = state.unsqueeze(0)
+        # state = torch.from_numpy(state).to(self.device)
+        # state = state.unsqueeze(0)
 
-        time_state = torch.from_numpy(time_state).to(self.device)
-        time_state = time_state.unsqueeze(0)
+        # time_state = torch.from_numpy(time_state).to(self.device)
+        # time_state = time_state.unsqueeze(0)
 
-        info = common.turn_to_tensor(info, self.device)
+        # info = common.turn_to_tensor(info, self.device)
 
-        with torch.no_grad():
-            while not done:
-                action, _,_ = self.agent(state, time_state)
-                action_idx = action.max(dim=1)[1].item()
-                record_orders.append(self._parser_order(action_idx))
-                _state, reward, done, info = self.evaluate_env.step(action_idx)
-                # info = common.turn_to_tensor([info],self.device)
-                state, time_state = _state
+        # with torch.no_grad():
+        #     while not done:
+        #         action, _,_ = self.agent(state, time_state)
+        #         action_idx = action.max(dim=1)[1].item()
+        #         record_orders.append(self._parser_order(action_idx))
+        #         _state, reward, done, info = self.evaluate_env.step(action_idx)
+        #         # info = common.turn_to_tensor([info],self.device)
+        #         state, time_state = _state
 
-                state = torch.from_numpy(state).to(self.device)
-                state = state.unsqueeze(0)
+        #         state = torch.from_numpy(state).to(self.device)
+        #         state = state.unsqueeze(0)
 
-                time_state = torch.from_numpy(time_state).to(self.device)
-                time_state = time_state.unsqueeze(0)
-                rewards.append(reward)
+        #         time_state = torch.from_numpy(time_state).to(self.device)
+        #         time_state = time_state.unsqueeze(0)
+        #         rewards.append(reward)
+
+        # save_to_json(record_orders, "record_orders.json")
+
+        record_orders = load_from_json("record_orders.json")
+        print(len(record_orders))
 
         self.record_orders = record_orders
 
@@ -214,6 +239,7 @@ class Backtest(object):
         """
         透過order 來產生回測績效表
         """
+
         # 從類神經網絡拿order的一個狀態
         self.shiftorder = np.array(self.order)
         self.shiftorder = np.roll(self.shiftorder, 1)
@@ -235,6 +261,14 @@ class Backtest(object):
         # # 最後一個不計算
         self.Open = self.Open[:-1]
 
+        assert len(self.order) == len(
+            self.Open
+        ), "order not match the open data,please check."
+
+        
+        print("訂單長度：", len(self.shiftorder))
+        print("價格長度：", len(self.Open))
+        time.sleep(100)
         params = {
             "shiftorder": self.shiftorder,
             "open_array": self.Open,

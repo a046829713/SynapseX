@@ -1,3 +1,6 @@
 # to skip the data folder.
 /Brain/simulation/
 /wheel_resource
+Meta-300B-30K.pt
+*.log
+*.json

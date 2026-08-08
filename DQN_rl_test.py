@@ -1,13 +1,6 @@
-import re
-from Brain.DQN.lib.Backtest import Strategy, RL_evaluate, Backtest
-import os
 import time
 from Brain.Common.engine import EngineBase
 
-from Major.DataProvider import DataProvider
-
-
-# 範例使用方式
 if __name__ == "__main__":
 
     # first_date_map = DataProvider().get_symbol_first_day(

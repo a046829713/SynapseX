@@ -5,10 +5,16 @@ from Brain.Common.DataFeature import OriginalDataFrature, Prices
 import pandas as pd
 from abc import ABC, abstractmethod
 from Brain.Common.env_components import State_time_step_template
-from Brain.DQN.lib.reward import Actions, Reward, RewardHelp, DSR_Calculator , RelativeDSR_Calculator, RelativeSortino_Calculator,Window_RelativeSortino_Calculator
+from Brain.DQN.lib.reward import (
+    Actions,
+    Reward,
+    RewardHelp,
+    DSR_Calculator,
+    RelativeDSR_Calculator,
+    RelativeSortino_Calculator,
+    Window_RelativeSortino_Calculator,
+)
 from collections import deque
-
-
 
 
 class State_time_step(State_time_step_template):
@@ -19,7 +25,6 @@ class State_time_step(State_time_step_template):
         model_train,
         default_slippage,
         N_steps,
-        
     ):
         """
             base on Risk-Aware Reinforcement Learning Reward for Financial Trading
@@ -37,7 +42,7 @@ class State_time_step(State_time_step_template):
             commission_perc=commission_perc,
             model_train=model_train,
             default_slippage=default_slippage,
-            N_steps = N_steps,          
+            N_steps=N_steps,
         )
 
         self.max_default_slippage = default_slippage
@@ -45,64 +50,58 @@ class State_time_step(State_time_step_template):
         self.reward_function = Reward()
         self.reward_help = RewardHelp()
 
-
-
         self.weights = {
-            'w1_step_return': 1,  # 年化報酬權重
-            'w2_downside_ratio': 30,   # 下行風險權重 (懲罰項)
-            'w3_diff_return': 0.2, # 差異報酬權重 
-            'w4_treynor': 0.15,     # 崔諾指標權重
-            'w5_wrong_trade': 1.0   # 違規交易懲罰權重
+            "w1_step_return": 1,  # 年化報酬權重
+            "w2_downside_ratio": 30,  # 下行風險權重 (懲罰項)
+            "w3_diff_return": 0.2,  # 差異報酬權重
+            "w4_treynor": 0.15,  # 崔諾指標權重
+            "w5_wrong_trade": 1.0,  # 違規交易懲罰權重
         }
         self.risk_free_rate = 0.0
 
-        
         # 為了方便計算，我們維持一個總淨值的滾動歷史
         self.benchmark_returns = deque(maxlen=N_steps)
-        self.return_history = deque(maxlen=N_steps) # 改為儲存每一期的 return
+        self.return_history = deque(maxlen=N_steps)  # 改為儲存每一期的 return
 
-
-    def calculate_downside_risk_numpy(self,returns):
+    def calculate_downside_risk_numpy(self, returns):
         """
-            計算投資組合的下行風險 (Downside Risk)
-            
-            參數:
-            returns (np.ndarray): 包含一段時間內報酬率的陣列，例如 [0.05, -0.02, -0.05, 0.01]
-            
-            回傳:
-            float: 下行風險值
+        計算投資組合的下行風險 (Downside Risk)
+
+        參數:
+        returns (np.ndarray): 包含一段時間內報酬率的陣列，例如 [0.05, -0.02, -0.05, 0.01]
+
+        回傳:
+        float: 下行風險值
         """
         if len(returns) == 0:
             return 0.0
-        
 
         # 步驟 1: 實作 max(0, -R_{p,t})
         # np.maximum 會逐一比較陣列元素與 0，只保留正數（也就是虧損的部分，因為前面加了負號）
-        downside_diff = np.maximum(0, - np.array(returns))
-
+        downside_diff = np.maximum(0, -np.array(returns))
 
         # 步驟 2: 將取出的虧損數值進行平方
-        squared_downside = downside_diff ** 2
-        
+        squared_downside = downside_diff**2
+
         # 步驟 3: 加總平均後開根號 (Root Mean Square)
         downside_risk = np.sqrt(np.mean(squared_downside))
         return downside_risk
 
-
-    def calculate_step_differential_return(self, current_p_return, current_b_return, min_beta=0.3):
+    def calculate_step_differential_return(
+        self, current_p_return, current_b_return, min_beta=0.3
+    ):
         """
-            在 step() 裡面呼叫這個函數，傳入「當下這一步」的報酬
-            計算簡化差異報酬 (Simplified Differential Return)
+        在 step() 裡面呼叫這個函數，傳入「當下這一步」的報酬
+        計算簡化差異報酬 (Simplified Differential Return)
         """
         # 2. 防呆機制：如果歷史資料少於 2 筆，無法計算 Beta
         if len(self.return_history) < 2:
             # 資料不足時，退化成最簡單的「絕對超額報酬」，不除以 Beta
             return current_p_return - current_b_return, 1
-            
+
         # 3. 資料足夠，轉成 NumPy 陣列準備計算
         p_returns = np.array(self.return_history)
         b_returns = np.array(self.benchmark_returns)
-        
 
         # 4. 防呆機制：檢查大盤是否完全沒有波動 (例如連續幾天假日或停牌)
         benchmark_variance = np.var(b_returns, ddof=1)
@@ -114,27 +113,27 @@ class State_time_step(State_time_step_template):
             cov_matrix = np.cov(p_returns, b_returns)
             covariance = cov_matrix[0, 1]
             beta_p = covariance / benchmark_variance
-            
+
         # 5. 限制 Beta 範圍，防止除以極小值導致獎勵爆炸
         beta_p = np.clip(beta_p, a_min=min_beta, a_max=3.0)
-        
+
         # 6. 計算這一段窗格內的平均報酬
         mu_p = np.mean(p_returns)
         mu_b = np.mean(b_returns)
-        
+
         # 7. 回傳計算好的差異報酬
         differential_return = (mu_p - mu_b) / beta_p
         return differential_return, beta_p
 
-    def reset(self, prices:Prices, offset):
+    def reset(self, prices: Prices, offset):
         assert offset >= self.bars_count - 1
         self._prices = prices
         self.have_position = False
         self.benchmark_returns.clear()
         self.canusecash = 1.0
-        self._offset = offset 
+        self._offset = offset
         self.open_price = 0.0
-        self.game_steps = 0 
+        self.game_steps = 0
         self.closecash = 0.0
         self.cost_sum = 0.0
         self.trade_bar = 0
@@ -143,42 +142,41 @@ class State_time_step(State_time_step_template):
         self.return_history.clear()
         self.prev_ann_return = 0.0
 
-        
         #         self.bar_dont_change_count = (
         #             0  # 計算K棒之間轉換過了多久 感覺下一次實驗也可以將這個部份加入
         #         )
 
-        self.maxValue =0
-        self.minValue =0
+        self.maxValue = 0
+        self.minValue = 0
 
     def step(self, action: Actions):
         """
-            step return: we need the every step return
+        step return: we need the every step return
 
 
-            起始資金 (100 %) + 已平倉損益 + 未平倉損益 - 手許費用
+        起始資金 (100 %) + 已平倉損益 + 未平倉損益 - 手許費用
 
-            Rate of Return
+        Rate of Return
         """
         assert isinstance(action, Actions)
-        
-        reward = 0.0 
-        done = False        
 
+        # print("原始部位：", self.have_position)
+
+        reward = 0.0
+        done = False
 
         _close_price = self._prices.close[self._offset]
         prev_close = self._prices.close[self._offset - 1]
 
         self.benchmark_returns.append((_close_price - prev_close) / prev_close)
 
-
         # # 獲取上一步的總淨值
-        previous_PortfolioPercent = self.TotalPortfolioPercent 
+        previous_PortfolioPercent = self.TotalPortfolioPercent
 
         # 1. 計算規則懲罰
         wrongTrade_reward = self.reward_function.wrongTrade(
             self.have_position, action=action
-        ) 
+        )
 
         # 3. 計算平倉損益 （不包含交易稅）
         closecash_diff = self.reward_help.CaculateCloseProfit(
@@ -203,7 +201,6 @@ class State_time_step(State_time_step_template):
             self.have_position, action=action
         )
 
-
         # # 6. 計算交易成本
         current_step_cost = self.reward_help.CaculateCost(
             havePostion=self.have_position, action=action, cost=self.max_commission
@@ -212,10 +209,9 @@ class State_time_step(State_time_step_template):
         self.cost_sum += current_step_cost
         self.closecash += closecash_diff
 
-
         # 7. 計算浮動損益 (基於 next_have_position)
         opencash_diff = self.reward_help.CaculateOpenProfit(
-            next_have_position, 
+            next_have_position,
             action=action,
             closePrice=_close_price,
             OpenPrice=self.open_price,
@@ -229,38 +225,51 @@ class State_time_step(State_time_step_template):
         # 9. 正式更新持倉狀態
         self.have_position = next_have_position
 
-
         # 10. 計算當前的總淨值 (Equity)
-        self.TotalPortfolioPercent = 1.0 - self.cost_sum + self.closecash + opencash_diff 
+        self.TotalPortfolioPercent = (
+            1.0 - self.cost_sum + self.closecash + opencash_diff
+        )
         current_p_return = self.TotalPortfolioPercent - previous_PortfolioPercent
         self.return_history.append(current_p_return)
 
-       
-
-        reward = (self.weights['w1_step_return'] * current_p_return + self.weights['w5_wrong_trade'] * wrongTrade_reward)
+        reward = (
+            self.weights["w1_step_return"] * current_p_return
+            + self.weights["w5_wrong_trade"] * wrongTrade_reward
+        )
 
         # --- 11. 更新步數與結束判斷 ---
         self._offset += 1
         self.game_steps += 1
         done |= self._offset >= self._prices.close.shape[0] - 1
 
-
-        
         if self.game_steps == self.N_steps and self.model_train:
-            done = True     
+            done = True
 
         # --- 遊戲結束，結算總下行風險 ---
         # if done:
-            # 針對整場遊戲 1000 步的 return_history 計算最終的下行風險
-            # final_downside_risk = self.calculate_downside_risk_numpy(list(self.return_history))
-            # 結算懲罰項：給予一個最終的負回饋
-            # final_penalty = np.clip(final_downside_risk, 0, 0.5) # 邊界值可依實驗調整
-            # reward -= self.weights['w2_downside_ratio'] * final_penalty
-        
-        return reward, done
-    
+        # 針對整場遊戲 1000 步的 return_history 計算最終的下行風險
+        # final_downside_risk = self.calculate_downside_risk_numpy(list(self.return_history))
+        # 結算懲罰項：給予一個最終的負回饋
+        # final_penalty = np.clip(final_downside_risk, 0, 0.5) # 邊界值可依實驗調整
+        # reward -= self.weights['w2_downside_ratio'] * final_penalty
 
-    
+        # print(
+        #     "新部位",
+        #     self.have_position,
+        #     "本次動作:",
+        #     action,
+        #     "開倉價格：",
+        #     self.open_price,
+        #     "浮動損益:",
+        #     opencash_diff,
+        # )
+
+        # print("已平倉損益：", self.closecash, "平倉價格：", _close_price)
+        # print("*" * 120)
+        # time.sleep(0.1)
+        return reward, done
+
+
 class BaseTradingEnv(gym.Env, ABC):
     """
     交易環境的抽象基礎類別。
@@ -343,7 +352,6 @@ class TrainingEnv(BaseTradingEnv):
             "model_train": True,
             "default_slippage": self.config.DEFAULT_SLIPPAGE,
             "N_steps": self.config.N_STEPS,
-            
         }
 
         super().__init__(state=State_time_step(**state_params))
@@ -365,7 +373,9 @@ class TrainingEnv(BaseTradingEnv):
 
         max_offset = prices.high.shape[0] - self._state.N_steps - 1
         min_offset = self._state.bars_count
-        assert max_offset > min_offset, f"Dataset length {prices.high.shape[0]} too short for N_steps={self._state.N_steps}"
+        assert (
+            max_offset > min_offset
+        ), f"Dataset length {prices.high.shape[0]} too short for N_steps={self._state.N_steps}"
         offset = np.random.randint(min_offset, max_offset)
 
         print(
@@ -373,7 +383,6 @@ class TrainingEnv(BaseTradingEnv):
         )
 
         self._state.reset(prices, offset)
-
 
         return self._state.encode()
 
