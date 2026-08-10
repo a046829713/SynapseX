@@ -7,8 +7,6 @@ from utils.Debug_tool import debug
 from Brain.Common.Error import InvalidModeError
 from datetime import timedelta
 
-
-
 Prices = collections.namedtuple(
     "Prices",
     field_names=[
@@ -31,8 +29,6 @@ Prices = collections.namedtuple(
         "log_ma_120",
         "log_ma_240",
         "log_ma_360",
-
-
         "age_log_minutes",
         "age_years",
         "month_sin",
@@ -47,12 +43,12 @@ Prices = collections.namedtuple(
         "dayofweek_cos",
         "week_sin",
         "week_cos",
-        "atr_Volatility"
+        # "atr_Volatility",
     ],
 )
 
 
-class OriginalDataFrature:
+class OriginalDataFeature:
     def __init__(
         self,
     ) -> None:
@@ -73,11 +69,9 @@ class OriginalDataFrature:
         out_dict = {}
         self.df = self.add_average_metric(df)
         self.df = self.add_time_feature(self.df, first_date)
-        self.df = self.add_ATR(self.df)
+        # self.df = self.add_ATR(self.df)
         out_dict.update({symbol: self.load_relative()})
 
-
-        
         return out_dict
 
     def get_train_net_work_data_by_path(
@@ -93,68 +87,69 @@ class OriginalDataFrature:
             self.df = self.cleanData(df)
             self.df = self.add_average_metric(self.df)
             self.df = self.add_time_feature(self.df)
-            self.df = self.add_ATR(self.df)
-
-            
+            # self.df = self.add_ATR(self.df)
 
             # 使用 PyTorch Tensor 的方法
             out_dict.update({symbolName: self.load_relative()})
 
-
         return out_dict
-    
+
     def add_average_metric(self, df: pd.DataFrame, periods=[30, 60, 120, 240, 360]):
         """
-            計算均線並生成相對特徵：log(Close / MA)
-            這能告訴模型目前價格相對於均線的偏離程度。
-            # 均線邏輯：不需要 shift
+        計算均線並生成相對特徵：log(Close / MA)
+        這能告訴模型目前價格相對於均線的偏離程度。
+        # 均線邏輯：不需要 shift
         """
         for p in periods:
-            ma_col_name = f'MA_{p}'
-            feature_col_name = f'log_ma_{p}'
-            
+            ma_col_name = f"MA_{p}"
+            feature_col_name = f"log_ma_{p}"
+
             # 計算簡單移動平均 (SMA)
-            df[ma_col_name] = df['Close'].rolling(window=p).mean()
-            df[feature_col_name] = np.log(df['Close'] / df[ma_col_name])            
+            df[ma_col_name] = df["Close"].rolling(window=p).mean()
+            df[feature_col_name] = np.log(df["Close"] / df[ma_col_name])
             df.drop(columns=[ma_col_name], inplace=True)
 
         # 因為 rolling 會產生 NaN (例如 MA_360 前 359 筆是空的)，這裡需要清除
         df = df.dropna().copy()
         return df
 
-    def add_ATR(self, df: pd.DataFrame, period: int = 14):
-        """
-            becasue i want use in feature, so i need to let agent know the state,not be a strategy trigger.
+    # def add_ATR(self, df: pd.DataFrame, period: int = 14):
+    #     """
+    #         Calculates Wilder's ATR and aligns it as a next-step target for imagination models.
 
-        Args:
-            df (pd.DataFrame): _description_
-            period (int, optional): _description_. Defaults to 5.
+    #         This function computes the Average True Range (ATR) and shifts it backward by one
+    #         period (`shift(-1)`). This transforms the column into a ground-truth label for time
+    #         T+1, which is intended for imagination/world model predictions rather than direct
+    #         feature input to the RL agent.
 
-        Returns:
-            _type_: _description_
-        """
-        prev_close = df['Close'].shift(1)
+    #     Args:
+    #         df (pd.DataFrame): _description_
+    #         period (int, optional): _description_. Defaults to 5.
 
-        # 計算 True Range (TR) 的三個組成部分
-        tr1 = df['High'] - df['Low']
-        tr2 = (df['High'] - prev_close).abs()
-        tr3 = (df['Low'] - prev_close).abs()
+    #     Returns:
+    #         _type_: _description_
+    #     """
+    #     prev_close = df["Close"].shift(1)
 
-        # 取得真實範圍 (True Range, TR) - 取三者最大值
-        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    #     # 計算 True Range (TR) 的三個組成部分
+    #     tr1 = df["High"] - df["Low"]
+    #     tr2 = (df["High"] - prev_close).abs()
+    #     tr3 = (df["Low"] - prev_close).abs()
 
-        
-        # 計算 ATR (使用 Wilder's Smoothing)
-        atr_col_name = f'ATR_{period}'
-        
-        # ewm(alpha=1/period, adjust=False) 是 pandas 中
-        # 實現 Wilder's Smoothing (RMA) 的標準方法。
-        df[atr_col_name] = tr.ewm(alpha=1/period, adjust=False).mean()
-        df[atr_col_name] = df[atr_col_name].shift(-1)
-        df[atr_col_name] = np.log1p(df[atr_col_name])
-        df = df.dropna()
+    #     # 取得真實範圍 (True Range, TR) - 取三者最大值
+    #     tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
 
-        return df
+    #     # 計算 ATR (使用 Wilder's Smoothing)
+    #     atr_col_name = f"ATR_{period}"
+
+    #     # ewm(alpha=1/period, adjust=False) 是 pandas 中
+    #     # 實現 Wilder's Smoothing (RMA) 的標準方法。
+    #     df[atr_col_name] = tr.ewm(alpha=1 / period, adjust=False).mean()
+    #     df[atr_col_name] = df[atr_col_name].shift(-1)
+    #     df[atr_col_name] = np.log1p(df[atr_col_name])
+
+    #     df = df.dropna()
+    #     return df
 
     def add_time_feature(self, df: pd.DataFrame, first_date=None):
         datetime_index = pd.to_datetime(df.index)
@@ -232,7 +227,7 @@ class OriginalDataFrature:
 
         """
         if if_log:
-            
+
             return Prices(
                 open=self.df["Open"].values,
                 high=self.df["High"].values,
@@ -247,11 +242,11 @@ class OriginalDataFrature:
                 log_trades=np.log1p(self.df["trades"].values),
                 log_tb_base_av=np.log1p(self.df["tb_base_av"].values),
                 log_tb_quote_av=np.log1p(self.df["tb_quote_av"].values),
-                log_ma_30 = self.df["log_ma_30"].values,
-                log_ma_60= self.df["log_ma_60"].values,
-                log_ma_120=self.df["log_ma_120"].values ,
-                log_ma_240=self.df["log_ma_240"].values ,
-                log_ma_360=self.df["log_ma_360"].values ,
+                log_ma_30=self.df["log_ma_30"].values,
+                log_ma_60=self.df["log_ma_60"].values,
+                log_ma_120=self.df["log_ma_120"].values,
+                log_ma_240=self.df["log_ma_240"].values,
+                log_ma_360=self.df["log_ma_360"].values,
                 age_log_minutes=self.df["age_log_minutes"].values,
                 age_years=self.df["age_years"].values,
                 month_sin=self.df["month_sin"].values,
@@ -266,8 +261,7 @@ class OriginalDataFrature:
                 dayofweek_cos=self.df["dayofweek_cos"].values,
                 week_sin=self.df["week_sin"].values,
                 week_cos=self.df["week_cos"].values,
-                atr_Volatility=self.df["ATR_14"].values,
-
+                # atr_Volatility=self.df["ATR_14"].values,
             )
 
 
@@ -300,4 +294,3 @@ class Resume:
         pass
 
     # 去極值 中性化 標準化
-

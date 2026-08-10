@@ -1,8 +1,7 @@
 import time
 import gymnasium as gym
 import numpy as np
-from Brain.Common.DataFeature import OriginalDataFrature, Prices
-import pandas as pd
+from Brain.Common.DataFeature import Prices
 from abc import ABC, abstractmethod
 from Brain.Common.env_components import State_time_step_template
 from Brain.DQN.lib.reward import (

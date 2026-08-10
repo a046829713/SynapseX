@@ -1,8 +1,7 @@
-from ...Common.Error import InvalidModeError
 import pandas as pd
 import numpy as np
 import torch
-from Brain.Common.DataFeature import OriginalDataFrature
+
 from Brain.DQN.lib import environment
 from Brain.DQN.lib import common
 from Brain.DQN.lib.environment import State_time_step
@@ -14,82 +13,7 @@ from pathlib import Path
 import time
 from utils.AppSetting import RLConfig
 import json
-
-
-class Strategy(object):
-    """
-    神經網絡的模型基底
-    """
-
-    def __init__(
-        self,
-        strategytype: str,
-        symbol_name: str,
-        freq_time: int,
-        model_feature_len: int,
-        fee: float,
-        slippage: float,
-        model_count_path: str,
-        init_cash: float = 10000.0,
-        symobl_type: str = "Futures",
-        lookback_date: str = None,
-        symbol_first_trade_date=None,
-        formal: bool = False,
-    ) -> None:
-        self.strategytype = strategytype
-        self.symbol_name = symbol_name  # 商品名稱
-        self.freq_time = freq_time  # 商品週期
-        self.model_feature_len = model_feature_len  # 商品週期
-        self.fee = fee  # 手續費
-        self.slippage = slippage  # 滑價
-        self.model_count_path = model_count_path  # 模型路徑
-        self.init_cash = init_cash  # 起始資金
-        self.symobl_type = symobl_type  # 每個策略會有一個商品別(期貨現貨別)
-        self.lookback_date = lookback_date  # 策略回測日期
-        self.symbol_first_trade_date = symbol_first_trade_date
-        self.formal = formal  # 策略是否正式啟動
-
-    def load_data(self, local_data_path: str):
-        """
-        如果非正式交易的的時候，可以啟用
-        """
-        if self.formal:
-            raise InvalidModeError()
-
-        self.df = pd.read_csv(local_data_path)
-        self.df.set_index("Datetime", inplace=True)
-
-    def load_Real_time_data(self, df: pd.DataFrame):
-        self.df = df[
-            [
-                "date",
-                "open",
-                "high",
-                "low",
-                "close",
-                "volume",
-                "quote_av",
-                "trades",
-                "tb_base_av",
-                "tb_quote_av",
-            ]
-        ].copy()
-        self.df.rename(
-            columns={
-                "date": "Datetime",
-                "open": "Open",
-                "high": "High",
-                "low": "Low",
-                "close": "Close",
-                "volume": "Volume",
-            },
-            inplace=True,
-        )
-
-        self.df.set_index("Datetime", inplace=True)
-
-    def _strategy_name(self):
-        return f"{self.strategytype}-{self.symbol_name}-{self.freq_time}"
+from Brain.DQN.lib.Strategy import Strategy
 
 
 def load_from_json(filename="data.json"):
@@ -121,11 +45,6 @@ class RL_evaluate:
         if not formal:
             self.config.UNIQUE_SYMBOLS = [strategy.symbol_file_name.split(".")[0]]
 
-        data = OriginalDataFrature().get_train_net_work_data_by_pd(
-            symbol=strategy.symbol_name,
-            df=strategy.df,
-            first_date=strategy.symbol_first_trade_date,
-        )
         # 準備神經網絡的狀態
         state = State_time_step(
             bars_count=self.config.BARS_COUNT,
@@ -136,7 +55,10 @@ class RL_evaluate:
         )
 
         # 製作環境
-        self.evaluate_env = environment.ProductionEnv(prices_data=data, state=state)
+        self.evaluate_env = environment.ProductionEnv(
+            prices_data=strategy.datafeature, state=state
+        )
+
         self.agent = self.load_model(model_path=strategy.model_count_path)
         self.test()
 
@@ -201,6 +123,7 @@ class RL_evaluate:
         print(len(record_orders))
 
         self.record_orders = record_orders
+        
 
     def hyperparameters(self, strategy):
         self.BARS_COUNT = (
@@ -237,7 +160,9 @@ class Backtest(object):
 
     def order_becktest(self, ifplot: bool):
         """
-        透過order 來產生回測績效表
+            透過order 來產生回測績效表
+            datetime_list = datetime_list[:-1] 避免在時盤交易的時候 尚未確認收盤 價格變動導致重複交易
+
         """
 
         # 從類神經網絡拿order的一個狀態
@@ -265,10 +190,6 @@ class Backtest(object):
             self.Open
         ), "order not match the open data,please check."
 
-        
-        print("訂單長度：", len(self.shiftorder))
-        print("價格長度：", len(self.Open))
-        time.sleep(100)
         params = {
             "shiftorder": self.shiftorder,
             "open_array": self.Open,
