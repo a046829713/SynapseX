@@ -86,41 +86,39 @@ class RL_evaluate:
         return net
 
     def test(self):
-        # done = False
-        # rewards = []
-        # record_orders = []
-        # info = [{}]
-        # obs = self.evaluate_env.reset()
-        # state, time_state = obs
+        """
+            order  length : L - B -1
+        """
+        done = False
+        rewards = []
+        record_orders = []
+        info = [{}]
+        obs = self.evaluate_env.reset()
+        state, time_state = obs
 
-        # state = torch.from_numpy(state).to(self.device)
-        # state = state.unsqueeze(0)
+        state = torch.from_numpy(state).to(self.device)
+        state = state.unsqueeze(0)
 
-        # time_state = torch.from_numpy(time_state).to(self.device)
-        # time_state = time_state.unsqueeze(0)
+        time_state = torch.from_numpy(time_state).to(self.device)
+        time_state = time_state.unsqueeze(0)
 
-        # info = common.turn_to_tensor(info, self.device)
+        info = common.turn_to_tensor(info, self.device)
 
-        # with torch.no_grad():
-        #     while not done:
-        #         action, _,_ = self.agent(state, time_state)
-        #         action_idx = action.max(dim=1)[1].item()
-        #         record_orders.append(self._parser_order(action_idx))
-        #         _state, reward, done, info = self.evaluate_env.step(action_idx)
-        #         # info = common.turn_to_tensor([info],self.device)
-        #         state, time_state = _state
+        with torch.no_grad():
+            while not done:
+                action, _,_ = self.agent(state, time_state)
+                action_idx = action.max(dim=1)[1].item()
+                record_orders.append(self._parser_order(action_idx))
+                _state, reward, done, info = self.evaluate_env.step(action_idx)
+                # info = common.turn_to_tensor([info],self.device)
+                state, time_state = _state
 
-        #         state = torch.from_numpy(state).to(self.device)
-        #         state = state.unsqueeze(0)
+                state = torch.from_numpy(state).to(self.device)
+                state = state.unsqueeze(0)
 
-        #         time_state = torch.from_numpy(time_state).to(self.device)
-        #         time_state = time_state.unsqueeze(0)
-        #         rewards.append(reward)
-
-        # save_to_json(record_orders, "record_orders.json")
-
-        record_orders = load_from_json("record_orders.json")
-        print(len(record_orders))
+                time_state = torch.from_numpy(time_state).to(self.device)
+                time_state = time_state.unsqueeze(0)
+                rewards.append(reward)
 
         self.record_orders = record_orders
         
