@@ -25,7 +25,7 @@ NUM_ACTORS = 1
 # those entries are emitted from ExperienceSourceFirstLast. Reward is discounted over the trajectory piece
 ExperienceFirstLast = namedtuple(
     "ExperienceFirstLast",
-    ("state", "action", "reward", "last_state", "info", "last_info","modelBase_feature"),
+    ("state", "action", "reward", "last_state", "info", "last_info"),
 )
 
 class MetricsTracker:
@@ -320,7 +320,6 @@ class LearnerProcess(mp.Process):
                 tgt_net=self.tgt_net.target_model, 
                 gamma=self.config.GAMMA ** self.config.REWARD_STEPS, 
                 device=self.config.DEVICE,
-                imag_loss_weight=0.1 # 這是想像損失的權重，您可以將其加入 RLConfig
             )
 
             loss_v.backward()
@@ -403,7 +402,6 @@ class ActorProcess(mp.Process):
 
             # 2. 使用獲取到的商品重置環境
             state = self.env.reset(symbol=symbol)
-            modelBase_feature = self.env.getModelBase_feature()
 
             n_step_buffer = deque(maxlen=self.config.REWARD_STEPS)
             done = False
@@ -423,7 +421,7 @@ class ActorProcess(mp.Process):
                 
                 episode_accumulated_reward += reward
                 episode_steps += 1
-                n_step_buffer.append((state, action, reward, modelBase_feature))
+                n_step_buffer.append((state, action, reward))
 
                 # 3.4. 計算 N-Step Reward 並發送經驗
                 if len(n_step_buffer) == self.config.REWARD_STEPS or (done and len(n_step_buffer) > 0):
@@ -432,17 +430,16 @@ class ActorProcess(mp.Process):
                         reward_in_step = transition[2]
                         total_reward = reward_in_step + self.config.GAMMA * total_reward
 
-                    first_state, first_action, _, first_modelBase_feature = n_step_buffer[0]
+                    first_state, first_action, _ = n_step_buffer[0]
                     last_state = None if done else next_state
 
                     self.experience_queue.put(
                         ExperienceFirstLast(
-                            first_state, first_action, total_reward, last_state, info, done, first_modelBase_feature
+                            first_state, first_action, total_reward, last_state, info, done
                         )
                     )
 
                 state = next_state
-                modelBase_feature = self.env.getModelBase_feature()
                 
                 # 3.5. 如果 episode 結束，處理剩餘的 n-step transitions
                 if done:
@@ -459,10 +456,10 @@ class ActorProcess(mp.Process):
                         for transition in reversed(n_step_buffer):
                             total_reward = transition[2] + self.config.GAMMA * total_reward
                         
-                        first_state, first_action, _,first_modelBase_feature = n_step_buffer[0]
+                        first_state, first_action, _ = n_step_buffer[0]
                         self.experience_queue.put(
                             ExperienceFirstLast(
-                                first_state, first_action, total_reward, None, info, done, first_modelBase_feature
+                                first_state, first_action, total_reward, None, info, done
                             )
                         )
 

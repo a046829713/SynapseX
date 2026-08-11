@@ -1,7 +1,7 @@
 import time
 import gymnasium as gym
 import numpy as np
-from Brain.Common.DataFeature import OriginalDataFrature, Prices
+from Brain.Common.DataFeature import OriginalDataFeature, Prices
 import pandas as pd
 from abc import ABC, abstractmethod
 from Brain.Common.env_components import State_time_step_template
@@ -272,7 +272,7 @@ class TrainingEnv(BaseTradingEnv):
 
     def _load_data_for_instrument(self, instrument: str):
         """一個輔助方法，專門用來載入特定商品的數據。"""
-        return OriginalDataFrature().get_train_net_work_data_by_path(
+        return OriginalDataFeature().get_train_net_work_data_by_path(
             [instrument], typeName=self.data_type_name
         )
 
@@ -296,12 +296,7 @@ class TrainingEnv(BaseTradingEnv):
 
         self._state.reset(prices, offset)
 
-
         return self._state.encode()
-
-    def getModelBase_feature(self):
-        atr_Volatility = self._state._prices.atr_Volatility[self._state._offset]
-        return atr_Volatility
 
 
 class ProductionEnv(BaseTradingEnv):

@@ -136,8 +136,7 @@ def unpack_batch(batch):
         last_time_states,
         infos,
         last_infos,
-        model_base_features,
-    ) = ([], [], [], [], [], [], [], [], [], [])
+    ) = ([], [], [], [], [], [], [], [], [])
 
     for exp in batch:
         first_state, first_time_state = exp.state
@@ -149,7 +148,6 @@ def unpack_batch(batch):
         dones.append(exp.last_state is None)
         infos.append(exp.info)
         last_infos.append(exp.last_info)
-        model_base_features.append(exp.modelBase_feature)
 
         if exp.last_state is None:
             # the result will be masked anyway
@@ -161,7 +159,6 @@ def unpack_batch(batch):
             last_states.append(last_state)
             last_time_states.append(last_time_state)
 
-
     return (
         np.array(first_states),
         np.array(first_time_states),
@@ -172,7 +169,6 @@ def unpack_batch(batch):
         np.array(last_time_states),
         np.array(infos),
         np.array(last_infos),
-        np.array(model_base_features, dtype=np.float32),
     )
 
 
@@ -191,9 +187,9 @@ def calc_loss(
     net,
     tgt_net,
     gamma,
-    imag_loss_weight=0.1,
     moe_loss_coeff=0.01,
-    device="cpu"):
+    device="cpu",
+):
     """
     計算 DQN 的 MSE loss，並同時計算每筆 transition 的 TD‐error，並整合 MoE 的輔助損失 (auxiliary loss)。
     """
@@ -207,7 +203,6 @@ def calc_loss(
         last_time_states,
         _,
         _,
-        imagined_ground_truth, # 從 unpack_batch 獲取
     ) = unpack_batch(batch)
 
     first_states_v = torch.tensor(first_states, device=device, dtype=torch.float32)
@@ -223,18 +218,10 @@ def calc_loss(
     actions_v = torch.tensor(actions, device=device, dtype=torch.long)
     rewards_v = torch.tensor(rewards, device=device, dtype=torch.float32)
     done_mask = torch.tensor(dones, device=device, dtype=torch.bool)
-    
-    # 將想像的 "真實值" 也轉為 Tensor
-    imagined_ground_truth_v = torch.tensor(imagined_ground_truth, device=device, dtype=torch.float32)
-    # 如果它的維度是 (B,)，轉成 (B, 1) 以匹配模型輸出
-    if imagined_ground_truth_v.dim() == 1:
-        imagined_ground_truth_v = imagined_ground_truth_v.unsqueeze(-1)
-
-
 
     # --- 線上網路 (net) ---
-    # 1. 從 I2A 模型獲取 Q 值、輔助損失和 "想像的預測值"
-    q_values, aux_loss, imagined_preds = net(first_states_v, first_time_states_v)
+    # 1. 從模型獲取 Q 值、輔助損失
+    q_values, aux_loss, _ = net(first_states_v, first_time_states_v)
 
     # 2. 獲取實際採取動作的 Q 值: Q(s,a)
     state_action_values = q_values.gather(1, actions_v.unsqueeze(-1)).squeeze(-1)
@@ -262,13 +249,9 @@ def calc_loss(
     # 1. RL 損失 (DQN Loss)
     rl_loss = nn.MSELoss()(state_action_values, q_targets)
 
-    # 2. 想像損失 (Imagination Loss)
-    # imagination_loss = nn.MSELoss()(imagined_preds, imagined_ground_truth_v)
-
-    # 3. 總損失
-    # total_loss = rl_loss + imag_loss_weight * imagination_loss
+    # 2. 總損失
     total_loss = rl_loss
-    
+
     if aux_loss is not None:
         total_loss += moe_loss_coeff * aux_loss
 
