@@ -49,9 +49,12 @@ class State_time_step(State_time_step_template):
         self.reward_function = Reward()
         self.reward_help = RewardHelp()
 
+        self.downside_window_size = 60  # 滾動下行風險視窗大小 (60 根 30m K 棒)
+        self.prev_downside_risk = 0.0
+
         self.weights = {
-            "w1_step_return": 1,  # 年化報酬權重
-            "w2_downside_ratio": 30,  # 下行風險權重 (懲罰項)
+            "w1_step_return": 1.0,  # 單步報酬權重
+            "w2_downside_ratio": 1.0,  # 下行風險增量懲罰權重 (與 w1 同數量級)
             "w3_diff_return": 0.2,  # 差異報酬權重
             "w4_treynor": 0.15,  # 崔諾指標權重
             "w5_wrong_trade": 1.0,  # 違規交易懲罰權重
@@ -85,6 +88,23 @@ class State_time_step(State_time_step_template):
         # 步驟 3: 加總平均後開根號 (Root Mean Square)
         downside_risk = np.sqrt(np.mean(squared_downside))
         return downside_risk
+
+    def calculate_step_downside_penalty(self) -> float:
+        """
+        計算單步滑動視窗下行風險增量懲罰 (Rolling Window Downside Risk Penalty)
+
+        回傳:
+            float: 當步應扣除的下行風險懲罰值
+        """
+        if len(self.return_history) < 2:
+            return 0.0
+
+        rolling_slice = list(self.return_history)[-self.downside_window_size:]
+        current_downside_risk = self.calculate_downside_risk_numpy(rolling_slice)
+        downside_delta = max(0.0, current_downside_risk - self.prev_downside_risk)
+        self.prev_downside_risk = current_downside_risk
+
+        return float(self.weights["w2_downside_ratio"] * downside_delta)
 
     def calculate_step_differential_return(
         self, current_p_return, current_b_return, min_beta=0.3
@@ -140,6 +160,7 @@ class State_time_step(State_time_step_template):
 
         self.return_history.clear()
         self.prev_ann_return = 0.0
+        self.prev_downside_risk = 0.0
 
         #         self.bar_dont_change_count = (
         #             0  # 計算K棒之間轉換過了多久 感覺下一次實驗也可以將這個部份加入
@@ -231,8 +252,13 @@ class State_time_step(State_time_step_template):
         current_p_return = self.TotalPortfolioPercent - previous_PortfolioPercent
         self.return_history.append(current_p_return)
 
+        # 計算單步下行風險懲罰
+        downside_penalty = self.calculate_step_downside_penalty()
+
+        # 計算單步總獎勵
         reward = (
             self.weights["w1_step_return"] * current_p_return
+            - downside_penalty
             + self.weights["w5_wrong_trade"] * wrongTrade_reward
         )
 
@@ -244,28 +270,6 @@ class State_time_step(State_time_step_template):
         if self.game_steps == self.N_steps and self.model_train:
             done = True
 
-        # --- 遊戲結束，結算總下行風險 ---
-        # if done:
-        # 針對整場遊戲 1000 步的 return_history 計算最終的下行風險
-        # final_downside_risk = self.calculate_downside_risk_numpy(list(self.return_history))
-        # 結算懲罰項：給予一個最終的負回饋
-        # final_penalty = np.clip(final_downside_risk, 0, 0.5) # 邊界值可依實驗調整
-        # reward -= self.weights['w2_downside_ratio'] * final_penalty
-
-        # print(
-        #     "新部位",
-        #     self.have_position,
-        #     "本次動作:",
-        #     action,
-        #     "開倉價格：",
-        #     self.open_price,
-        #     "浮動損益:",
-        #     opencash_diff,
-        # )
-
-        # print("已平倉損益：", self.closecash, "平倉價格：", _close_price)
-        # print("*" * 120)
-        # time.sleep(0.1)
         return reward, done
 
 
