@@ -12,17 +12,7 @@ import time
 import re
 import pandas as pd
 from Database.SQL_operate import SqlSentense
-from Brain.Common.DataFeature import OriginalDataFrature
-
-
-
-
-"""
-    1.取得日線資料
-    2.整理日線資料
-    3.保存日線資料to local.
-
-"""
+from Brain.Common.DataFeature import OriginalDataFeature
 
 
 # def fix_data_different_len_and_na(df: pd.DataFrame):
@@ -229,4 +219,4 @@ def example_simple_evaluate():
 # example_get_target_symbol(filter_type='MTM')
 
 
-OriginalDataFrature().get_train_net_work_data_by_path(['BTCUSDT-F-30-Min'])
+# OriginalDataFrature().get_train_net_work_data_by_path(['BTCUSDT-F-30-Min'])

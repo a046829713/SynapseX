@@ -1,3 +1,9 @@
+---
+trigger: always
+always_on: true
+---
+
+
 # Agent Rules & Development Guidelines
 
 This document defines the strict operational rules and conventions for AI Agents working within this repository.

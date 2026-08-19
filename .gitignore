@@ -4,3 +4,14 @@
 Meta-300B-30K.pt
 *.log
 *.json
+*.pt
+
+
+# Python build artifacts and caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.eggs/
