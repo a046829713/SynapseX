@@ -137,30 +137,26 @@ class RL_evaluate:
 
 
 class Backtest(object):
-    def __init__(self, re_evaluate: RL_evaluate, strategy: Strategy) -> None:
+    def __init__(
+        self,
+        re_evaluate: RL_evaluate,
+        strategy: Strategy,
+        model_name: str = None,
+    ) -> None:
         """
-
         order (list):
             類神經網絡所產生的訂單
-
-        params = {'shiftorder': array([0, 0, 0, ..., 0, 0, 0], dtype=int64),
-                'open_array': array([ 146.  ,  146.  ,  146.  , ..., 1631.48, 1627.78, 1628.54]),
-                'Length': 135450,
-                'init_cash': 10000.0,
-                'slippage': 0.0025,
-                'size': 1.0,
-                'fee': 0.002}
         """
         self.strategy = strategy
         self.bars_count = re_evaluate.BARS_COUNT
         self.order: list = re_evaluate.record_orders
         self.Symbol_data = self.strategy.df
+        self.model_name = model_name or Path(strategy.model_count_path).stem
 
     def order_becktest(self, ifplot: bool):
         """
             透過order 來產生回測績效表
             datetime_list = datetime_list[:-1] 避免在時盤交易的時候 尚未確認收盤 價格變動導致重複交易
-
         """
 
         # 從類神經網絡拿order的一個狀態
@@ -213,15 +209,54 @@ class Backtest(object):
             netprofit_array,
         ) = nb.logic_order(**params)
 
+        final_equity = float(ClosedPostionprofit_array[-1])
+        net_profit = float(netprofit_array[-1])
+        return_pct = float(
+            (final_equity - self.strategy.init_cash) / self.strategy.init_cash * 100
+        )
+
+        index = pd.to_datetime(self.Symbol_data.index[self.bars_count : -1])
+        data_series = pd.Series(ClosedPostionprofit_array, index=index)
+        try:
+            max_dd = float(qs.stats.max_drawdown(data_series))
+        except Exception:
+            cummax = np.maximum.accumulate(ClosedPostionprofit_array)
+            drawdown = (ClosedPostionprofit_array - cummax) / np.where(cummax > 0, cummax, 1)
+            max_dd = float(np.min(drawdown))
+
+        pos_diff = np.diff(marketpostion_array)
+        entry_count = int(np.sum(pos_diff == 1))
+        exit_count = int(np.sum(pos_diff == -1))
+        total_trades = max(entry_count, exit_count)
+
+        trade_profits = profit_array[profit_array != 0]
+        if len(trade_profits) > 0:
+            win_rate = float(np.sum(trade_profits > 0) / len(trade_profits) * 100)
+        else:
+            win_rate = 0.0
+
         if ifplot:
             self._cwd = Path("./")
-            # results file
-            self._results_file = self._cwd / "results" / f"{self.strategy.symbol_name}"
+            # results file isolated by model_name
+            self._results_file = (
+                self._cwd / "results" / self.model_name / f"{self.strategy.symbol_name}"
+            )
             self._results_file.mkdir(parents=True, exist_ok=True)
             self.plot_max_drawdown(ClosedPostionprofit_array)
             self.detail_image(ClosedPostionprofit_array, orders)
 
-        return {"marketpostion_array": marketpostion_array}
+        return {
+            "marketpostion_array": marketpostion_array,
+            "final_equity": final_equity,
+            "net_profit": net_profit,
+            "return_pct": return_pct,
+            "max_drawdown": max_dd,
+            "total_trades": total_trades,
+            "win_rate": win_rate,
+            "gross_profit": float(Gross_profit_array[-1]),
+            "gross_loss": float(Gross_loss_array[-1]),
+            "all_fees": float(all_Fees_array[-1]),
+        }
 
     def detail_image(self, ClosedPostionprofit_array, orders):
         self._plot_and_save(
