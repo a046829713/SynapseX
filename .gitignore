@@ -5,7 +5,7 @@ Meta-300B-30K.pt
 *.log
 *.json
 *.pt
-
+results
 
 # Python build artifacts and caches
 __pycache__/
