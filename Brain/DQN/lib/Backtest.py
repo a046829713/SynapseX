@@ -217,12 +217,15 @@ class Backtest(object):
 
         index = pd.to_datetime(self.Symbol_data.index[self.bars_count : -1])
         data_series = pd.Series(ClosedPostionprofit_array, index=index)
+
+
         try:
             max_dd = float(qs.stats.max_drawdown(data_series))
         except Exception:
             cummax = np.maximum.accumulate(ClosedPostionprofit_array)
             drawdown = (ClosedPostionprofit_array - cummax) / np.where(cummax > 0, cummax, 1)
             max_dd = float(np.min(drawdown))
+
 
         pos_diff = np.diff(marketpostion_array)
         entry_count = int(np.sum(pos_diff == 1))
