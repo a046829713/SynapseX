@@ -44,8 +44,8 @@ class EngineBase:
         if_order_map = {}
         for each_strategy in self.strategys:
             # 載入所需要的資料
-            each_strategy.load_Real_time_data(
-                df[df["tic"] == each_strategy.symbol_name]
+            each_strategy.load_data(
+                df = df[df["tic"] == each_strategy.symbol_name]
             )
 
             re_evaluate = RL_evaluate(each_strategy, formal=self.formal)

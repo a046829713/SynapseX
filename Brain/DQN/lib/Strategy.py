@@ -1,4 +1,3 @@
-from ...Common.Error import InvalidModeError
 import pandas as pd
 from Brain.Common.DataFeature import OriginalDataFeature
 import time
@@ -38,20 +37,25 @@ class Strategy(object):
         self.formal = formal  # 策略是否於正式交易環境
         self.strategyDataManger = StrategyDataManger(self)
 
-    def load_data(self, local_data_path: str):
+    def load_data(self, local_data_path: str = None, df: pd.DataFrame = None):
         """
-            我希望可以透過外部輕易操作改變資料
-
-        Args:
-            local_data_path (str): _description_
-
-        Raises:
-            InvalidModeError: _description_
+        通用資料載入進入點
+        非正式模式 (`formal=False`)：從 CSV 本地檔案載入
+        正式模式 (`formal=True`)：傳入即時 DataFrame
         """
-        if self.formal:
-            raise InvalidModeError()
-
-        self.strategyDataManger.load_data_from_csv(local_data_path)
+        if not self.formal:
+            if local_data_path is None:
+                raise ValueError(
+                    "In backtest mode (formal=False), local_data_path must be provided."
+                )
+            self.strategyDataManger.load_data_from_csv(local_data_path)
+        else:
+            if df is not None:
+                self.strategyDataManger.load_realtime_data(df)
+            else:
+                raise ValueError(
+                    "inRealtime doesn't get data,please check"
+                )
 
     def _strategy_name(self):
         return f"{self.strategytype}-{self.symbol_name}-{self.freq_time}"
@@ -106,31 +110,33 @@ class StrategyDataManger(object):
         self.dataFeatureChange()
         self.dataChange()
 
-    # def load_Real_time_data(self, df: pd.DataFrame):
-    #     self.df = df[
-    #         [
-    #             "date",
-    #             "open",
-    #             "high",
-    #             "low",
-    #             "close",
-    #             "volume",
-    #             "quote_av",
-    #             "trades",
-    #             "tb_base_av",
-    #             "tb_quote_av",
-    #         ]
-    #     ].copy()
-    #     self.df.rename(
-    #         columns={
-    #             "date": "Datetime",
-    #             "open": "Open",
-    #             "high": "High",
-    #             "low": "Low",
-    #             "close": "Close",
-    #             "volume": "Volume",
-    #         },
-    #         inplace=True,
-    #     )
+    def load_realtime_data(self, df: pd.DataFrame):
+        self.df = df[
+            [
+                "date",
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume",
+                "quote_av",
+                "trades",
+                "tb_base_av",
+                "tb_quote_av",
+            ]
+        ].copy()
+        self.df.rename(
+            columns={
+                "date": "Datetime",
+                "open": "Open",
+                "high": "High",
+                "low": "Low",
+                "close": "Close",
+                "volume": "Volume",
+            },
+            inplace=True,
+        )
 
-    #     self.df.set_index("Datetime", inplace=True)
+        self.df.set_index("Datetime", inplace=True)
+        self.dataFeatureChange()
+        self.dataChange()
