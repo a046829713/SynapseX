@@ -204,24 +204,35 @@ class LearnerProcess(mp.Process):
                 ssm_cfg=ssm_cfg                
             ).to(self.config.DEVICE)            
         elif  self.config.KEYWORD == "Mamba2":
-            ssm_cfg = {
-                "expand":2,
-                "layer":"Mamba2",         
+            ssm_cfg_fast = {
+                "layer": "Mamba2",
+                "expand": 2,             # d_inner = 96 * 2 = 192
+                "d_ssm": 96,             # 核心關鍵: 192 維中，96 維走 SSM，剩餘 96 維走 Gated MLP
+                "headdim": 32,           # nheads = 96 // 32 = 3 個 SSM 頭
+                "d_state": 64,           # 狀態維度
+                "ngroups": 1,
+                "chunk_size": 64,
+                "d_conv": 4,
+                "rmsnorm": True,
+                "bias": False,
+                "conv_bias": True
             }
 
             self.net = model.mambaDuelingModel(
                 d_model=data_input_size,
-                nlayers=4,
+                nlayers=2,
                 num_actions=action_space_n,
                 time_features_in=self.engine_info["time_input_size"],
                 seq_dim=self.config.BARS_COUNT,
-                dropout=0.3,
-                ssm_cfg=ssm_cfg                
-            ).to(self.config.DEVICE)   
+                dropout=0.05,
+                hidden_size=96,
+                ssm_cfg=ssm_cfg_fast
+            ).to(self.config.DEVICE)
+   
         else:
             raise ValueError(f"Unknown model KEYWORD: {self.config.KEYWORD}")
 
-        print(f"net create current parameter size:{self.count_parameters()}")
+        print(f"net create current parameter size:{self.count_parameters()}, model_keyword :{self.config.KEYWORD}")
         self.tgt_net = ptan.agent.TargetNet(self.net)
         self._prepare_optimizer()
         self._prepare_buffer()

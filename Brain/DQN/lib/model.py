@@ -763,7 +763,6 @@ def GLUFeedForward(
 #         combined_features = torch.cat([mf_features, imagined_features], dim=1) # [B, (L*hidden) + num_imagined]
 #         print(combined_features.size())
 #         print("*"*120)
-#         time.sleep(100)
 
 #         # --- Dueling 決策 ---
 #         value = self.fc_val(combined_features)      # [B, 1]

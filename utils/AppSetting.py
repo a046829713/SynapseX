@@ -37,7 +37,7 @@ class AppSetting():
 
 @dataclass
 class RLConfig:
-    KEYWORD: str = "Mamba"
+    KEYWORD: str = "Mamba2"
     DEVICE: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     SAVES_TAG: str = "saves"
     BARS_COUNT: int = 300

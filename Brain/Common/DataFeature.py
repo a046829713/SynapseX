@@ -270,7 +270,6 @@ class Resume:
         # vol_df = VolatilityCalculator(annualization_factor= 365).calculate(symmbol_data,price_col="Close")
 
         # print(vol_df)
-        # time.sleep(100)
 
         # 波動性特徵 (Volatility): 商品有多活躍？
 

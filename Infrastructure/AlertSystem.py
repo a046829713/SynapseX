@@ -99,4 +99,4 @@ class AlertSystem:
 #         if difftime.seconds > 600:
 #             LINE_Alert().send_author("緊急通知>>程式已經停止運作!!!!!")
 
-#         time.sleep(60)
+
