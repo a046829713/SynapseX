@@ -13,6 +13,7 @@ from pathlib import Path
 import time
 from utils.AppSetting import RLConfig
 import json
+from typing import Optional
 from Brain.DQN.lib.Strategy import Strategy
 
 
@@ -36,7 +37,12 @@ def save_to_json(data, filename="data.json"):
 
 
 class RL_evaluate:
-    def __init__(self, strategy: Strategy, formal: bool) -> None:
+    def __init__(
+        self,
+        strategy: Strategy,
+        formal: bool,
+        preloaded_agent: Optional[torch.nn.Module] = None,
+    ) -> None:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.hyperparameters(strategy)
 
@@ -59,25 +65,43 @@ class RL_evaluate:
             prices_data=strategy.datafeature, state=state
         )
 
-        self.agent = self.load_model(model_path=strategy.model_count_path)
+        if preloaded_agent is not None:
+            self.agent = preloaded_agent
+        else:
+            self.agent = self.load_model(model_path=strategy.model_count_path)
+
         self.test()
 
     def load_model(self, model_path: str):
         engine_info = self.evaluate_env.engine_info()
         action_space_n = engine_info["action_space_n"]
         data_input_size = engine_info["data_input_size"]
+        ssm_cfg_fast = {
+            "layer": "Mamba2",
+            "expand": 2,             # d_inner = 96 * 2 = 192
+            "d_ssm": 96,             # 核心關鍵: 192 維中，96 維走 SSM，剩餘 96 維走 Gated MLP
+            "headdim": 32,           # nheads = 96 // 32 = 3 個 SSM 頭
+            "d_state": 64,           # 狀態維度
+            "ngroups": 1,
+            "chunk_size": 64,
+            "d_conv": 4,
+            "rmsnorm": True,
+            "bias": False,
+            "conv_bias": True
+        }
 
-        ssm_cfg = {"expand": 4}
         net = model.mambaDuelingModel(
             d_model=data_input_size,
-            nlayers=4,
+            nlayers=2,
             num_actions=action_space_n,
             time_features_in=engine_info["time_input_size"],
             seq_dim=self.config.BARS_COUNT,
-            dropout=0.3,
-            ssm_cfg=ssm_cfg,
+            dropout=0.05,
+            hidden_size=96,
+            ssm_cfg=ssm_cfg_fast
         ).to(self.config.DEVICE)
 
+        
         checkpoint = torch.load(model_path, map_location=self.device, weights_only=True)
 
         net.load_state_dict(checkpoint["model_state_dict"])
@@ -290,7 +314,7 @@ class Backtest(object):
         plt.title(title)
         # 保存圖片為PNG格式
         plt.savefig(Path(save_path) / file_name)
-        plt.close()  # 關閉圖片，釋放資源
+        plt.close("all")  # 關閉圖片，釋放資源
 
     def plot_max_drawdown(self, data):
         index = pd.to_datetime(
@@ -306,4 +330,4 @@ class Backtest(object):
         qs.plots.drawdown(
             data_series, show=False, savefig=self._results_file / "max_drawdown.png"
         )
-        plt.close()
+        plt.close("all")

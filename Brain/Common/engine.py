@@ -4,9 +4,11 @@ import pandas as pd
 import numpy as np
 import re
 import os
-from typing import Tuple, Optional, List, Dict
+from typing import Tuple, Optional, List, Dict, Any
 from pathlib import Path
 import time
+import gc
+import torch
 
 
 class EngineBase:
@@ -34,6 +36,7 @@ class EngineBase:
             self.config = RLConfig()
 
         self.model_paths: List[str] = []
+        self.target_symbols: List[str] = []
         self.model_strategy_map: Dict[str, List[Strategy]] = {}
         self.strategys: List[Strategy] = []
 
@@ -174,6 +177,7 @@ class EngineBase:
         if not os.path.exists(data_path):
             return None
 
+        # 透過標準內部進入點載入，內部自主處理 CSV 讀取與特徵對齊
         strategy.load_data(local_data_path=data_path)
         return strategy
 
@@ -186,6 +190,7 @@ class EngineBase:
         if self.strategy_keyword != "ONE_TO_MANY":
             raise ValueError("STRATEGY_KEYWORD didn't match, please check")
 
+        self.target_symbols = targetsymbols
         self.model_strategy_map = {}
         self.strategys = []
 
@@ -204,57 +209,59 @@ class EngineBase:
             )
 
         else:
-            # 測試/回測環境：支援多模型或自動探索目錄下所有 .pt 檔案
+            # 測試/回測環境：支援多模型或自動探索目錄下所有 .pt 檔案 (純串流架構：不預先實例化策略物件)
             if model_paths is not None:
                 self.model_paths = model_paths
             else:
                 self.model_paths = self._discover_models(model_dir=model_dir)
 
             print(
-                f"[Test Mode] Discovered {len(self.model_paths)} models for batch backtest."
+                f"[Test Mode] Prepared {len(self.model_paths)} models and {len(self.target_symbols)} symbols for streaming backtest."
             )
-
-            for m_path in self.model_paths:
-                m_strats = []
-                for symbol_file_name in targetsymbols:
-                    _strategy = self.create_strategy_from_csv(
-                        m_path, symbol_file_name=symbol_file_name
-                    )
-                    if _strategy is not None:
-                        m_strats.append(_strategy)
-                        self.strategys.append(_strategy)
-
-                self.model_strategy_map[m_path] = m_strats
-
-                print(
-                    f"  -> Model [{Path(m_path).stem}]: prepared {len(m_strats)} target symbol strategies."
-                )
 
     def analyze_result(self, ifplot: bool = True) -> pd.DataFrame:
         """
-        執行多模型 × 多幣種回測評估，輸出隔離目錄並生成跨模型比較總表
+        執行多模型 × 多幣種串流回測評估，輸出隔離目錄並生成跨模型比較總表
+        採用「即建、即測、即抽指標、即釋放 (JIT & Discard)」的串流模式，
+        記憶體僅保有單一模型與單一幣種資料，維持常數空間 O(1)。
         """
         all_results = []
 
-        for model_path, strategies in self.model_strategy_map.items():
+        for model_path in self.model_paths:
             model_name = Path(model_path).stem
             print("\n" + "=" * 80)
             print(
-                f"🚀 [Multi-Model Backtest] Evaluating Model: {model_name} (Total Symbols: {len(strategies)})"
+                f"🚀 [Multi-Model Backtest] Evaluating Model: {model_name} (Total Symbols: {len(self.target_symbols)})"
             )
             print("=" * 80)
 
-            for idx, each_strategy in enumerate(strategies, 1):
+            agent = None
+            for idx, symbol_file_name in enumerate(self.target_symbols, 1):
                 try:
-                    re_evaluate = RL_evaluate(each_strategy, formal=False)
+                    # 1. 即時建立單一 Strategy (內部自主載入資料)
+                    strategy = self.create_strategy_from_csv(
+                        model_path, symbol_file_name=symbol_file_name
+                    )
+                    if strategy is None:
+                        continue
+
+                    # 2. 評估推論 (首個品種實例化 agent，後續共用)
+                    re_evaluate = RL_evaluate(
+                        strategy, formal=False, preloaded_agent=agent
+                    )
+                    if agent is None:
+                        agent = re_evaluate.agent
+
+                    # 3. 執行回測
                     backtester = Backtest(
-                        re_evaluate, each_strategy, model_name=model_name
+                        re_evaluate, strategy, model_name=model_name
                     )
                     backtest_info = backtester.order_becktest(ifplot=ifplot)
 
+                    # 4. 僅提取純文字數值指標
                     res = {
                         "model_name": model_name,
-                        "symbol": each_strategy.symbol_name,
+                        "symbol": strategy.symbol_name,
                         "net_profit": backtest_info.get("net_profit", 0.0),
                         "return_pct": backtest_info.get("return_pct", 0.0),
                         "max_drawdown": backtest_info.get("max_drawdown", 0.0),
@@ -264,13 +271,24 @@ class EngineBase:
                     }
                     all_results.append(res)
                     print(
-                        f"[{model_name}] ({idx}/{len(strategies)}) {each_strategy.symbol_name}: "
+                        f"[{model_name}] ({idx}/{len(self.target_symbols)}) {strategy.symbol_name}: "
                         f"Return: {res['return_pct']:+.2f}% | MaxDD: {res['max_drawdown']:.2%} | Trades: {res['total_trades']} | WinRate: {res['win_rate']:.1f}%"
                     )
+
+                    # 5. 立即解除對單一策略與回測物件的引用
+                    del strategy, re_evaluate, backtester
                 except Exception as e:
                     print(
-                        f"❌ Error evaluating {model_name} on {each_strategy.symbol_name}: {e}"
+                        f"❌ Error evaluating {model_name} on {symbol_file_name}: {e}"
                     )
+
+            # 每個模型全幣種評估完畢後，顯式釋放模型顯存與物件
+            if agent is not None:
+                del agent
+                agent = None
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            gc.collect()
 
         # 生成跨模型績效匯總與排行榜
         summary_df = self._generate_summary_report(all_results)
