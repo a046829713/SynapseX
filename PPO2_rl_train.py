@@ -1,409 +1,350 @@
-import torch
-import torch.nn.functional as F
-from torch.distributions import Categorical
+import os
 import time
-import os
-from Brain.Common.PytorchModelTool import ModelTool
-import os
+from datetime import datetime
+from typing import Optional
+
+import hydra
 import numpy as np
 import torch
+import torch.nn.functional as F
 import torch.optim as optim
-from datetime import datetime
-import time
-from abc import ABC, abstractmethod
-# from Brain.PPO.lib.model import ActorCriticModel,TransformerModel
-import copy 
-import pandas as pd
-from Brain.PPO2.lib.environment import TrainingEnv
-from Brain.PPO2.lib.environment import State_time_step
-from Brain.Common.DataFeature import OriginalDataFrature
-from Brain.PPO2.lib import model
-from Brain.PPO2.lib.experience import RolloutBuffer
-from Brain.PPO2.lib.Agent import PPO2Agent
-import hydra
 from omegaconf import DictConfig, OmegaConf
 
-def show_setting(title: str, content: str):
-    print(f"--{title}--:{content}")
+from Brain.Common.PytorchModelTool import ModelTool
+from Brain.PPO2.lib.Agent import PPO2Agent
+from Brain.PPO2.lib.environment import TrainingEnv
+from Brain.PPO2.lib.experience import RolloutBuffer
 
-class RL_prepare(ABC):
+
+def build_optimizer(
+    model: torch.nn.Module,
+    lr: float = 3e-4,
+    weight_decay: float = 1e-4,
+    base_lr: float = 1e-4,
+) -> optim.AdamW:
+    """
+    建立專屬 AdamW 優化器：
+    1. `dean` (DAIN_Layer) 的特殊層 (`mean_layer`, `scaling_layer`, `gating_layer`)
+       使用獨立學習率且 0 weight decay。
+    2. `LayerNorm`、`bias` 與 `log_std` 參數排除 weight decay。
+    3. 其餘參數施加標準 weight decay。
+    """
+    dean_params_ids = set()
+    if hasattr(model, "dean"):
+        dean_params_ids.update(id(p) for p in model.dean.parameters())
+
+    decay_params = []
+    no_decay_params = []
+
+    for name, param in model.named_parameters():
+        if not param.requires_grad or id(param) in dean_params_ids:
+            continue
+        if "norm" in name or name.endswith(".bias") or "log_std" in name:
+            no_decay_params.append(param)
+        else:
+            decay_params.append(param)
+
+    param_groups = [
+        {"params": decay_params, "lr": lr, "weight_decay": weight_decay},
+        {"params": no_decay_params, "lr": lr, "weight_decay": 0.0},
+    ]
+
+    if hasattr(model, "dean"):
+        param_groups.extend([
+            {
+                "params": list(model.dean.mean_layer.parameters()),
+                "lr": base_lr * model.dean.mean_lr,
+                "weight_decay": 0.0,
+            },
+            {
+                "params": list(model.dean.scaling_layer.parameters()),
+                "lr": base_lr * model.dean.scale_lr,
+                "weight_decay": 0.0,
+            },
+            {
+                "params": list(model.dean.gating_layer.parameters()),
+                "lr": base_lr * model.dean.gate_lr,
+                "weight_decay": 0.0,
+            },
+        ])
+
+    return optim.AdamW(param_groups)
+
+
+class PPO2:
     def __init__(self, cfg: DictConfig):
         self.config = cfg
-        
         self._prepare_device()
         self._prepare_symbols()
         self._prepare_env()
+        self._prepare_agent()
+        self._prepare_optimizer()
 
-
-        # self._prepare_hyperparameters()
-        
-        
-        # self._prepare_writer()
-        # self._prepare_agent()
-        # self._prepare_targer_net()
-        # self._prepare_agent()
-        # self._prepare_optimizer()
-        
-    def update_steps_by_symbols(self, num_symbols: int):
-        self.EPSILON_STEPS = (
-            self.config.training.EPSILON_STEPS_FACTOR * 30
-            if num_symbols > 30
-            else self.config.training.EPSILON_STEPS_FACTOR * num_symbols
+        cfg_training = getattr(self.config, "training", self.config)
+        self.buffer = RolloutBuffer(
+            gamma=getattr(cfg_training, "GAMMA", 0.99),
+            lam=getattr(cfg_training, "GAE_LAMBDA", 0.95),
         )
-
-    def create_saves_path(self):
-        saves_path = os.path.join(
-            self.config.training.SAVES_TAG,
-            datetime.strftime(datetime.now(), "%Y%m%d-%H%M%S")
-            + "-"
-            + str(self.config.training.BARS_COUNT)
-            + "k-",
-        )
-        os.makedirs(saves_path, exist_ok=True)
-        self.SAVES_PATH = saves_path
+        self.model_tool = ModelTool()
 
     def _prepare_device(self):
-        self.device = torch.device(
-            "cuda" if torch.cuda.is_available() else "cpu")
-        show_setting("DEVICE:", self.device)
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        print(f"--DEVICE--: {self.device}")
 
     def _prepare_symbols(self):
-        symbolNames = os.listdir(os.path.join(os.getcwd() , "Brain","simulation","train_data"))
-        symbolNames = [_fileName.split('.')[0] for _fileName in symbolNames]
-        unique_symbols = list(set(symbolNames))
-        self.update_steps_by_symbols(len(unique_symbols))
-        self.create_saves_path()
-        self.config.training.UNIQUE_SYMBOLS = unique_symbols
-        
-        show_setting("SYMBOLNAMES", unique_symbols)
+        try:
+            from hydra.utils import get_original_cwd
+            base_dir = get_original_cwd()
+        except Exception:
+            base_dir = os.getcwd()
+
+        train_data_path = os.path.join(base_dir, "Brain", "simulation", "train_data")
+        symbol_files = [f for f in os.listdir(train_data_path) if f.endswith(".csv")]
+        unique_symbols = sorted(list(set(f.split(".")[0] for f in symbol_files)))
+
+        cfg_training = getattr(self.config, "training", self.config)
+        cfg_training.UNIQUE_SYMBOLS = unique_symbols
+        print(f"--SYMBOLNAMES--: Total {len(unique_symbols)} unique symbols found.")
+
+        saves_tag = getattr(cfg_training, "SAVES_TAG", "saves")
+        bars_count = getattr(cfg_training, "BARS_COUNT", 300)
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        self.saves_path = os.path.join(base_dir, saves_tag, f"{timestamp}-{bars_count}k-")
+        os.makedirs(self.saves_path, exist_ok=True)
+        print(f"--SAVES_PATH--: {self.saves_path}")
 
     def _prepare_env(self):
-        if self.config.training.model == 'Transformer' or 'Mamba' or "Mamba2":
-            # 製作環境
-            self.train_env = TrainingEnv(config=self.config)
+        self.train_env = TrainingEnv(config=self.config)
+        print(f"--TrainingEnv--: {self.train_env}")
 
-        show_setting("TrainingEnv", self.train_env)
+    def _prepare_agent(self):
+        cfg_training = getattr(self.config, "training", self.config)
+        self.agent = PPO2Agent(
+            ob_space=self.train_env.observation_space,
+            ac_space=self.train_env.action_space,
+            device=self.device,
+            seq_dim=getattr(cfg_training, "BARS_COUNT", 300),
+            hidden_size=getattr(cfg_training, "HIDDEN_SIZE", 96),
+            nlayers=getattr(cfg_training, "NLAYERS", 2),
+            time_features_out=getattr(cfg_training, "TIME_FEATURES_OUT", 32),
+            dropout=getattr(cfg_training, "DROPOUT", 0.1),
+        )
+        print(f"--Agent--: Initialized with model {self.agent.model.__class__.__name__}")
 
+    def _prepare_optimizer(self):
+        cfg_training = getattr(self.config, "training", self.config)
+        lr = getattr(cfg_training, "LEARNING_RATE", 3e-4)
+        weight_decay = getattr(cfg_training, "WEIGHT_DECAY", 1e-4)
+        base_lr = getattr(cfg_training, "BASE_LR", 1e-4)
+        self.optimizer = build_optimizer(
+            self.agent.model, lr=lr, weight_decay=weight_decay, base_lr=base_lr
+        )
+        print(f"--Optimizer--: AdamW created (lr={lr}, weight_decay={weight_decay})")
 
-    def _prepare_writer(self):
-        pass
+    def update_ppo(
+        self,
+        ppo_epochs: int = 4,
+        batch_size: int = 64,
+        clip_eps: float = 0.2,
+        vf_coef: float = 0.5,
+        ent_coef: float = 0.01,
+        max_grad_norm: float = 0.5,
+    ):
+        policy_losses = []
+        value_losses = []
+        entropy_losses = []
+        approx_kls = []
 
+        for _ in range(ppo_epochs):
+            for (
+                states_b,
+                time_states_b,
+                actions_b,
+                old_log_probs_b,
+                returns_b,
+                advantages_b,
+            ) in self.buffer.get_batches(batch_size=batch_size, shuffle=True):
+                states_b = states_b.to(self.device)
+                time_states_b = time_states_b.to(self.device)
+                actions_b = actions_b.to(self.device)
+                old_log_probs_b = old_log_probs_b.to(self.device)
+                returns_b = returns_b.to(self.device)
+                advantages_b = advantages_b.to(self.device)
 
-    def _prepare_hyperparameters(self):
-        pass
-        # self.GAMMA = 0.99
-        # self.LEARNING_RATE = 0.00001  # optim 的學習率
-        
-        # self.ENTROPY_COEF = 0.05  # 熵损失系数
-        # self.SAVES_PATH = "saves"  # 儲存的路徑
+                log_probs, entropy, values = self.agent.evaluate_actions(
+                    states_b, time_states_b, actions_b
+                )
 
-        # self.CHECKPOINT_EVERY_STEP = 100
-        # self.VALUE_LOSS_COEF = 0.1  # 價值損失函數 critic損失函數
-        # self.N_STEP = 250
-        # self.checkgrad_times = 10
+                # Ratio
+                log_ratio = log_probs - old_log_probs_b
+                ratio = torch.exp(log_ratio)
 
-    def _prepare_agent(self):        
-        self.Agent = PPO2Agent(self.train_env.observation_space,
-                                     self.train_env.action_space,
-                                     device=self.device)
-
-    
-    def _prepare_optimizer(self, base_lr=1e-4):
-        """
-        建立 Adam 優化器，以下功能：
-        1. `dean` 的三個特殊層 (`mean_layer`, `scaling_layer`, `gating_layer`) 使用獨立的學習率且不做 weight decay。
-        2. `LayerNorm` 層和所有 `bias` 參數不做 weight decay。
-        3. 其餘參數正常做 weight decay。
-        """
-        # 存放不同參數組
-        decay_params = []
-        no_decay_params = []
-        
-        # 獲取 dean 特殊層的參數 ID，以便後續排除
-        dean_params_ids = set()
-        if hasattr(self.Agent.model, 'dean'):
-            dean_params_ids.update(id(p) for p in self.Agent.model.dean.parameters())
-
-        for name, param in self.Agent.model.named_parameters():
-            if not param.requires_grad:
-                continue
-
-            # 如果是 dean 層的參數，跳過，因為它們會被單獨處理
-            if id(param) in dean_params_ids:
-                continue
-
-            # LayerNorm 層和 bias 不做 weight decay
-            # 透過 name 來判斷，比 isinstance 更可靠
-            if "norm" in name or name.endswith(".bias"):
-                no_decay_params.append(param)
-            else:
-                decay_params.append(param)
-
-        # 建立參數組
-        param_groups = [
-            {
-                'params': decay_params,
-                'lr': self.config.LEARNING_RATE,
-                'weight_decay': self.config.LAMBDA_L2
-            },
-            {
-                'params': no_decay_params,
-                'lr': self.config.LEARNING_RATE,
-                'weight_decay': 0.0
-            }
-        ]
-
-        # 為 dean 的特殊層添加獨立的參數組
-        if hasattr(self.Agent.model, 'dean'):
-            param_groups.extend([
-                {'params': list(self.Agent.model.dean.mean_layer.parameters()),
-                 'lr': base_lr * self.Agent.model.dean.mean_lr, 'weight_decay': 0.0},
-                {'params': list(self.Agent.model.dean.scaling_layer.parameters()),
-                 'lr': base_lr * self.Agent.model.dean.scale_lr, 'weight_decay': 0.0},
-                {'params': list(self.Agent.model.dean.gating_layer.parameters()),
-                 'lr': base_lr * self.Agent.model.dean.gate_lr, 'weight_decay': 0.0},
-            ])
-
-        # 用 Adam 建立優化器
-        self.optimizer = optim.AdamW(param_groups)
-        print("optimzer create.")
-
-    def _prepare_targer_net(self):
-        # 创建目标网络，作为主模型的副本
-        self.target_model = copy.deepcopy(self.model)
-        # 将目标网络设置为评估模式
-        self.target_model.eval()
-
-
-class PPO2(RL_prepare):
-    def __init__(self, cfg: DictConfig):     
-        super().__init__(cfg)
-        self.train()
-
-
-    def train(self):               
-        buffer = RolloutBuffer()
-        state = self.train_env.reset()
-
-        episode_reward = 0
-        timesteps = 0
-        while True:
-            # collect rollout
-            while True:
-                state_tensor = torch.tensor(state, dtype=torch.float32 ,device=self.device)
-
-                # In data collection we don't need computational graph
+                # Approximate KL divergence for monitoring
                 with torch.no_grad():
-                    out = self.Agent.get_action(state_tensor)
+                    approx_kl = ((ratio - 1.0) - log_ratio).mean().item()
+                    approx_kls.append(approx_kl)
 
-                marketpostion, percentage = out.action
-                next_state, reward, Terminated, Truncated, info= self.train_env.step(marketpostion.item(),percentage.item())
-                episode_reward += reward            
-                done = Terminated or Truncated            
-                buffer.store(state, out.action,  out.log_prob, reward, next_state, done, out.value)
+                # Clipped surrogate objective
+                surr1 = ratio * advantages_b
+                surr2 = torch.clamp(ratio, 1.0 - clip_eps, 1.0 + clip_eps) * advantages_b
+                policy_loss = -torch.min(surr1, surr2).mean()
 
-                state = next_state
-                timesteps += 1
+                # Value function MSE loss
+                value_loss = F.mse_loss(values, returns_b)
 
-                if done:
-                    print(f"Episode return: {episode_reward:.2f}")
-                    state, episode_reward = env.reset()[0], 0
+                # Entropy loss (bonus)
+                entropy_loss = -entropy.mean()
+
+                total_loss = policy_loss + vf_coef * value_loss + ent_coef * entropy_loss
+
+                self.optimizer.zero_grad()
+                total_loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.agent.model.parameters(), max_grad_norm)
+                self.optimizer.step()
+
+                policy_losses.append(policy_loss.item())
+                value_losses.append(value_loss.item())
+                entropy_losses.append(entropy_loss.item())
+
+        return {
+            "policy_loss": float(np.mean(policy_losses)) if policy_losses else 0.0,
+            "value_loss": float(np.mean(value_losses)) if value_losses else 0.0,
+            "entropy": float(-np.mean(entropy_losses)) if entropy_losses else 0.0,
+            "approx_kl": float(np.mean(approx_kls)) if approx_kls else 0.0,
+        }
+
+    def train(self, max_iterations: Optional[int] = None):
+        cfg_training = getattr(self.config, "training", self.config)
+        n_steps = getattr(cfg_training, "N_STEPS", 1000)
+        batch_size = getattr(cfg_training, "BATCH_SIZE", 64)
+        ppo_epochs = getattr(cfg_training, "PPO_EPOCHS", 4)
+        clip_eps = getattr(cfg_training, "CLIP_EPS", 0.2)
+        vf_coef = getattr(cfg_training, "VF_COEF", 0.5)
+        ent_coef = getattr(cfg_training, "ENT_COEF", 0.01)
+        max_grad_norm = getattr(cfg_training, "MAX_GRAD_NORM", 0.5)
+        checkpoint_every = getattr(cfg_training, "CHECKPOINT_EVERY_ITER", 10)
+
+        obs = self.train_env.reset()
+        episode_reward = 0.0
+        episode_count = 0
+        total_steps = 0
+        iteration = 0
+
+        fps_step_count = 0
+        fps_start_time = time.time()
+        recent_episode_returns = []
+
+        print(f"\n{'=' * 30} Starting PPO2 Training {'=' * 30}")
+        print(
+            f"Rollout Horizon (N_STEPS): {n_steps} | Batch Size: {batch_size} | "
+            f"PPO Epochs: {ppo_epochs} | Device: {self.device}"
+        )
+
+        try:
+            while True:
+                if max_iterations is not None and iteration >= max_iterations:
+                    print(f"Reached max iterations ({max_iterations}). Stopping training.")
                     break
 
-            # GAE 與 PPO 更新
-            with torch.no_grad():
-                out = net(torch.as_tensor(state, dtype=torch.float32, device=device))
-            
-            
-            transitions = buffer.compute_gae(out.value.item())
-            ppo_update(net, optimizer, transitions)
-            buffer.clear()
-        
+                # 1. Rollout sampling
+                for _ in range(n_steps):
+                    out = self.agent.get_action(obs, stochastic=True)
+                    action_scalar = float(out.action.cpu().numpy()[0])
+                    next_obs, reward, done, info = self.train_env.step(action_scalar)
 
-        save_model(net)
+                    self.buffer.store(
+                        obs,
+                        out.action.cpu(),
+                        out.log_prob.cpu(),
+                        reward,
+                        next_obs,
+                        done,
+                        out.value.cpu(),
+                    )
+                    episode_reward += reward
+                    total_steps += 1
+                    obs = next_obs
 
+                    if done:
+                        episode_count += 1
+                        recent_episode_returns.append(episode_reward)
+                        pos = info.get("position", 0.0)
+                        sym = info.get("instrument", "N/A")
+                        print(
+                            f"[Ep #{episode_count:04d}] Symbol: {sym} | TotalSteps: {total_steps:07d} | "
+                            f"Return: {episode_reward:+.4f} | End Pos: {pos:+.2f}"
+                        )
+                        obs = self.train_env.reset()
+                        episode_reward = 0.0
 
-            
+                # 2. Compute Bootstrap value & GAE
+                with torch.no_grad():
+                    last_out = self.agent.get_action(obs, stochastic=False)
+                    last_value = last_out.value.item()
 
-# class Runner(RL_prepare):
-#     def __init__(self):
-#         super().__init__()        
-#         self.model_tool = ModelTool()
-#         # 記錄計時用，用於計算FPS
-#         self.start_time = time.time()
-#         self.last_time = self.start_time
-#         self.frame_count = 0  # 累計經過的步數
-#         self.avg_rewards = []        
-#         self.load_pre_train_model_state() 
-#         self.train()
-    
-#     def load_pre_train_model_state(self):
-#         # 加載檢查點如果存在的話
-#         checkpoint_path = r''
-#         if checkpoint_path and os.path.isfile(checkpoint_path):
-#             print("資料繼續運算模式")
-#             # 標準化路徑並分割
-#             self.saves_path = os.path.dirname(checkpoint_path)
-#             checkpoint = torch.load(checkpoint_path)
-#             self.model.load_state_dict(checkpoint['model_state_dict'])            
-#             self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-#         else:
-#             print("建立新的儲存點")
-#             # 用來儲存的位置
-#             self.saves_path = os.path.join(self.SAVES_PATH, datetime.strftime(
-#                 datetime.now(), "%Y%m%d-%H%M%S") + '-' + str(self.BARS_COUNT) + 'k-')
+                self.buffer.compute_gae(last_value)
 
-#             os.makedirs(self.saves_path, exist_ok=True)
-    
-#     def monitoring(self, step, state_values, episode_rewards):
-#         # 每隔一定步數（例如每100步）執行監視
-#         current_time = time.time()
-#         elapsed = current_time - self.last_time
+                # 3. PPO Update
+                metrics = self.update_ppo(
+                    ppo_epochs=ppo_epochs,
+                    batch_size=batch_size,
+                    clip_eps=clip_eps,
+                    vf_coef=vf_coef,
+                    ent_coef=ent_coef,
+                    max_grad_norm=max_grad_norm,
+                )
+                self.buffer.clear()
+                iteration += 1
 
+                # 4. Monitoring & FPS
+                elapsed = time.time() - fps_start_time
+                fps = (total_steps - fps_step_count) / elapsed if elapsed > 0 else 0.0
+                fps_step_count = total_steps
+                fps_start_time = time.time()
 
-#         if elapsed > 1.0:  # 每1秒更新一次FPS顯示
-#             fps = (step - self.frame_count) / elapsed
-#             self.frame_count = step
-#             self.last_time = current_time
+                avg_ret_str = (
+                    f"{np.mean(recent_episode_returns[-10:]):+.4f}"
+                    if recent_episode_returns
+                    else "N/A"
+                )
+                print(
+                    f"[Iter #{iteration:04d}] Steps: {total_steps:07d} | FPS: {fps:6.1f} | "
+                    f"PiLoss: {metrics['policy_loss']:+.4f} | VfLoss: {metrics['value_loss']:.4f} | "
+                    f"Ent: {metrics['entropy']:.4f} | KL: {metrics['approx_kl']:.5f} | "
+                    f"AvgRet(10): {avg_ret_str}"
+                )
 
-#             # 平均 value
-#             avg_value = state_values.mean().item()
+                # 5. Checkpoint Saving
+                if iteration % checkpoint_every == 0:
+                    self.save_checkpoint(iteration, total_steps)
 
-#             # 平均 reward 
-#             self.avg_rewards.append(sum(episode_rewards.cpu()))
-            
-#             # 將這些數值寫入log
-#             self.writer.add_scalar('FPS', fps, step)
-#             self.writer.add_scalar('Average Value', avg_value, step)
-#             # Avg Reward 已經在下面程式碼紀錄了，可以同樣在這裡顯示
+        except KeyboardInterrupt:
+            print("\nTraining interrupted by user. Saving final checkpoint...")
+            self.save_checkpoint(iteration, total_steps, is_final=True)
 
-#             print(
-#                 f"[Monitor] Step: {step} | FPS: {fps:.2f} | Avg Value: {avg_value:.4f} | Avg Reward: {np.mean(self.avg_rewards[-100:]):.4f}")
-
-#     def train(self):
-#         step = 0
-#         while True:
-#             step += 1
-#             values, logprobs, rewards, entropies, G, check = self.run_episode(self.train_env, self.model)
-#             # 在 update_params 中做反向傳播與更新
-#             values, rewards = self.update_params(values, logprobs, rewards, entropies, G)
-            
-#             # 軟更新 target model
-#             # self.soft_update()
-
-#             # 記錄與顯示監控資訊
-#             self.monitoring(step, values, rewards)
-
-#             # 定期保存模型參數
-#             if step % self.CHECKPOINT_EVERY_STEP == 0:
-#                 self.model_tool.save_checkpoint({
-#                     'model_state_dict': self.model.state_dict(),
-#                     'optimizer_state_dict': self.optimizer.state_dict(),
-#                 }, os.path.join(self.saves_path, f"checkpoint{int(step/self.CHECKPOINT_EVERY_STEP)}.pt"))
-            
-#             if step % self.checkgrad_times == 0:
-#                 self.checkgrad()
-
-#     def checkgrad(self):
-#         # 打印梯度統計數據
-#         for name, param in self.model.named_parameters():
-#             if param.grad is not None:
-#                 print(f"Layer: {name}, Grad Min: {param.grad.min()}, Grad Max: {param.grad.max()}, Grad Mean: {param.grad.mean()}")
-#         print('*'*120)
-        
-#     def soft_update(self, tau=0.005):
-#         for target_param, param in zip(self.target_model.parameters(), self.model.parameters()):
-#             target_param.data.copy_(
-#                 tau * param.data + (1.0 - tau) * target_param.data)
-    
-#     def update_params(self, values, logprobs, rewards, entropies, G):
-#         """
-#         使用 value, logprobs, rewards, entropies, G, check 來計算 loss 並進行反向傳播更新。
-#         check=1 時表示 environment 完整結束，不需bootstrap。
-#         check=0 時表示 N-step截斷，使用 G 做bootstrap。
-#         """
-#         # values, logprobs, entropies, rewards 已在 run_episode() 中 flip 過
-#         # 計算 returns
-#         Returns = []
-#         ret_ = G
-#         for r in rewards:
-#             ret_ = r + self.GAMMA * ret_
-#             Returns.append(ret_)
-        
-
-#         Returns = torch.stack(Returns).view(-1)
-
-#         # Returns = F.normalize(Returns, dim=0)
-#         Returns = (Returns - Returns.mean()) / (Returns.std() + 1e-8)
-
-        
-#         advantages = Returns - values.detach()
-#         policy_loss = -(logprobs * advantages).mean()
-#         value_loss = F.mse_loss(values, Returns)
-#         entropy_loss = entropies.mean()
-#         total_loss = policy_loss + self.VALUE_LOSS_COEF * value_loss - self.ENTROPY_COEF * entropy_loss
-
-#         self.optimizer.zero_grad()
-#         total_loss.backward()
-#         torch.nn.utils.clip_grad_norm_(self.model.parameters(), 0.5)
-#         self.optimizer.step()
-#         return values, rewards
-    
-#     def run_episode(self, worker_env, worker_model):
-#         """
-#         此函式其實是在 N-step 更新時使用。
-#         根據 N_STEP 截斷或環境 done 來決定是否使用 next_value bootstrap。
-#         """
-#         state = worker_env.reset()
-#         state = torch.from_numpy(state).to(self.device).unsqueeze(0)
-#         values, logprobs, rewards, entropies = [], [], [], []
-#         done = False
-#         j = 0
-
-#         while (j < self.N_STEP and not done):
-#             policy, value = worker_model(state)
-#             values.append(value)
-#             logits = policy.view(-1)            
-#             action_dist = Categorical(logits=logits)
-#             action = action_dist.sample()
-#             logprob_ = action_dist.log_prob(action)
-#             entropy_ = action_dist.entropy()
-#             logprobs.append(logprob_)
-#             entropies.append(entropy_)
-#             obs, reward, done, info = worker_env.step(action.item())
-#             rewards.append(reward)
-#             state = torch.from_numpy(obs).to(self.device).unsqueeze(0)
-#             j += 1
-
-#         # Episode/N-step結束後決定 G 與 check
-#         if done:
-#             # 環境真正結束，無需bootstrap，G=0，check=1
-#             G = torch.zeros(1, device=self.device)
-#             check = 1
-#             # 若需要重新開始下一局，可在此重置環境
-#             worker_env.reset()
-#         else:
-#             # N-step截斷，但未真正結束環境，使用最後一個 state's value bootstrap
-#             # 上一迭代已計算出 value，即為values最後一個
-#             G = values[-1].detach()
-#             check = 0
-
-#         # flip 代表反轉的意思
-#         values = torch.stack(values).flip(dims=(0,)).view(-1)
-#         logprobs = torch.stack(logprobs).flip(dims=(0,)).view(-1)
-#         entropies = torch.stack(entropies).flip(dims=(0,)).view(-1)
-#         rewards = torch.tensor(rewards, device=self.device).flip(dims=(0,)).view(-1)
-
-#         return values, logprobs, rewards, entropies, G, check
+    def save_checkpoint(self, iteration: int, total_steps: int, is_final: bool = False):
+        prefix = "final_checkpoint" if is_final else f"checkpoint_iter_{iteration}"
+        checkpoint_path = os.path.join(self.saves_path, f"{prefix}.pt")
+        self.model_tool.save_checkpoint(
+            {
+                "iteration": iteration,
+                "total_steps": total_steps,
+                "model_state_dict": self.agent.model.state_dict(),
+                "optimizer_state_dict": self.optimizer.state_dict(),
+            },
+            checkpoint_path,
+        )
+        print(f"--> Checkpoint saved: {checkpoint_path}")
 
 
-# 使用 Hydra 裝飾器作為入口
 @hydra.main(version_base=None, config_path="configs", config_name="config")
 def main(cfg: DictConfig):
-    print(cfg)
-    # 初始化你的 PPO2 類別
+    print(OmegaConf.to_yaml(cfg))
     ppo_instance = PPO2(cfg)
-    ppo_instance.train()
+    cfg_training = getattr(cfg, "training", cfg)
+    max_iters = getattr(cfg_training, "MAX_ITERATIONS", None)
+    ppo_instance.train(max_iterations=max_iters)
+
 
 if __name__ == "__main__":
     main()
