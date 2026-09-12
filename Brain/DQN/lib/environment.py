@@ -48,7 +48,6 @@ class State_time_step(State_time_step_template):
         self.max_default_slippage = default_slippage
         self.max_commission = commission_perc
         self.reward_function = Reward()
-        self.reward_help = RewardHelp()
 
         self.downside_window_size = 60  # 滾動下行風險視窗大小 (60 根 30m K 棒)
         self.prev_downside_risk = 0.0
@@ -195,35 +194,35 @@ class State_time_step(State_time_step_template):
         previous_PortfolioPercent = self.TotalPortfolioPercent
 
         # 1. 計算規則懲罰
-        wrongTrade_reward = self.reward_function.wrongTrade(
+        wrongTrade_reward = self.reward_function.wrong_trade(
             self.position, action=action
         )
 
         # 2. 計算平倉損益 （不包含交易稅）
-        closecash_diff = self.reward_help.CaculateCloseProfit(
+        closecash_diff = RewardHelp.calculate_close_profit(
             self.position,
             action=action,
-            openPrice=self.open_price,
+            open_price=self.open_price,
             default_slippage=self.max_default_slippage,
-            closePrice=_close_price,
+            close_price=_close_price,
         )
 
         # 3. 更新開倉價格
-        self.open_price = self.reward_help.CaculateOpenPrcie(
+        self.open_price = RewardHelp.calculate_open_price(
             self.open_price,
             self.position,
             action=action,
             default_slippage=self.max_default_slippage,
-            closePrice=_close_price,
+            close_price=_close_price,
         )
 
         # 4. 預先計算「動作後」的持倉狀態
-        next_position = self.reward_help.CaculatePostion(
+        next_position = RewardHelp.calculate_position(
             self.position, action=action
         )
 
         # 5. 計算交易成本
-        current_step_cost = self.reward_help.CaculateCost(
+        current_step_cost = RewardHelp.calculate_cost(
             position=self.position, action=action, cost=self.max_commission
         )
 
@@ -231,15 +230,14 @@ class State_time_step(State_time_step_template):
         self.closecash += closecash_diff
 
         # 6. 計算浮動損益 (基於 next_position)
-        opencash_diff = self.reward_help.CaculateOpenProfit(
+        opencash_diff = RewardHelp.calculate_open_profit(
             next_position,
-            action=action,
-            closePrice=_close_price,
-            openPrice=self.open_price,
+            close_price=_close_price,
+            open_price=self.open_price,
         )
 
         # 7. 更新統計數據
-        self.trade_bar = self.reward_help.Caculatetrade_bar(
+        self.trade_bar = RewardHelp.calculate_trade_bar(
             self.trade_bar, self.position, action=action
         )
 

@@ -88,7 +88,7 @@ class State_time_step(State_time_step_template):
         
 
         # 1. 計算規則懲罰
-        wrongTrade_reward = self.reward_function.wrongTrade(
+        wrongTrade_reward = self.reward_function.wrong_trade(
              self.have_position, action=action
         )
         # print("錯誤交易獎勵值:",wrongTrade_reward)
@@ -97,36 +97,36 @@ class State_time_step(State_time_step_template):
 
 
         # 3. 計算平倉損益
-        closecash_diff = self.reward_help.CaculateCloseProfit(
+        closecash_diff = RewardHelp.calculate_close_profit(
             self.have_position,
             action=action,
-            openPrice=self.open_price,
+            open_price=self.open_price,
             default_slippage=self.max_default_slippage,
-            closePrcie=close,
+            close_price=close,
         )
 
 
 
         # 4. 更新開倉價格
-        self.open_price = self.reward_help.CaculateOpenPrcie(
+        self.open_price = RewardHelp.calculate_open_price(
             self.open_price,
             self.have_position,
             action=action,
             default_slippage=self.max_default_slippage,
-            closePrcie=close,
+            close_price=close,
         )
 
 
         # 5. 預先計算「動作後」的持倉狀態
-        next_have_position = self.reward_help.CaculatePostion(
+        next_have_position = RewardHelp.calculate_position(
             self.have_position, action=action
         )
 
 
 
         # 6. 計算交易成本
-        current_step_cost = self.reward_help.CaculateCost(
-            havePostion=self.have_position, action=action, cost=self.max_commission
+        current_step_cost = RewardHelp.calculate_cost(
+            position=self.have_position, action=action, cost=self.max_commission
         )
 
         self.cost_sum += current_step_cost
@@ -134,20 +134,17 @@ class State_time_step(State_time_step_template):
 
 
         # 7. 計算浮動損益 (基於 next_have_position)
-        opencash_diff = self.reward_help.CaculateOpenProfit(
+        opencash_diff = RewardHelp.calculate_open_profit(
             next_have_position, 
-            action=action,
-            closePrice=close,
-            OpenPrice=self.open_price,
+            close_price=close,
+            open_price=self.open_price,
         )
 
 
         
 
-
-
         # 8. 更新統計數據
-        self.trade_bar = self.reward_help.Caculatetrade_bar(
+        self.trade_bar = RewardHelp.calculate_trade_bar(
             self.trade_bar, self.have_position, action=action
         )
 
