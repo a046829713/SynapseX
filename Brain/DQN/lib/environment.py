@@ -14,6 +14,7 @@ from Brain.DQN.lib.reward import (
     Window_RelativeSortino_Calculator,
 )
 from collections import deque
+from Brain.DQN.lib.audit_logger import step_audit_logger
 
 
 class State_time_step(State_time_step_template):

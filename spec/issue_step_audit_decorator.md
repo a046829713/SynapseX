@@ -273,28 +273,28 @@ class State_time_step(State_time_step_template):
 
 當審計日誌生成至 `audit_logs/dqn_step_audit.jsonl` 後，人工審閱只需檢視對應行次是否符合下述準則：
 
-- [ ] **1. 開立空頭倉位驗證（`OPEN_SHORT`）**
-  - [ ] `input.action` 為 `Actions.Sell` 且 `input.pre_position == 0`。
-  - [ ] `output.post_position == -1`。
-  - [ ] `output.post_trade_bar == 1`。
-  - [ ] `output.post_open_price` 必須等於 `current_close * (1 - default_slippage)`（向下滑價）。
-  - [ ] `output.cost_diff` 必須等於單步手續費佣金。
-- [ ] **2. 續抱空單驗證（`HOLD`）**
-  - [ ] `input.action` 為 `Actions.Hold` 且 `input.pre_position == -1`。
-  - [ ] `output.post_position == -1`。
-  - [ ] `output.post_open_price` 保持不變。
-  - [ ] `output.post_trade_bar == input.pre_trade_bar + 1`。
-  - [ ] `output.cost_diff == 0.0`。
-  - [ ] 當 K 棒價格下跌時，`output.step_equity_diff > 0`（做空獲利）。
-- [ ] **3. 回補空單驗證（`COVER_SHORT`）**
-  - [ ] `input.action` 為 `Actions.Buy` 且 `input.pre_position == -1`。
-  - [ ] `output.post_position == 0`。
-  - [ ] `output.post_open_price == 0.0`（重置）。
-  - [ ] `output.post_trade_bar == 0`（重置）。
-  - [ ] `output.cost_diff` 必須扣除平倉手續費。
-  - [ ] `output.realized_pnl_diff` 損益實現，計算公式符合 $(P_{\text{open}} - P_{\text{exec}}) / P_{\text{open}}$。
-- [ ] **4. 違規交易判定驗證（`WRONG_TRADE`）**
-  - [ ] 持有多單（`pre_position == 1`）再下 `Buy`，或持有空單（`pre_position == -1`）再下 `Sell`。
-  - [ ] `output.post_position` 與前一步完全一致（部位未被修改）。
-  - [ ] `output.reward` 包含負項違規懲罰扣分。
-  - [ ] 不扣除手續費（`output.cost_diff == 0.0`）。
+- [x] **1. 開立空頭倉位驗證（`OPEN_SHORT`）**
+  - [x] `input.action` 為 `Actions.Sell` 且 `input.pre_position == 0`。
+  - [x] `output.post_position == -1`。
+  - [x] `output.post_trade_bar == 1`。
+  - [x] `output.post_open_price` 必須等於 `current_close * (1 - default_slippage)`（向下滑價）。
+  - [x] `output.cost_diff` 必須等於單步手續費佣金。
+- [x] **2. 續抱空單驗證（`HOLD`）**
+  - [x] `input.action` 為 `Actions.Hold` 且 `input.pre_position == -1`。
+  - [x] `output.post_position == -1`。
+  - [x] `output.post_open_price` 保持不變。
+  - [x] `output.post_trade_bar == input.pre_trade_bar + 1`。
+  - [x] `output.cost_diff == 0.0`。
+  - [x] 當 K 棒價格下跌時，`output.step_equity_diff > 0`（做空獲利）。
+- [x] **3. 回補空單驗證（`COVER_SHORT`）**
+  - [x] `input.action` 為 `Actions.Buy` 且 `input.pre_position == -1`。
+  - [x] `output.post_position == 0`。
+  - [x] `output.post_open_price == 0.0`（重置）。
+  - [x] `output.post_trade_bar == 0`（重置）。
+  - [x] `output.cost_diff` 必須扣除平倉手續費。
+  - [x] `output.realized_pnl_diff` 損益實現，計算公式符合 $(P_{\text{open}} - P_{\text{exec}}) / P_{\text{open}}$。
+- [x] **4. 違規交易判定驗證（`WRONG_TRADE`）**
+  - [x] 持有多單（`pre_position == 1`）再下 `Buy`，或持有空單（`pre_position == -1`）再下 `Sell`。
+  - [x] `output.post_position` 與前一步完全一致（部位未被修改）。
+  - [x] `output.reward` 包含負項違規懲罰扣分。
+  - [x] 不扣除手續費（`output.cost_diff == 0.0`）。
