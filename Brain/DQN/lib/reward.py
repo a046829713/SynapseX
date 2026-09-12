@@ -409,11 +409,19 @@ class RewardHelp:
     def __init__(self):
         pass
 
-    def CaculateCost(self, havePostion: bool, action: Actions, cost: float) -> float:
+    def CaculateCost(self, position: int, action: Actions, cost: float) -> float:
+        if isinstance(position, bool):
+            position = 1 if position else 0
+
         _cost = 0.0
-        if havePostion and action == Actions.Sell:
+        # 開多 (0 -> 1) 或 開空 (0 -> -1)
+        if position == 0 and (action == Actions.Buy or action == Actions.Sell):
             _cost = cost
-        if not (havePostion) and action == Actions.Buy:
+        # 平多 (1 -> 0)
+        elif position == 1 and action == Actions.Sell:
+            _cost = cost
+        # 平空 (-1 -> 0)
+        elif position == -1 and action == Actions.Buy:
             _cost = cost
 
         return _cost
@@ -424,11 +432,16 @@ class RewardHelp:
         win_trades: int,
         total_win: float,
         total_loss: float,
-        havePostion: bool,
+        position: int,
         action: Actions,
         really_closecash_diff: float,
-    ) -> int:
-        if havePostion and action == Actions.Sell:
+    ) -> tuple:
+        if isinstance(position, bool):
+            position = 1 if position else 0
+        is_closing = (position == 1 and action == Actions.Sell) or (
+            position == -1 and action == Actions.Buy
+        )
+        if is_closing:
             total_trades += 1
             if really_closecash_diff > 0:
                 win_trades += 1
@@ -439,66 +452,124 @@ class RewardHelp:
         return total_trades, win_trades, total_win, total_loss
 
     def Caculatetrade_bar(
-        self, trade_bar: int, havePostion: bool, action: Actions
+        self, trade_bar: int, position: int, action: Actions
     ) -> int:
-        if havePostion and (action == Actions.Buy or action == Actions.Hold):
-            trade_bar += 1
-        if havePostion and action == Actions.Sell:
-            trade_bar = 0
-        if not (havePostion) and action == Actions.Buy:
-            trade_bar = 1
+        if isinstance(position, bool):
+            position = 1 if position else 0
 
-        return trade_bar
+        # 空手開倉 (0 -> 1 或 0 -> -1)
+        if position == 0 and (action == Actions.Buy or action == Actions.Sell):
+            return 1
+        # 持有多單續抱或重複買
+        if position == 1 and (action == Actions.Hold or action == Actions.Buy):
+            return trade_bar + 1
+        # 持有空單續抱或重複賣
+        if position == -1 and (action == Actions.Hold or action == Actions.Sell):
+            return trade_bar + 1
+        # 平倉 (多單 Sell 或空單 Buy) 或 空手維持 (0 and Hold)
+        return 0
 
-    def CaculatePostion(self, havePostion: bool, action: Actions) -> bool:
-        if havePostion and action == Actions.Sell:
-            havePostion = False
+    def CaculatePostion(self, position: int, action: Actions) -> int:
+        if isinstance(position, bool):
+            position = 1 if position else 0
 
-        if not (havePostion) and action == Actions.Buy:
-            havePostion = True
-
-        return havePostion
+        if position == 0:
+            if action == Actions.Buy:
+                return 1
+            elif action == Actions.Sell:
+                return -1
+            else:
+                return 0
+        elif position == 1:
+            if action == Actions.Sell:
+                return 0
+            else:
+                return 1
+        elif position == -1:
+            if action == Actions.Buy:
+                return 0
+            else:
+                return -1
+        return position
 
     def CaculateCloseProfit(
         self,
-        havePostion: bool,
+        position: int,
         action: Actions,
         openPrice: float,
         default_slippage: float,
-        closePrcie: float,
+        closePrice: float = None,
+        closePrcie: float = None,
     ) -> float:
+        if isinstance(position, bool):
+            position = 1 if position else 0
+        _cp = closePrice if closePrice is not None else closePrcie
+
         closecash_diff = 0.0
-        if havePostion and action == Actions.Sell:
-            closecash_diff = (
-                closePrcie * (1 - default_slippage) - openPrice
-            ) / openPrice
+        if openPrice > 0.0 and _cp is not None:
+            # 平多單 (1 -> 0): 賣出平倉向下滑價
+            if position == 1 and action == Actions.Sell:
+                closecash_diff = (
+                    _cp * (1.0 - default_slippage) - openPrice
+                ) / openPrice
+            # 平空單 (-1 -> 0): 買進回補向上滑價
+            elif position == -1 and action == Actions.Buy:
+                closecash_diff = (
+                    openPrice - _cp * (1.0 + default_slippage)
+                ) / openPrice
 
         return closecash_diff
 
     def CaculateOpenProfit(
-        self, havePostion: bool, action: Actions, closePrice: float, OpenPrice: float
+        self,
+        next_position: int,
+        action: Actions,
+        closePrice: float,
+        openPrice: float = None,
+        OpenPrice: float = None,
     ) -> float:
-        opencash_diff = 0.0
+        if isinstance(next_position, bool):
+            next_position = 1 if next_position else 0
+        _op = openPrice if openPrice is not None else OpenPrice
 
-        if havePostion and (action == Actions.Buy or action == Actions.Hold):
-            opencash_diff = (closePrice - OpenPrice) / OpenPrice
+        opencash_diff = 0.0
+        if _op is not None and _op > 0.0:
+            if next_position == 1:
+                opencash_diff = (closePrice - _op) / _op
+            elif next_position == -1:
+                opencash_diff = (_op - closePrice) / _op
 
         return opencash_diff
 
     def CaculateOpenPrcie(
         self,
         openPrice: float,
-        havePostion: bool,
+        position: int,
         action: Actions,
         default_slippage: float,
-        closePrcie: float,
+        closePrice: float = None,
+        closePrcie: float = None,
     ) -> float:
-        if not havePostion and action == Actions.Buy:
-            openPrice = closePrcie * (1 + default_slippage)
+        if isinstance(position, bool):
+            position = 1 if position else 0
+        _cp = closePrice if closePrice is not None else closePrcie
 
-        if havePostion and action == Actions.Sell:
-            openPrice = 0.0
+        if _cp is not None:
+            # 空手開多 (0 -> 1): 向上滑價
+            if position == 0 and action == Actions.Buy:
+                return _cp * (1.0 + default_slippage)
 
+            # 空手開空 (0 -> -1): 向下滑價
+            if position == 0 and action == Actions.Sell:
+                return _cp * (1.0 - default_slippage)
+
+        # 平多 (1 -> 0) 或 平空 (-1 -> 0): 重置為 0.0
+        if (position == 1 and action == Actions.Sell) or (
+            position == -1 and action == Actions.Buy
+        ):
+            return 0.0
+
+        # 續抱或違規動作保持原開倉價
         return openPrice
 
     def clip(self, inputslope: float):
@@ -506,35 +577,44 @@ class RewardHelp:
         return np.tanh(inputslope)
 
     def CaculateEquity_peak_before(
-        self, equity_peak: Optional[float], havePostion: bool, action: Actions
+        self, equity_peak: Optional[float], position: int, action: Actions
     ) -> Optional[float]:
-        if havePostion and action == Actions.Sell:
+        if isinstance(position, bool):
+            position = 1 if position else 0
+        is_closing = (position == 1 and action == Actions.Sell) or (
+            position == -1 and action == Actions.Buy
+        )
+        if is_closing:
             equity_peak = None
 
         return equity_peak
 
     def CaculateEquity_peak_after(
-        self, equity_peak: Optional[float], havePostion: bool, canUseCash: float
+        self, equity_peak: Optional[float], position: int, canUseCash: float
     ):
+        if isinstance(position, bool):
+            position = 1 if position else 0
         _current_drawdown = 0.0
-        if havePostion:
+        if position != 0:
             equity_peak = (
                 canUseCash if equity_peak is None else max(equity_peak, canUseCash)
             )
 
             if equity_peak > 0:
-                # if have_position then caculate drawdown：峰值与当前净值之间的下降比例
+                # 峰值與當前淨值之間的下降比例
                 _current_drawdown = (equity_peak - canUseCash) / equity_peak
 
         return equity_peak, _current_drawdown
 
     def Caculate_max_profit_this_trade(
-        self, max_profit_this_trade: float, havePostion: bool, action: Actions
+        self, max_profit_this_trade: float, position: int, action: Actions
     ):
-        if not havePostion and action == Actions.Buy:
+        if isinstance(position, bool):
+            position = 1 if position else 0
+        if position == 0 and (action == Actions.Buy or action == Actions.Sell):
             return 0.0
         return max_profit_this_trade
-    
+
 
 class Reward:
     def __init__(self):
@@ -549,33 +629,37 @@ class Reward:
         """
         主要用於淨值 = 起始資金 + 手續費(累積) +  已平倉損益(累積) + 未平倉損益(單次)
 
-
         Return = last_value - previous_value.
         """
         return self.tradeReturn_weight * (last_value - previous_value)
 
-
-    def OpenReturn(self, have_position:bool, last_value: float, previous_value: float) -> float:
+    def OpenReturn(
+        self, position: int, last_value: float, previous_value: float
+    ) -> float:
         """
-            計算開倉損益
-
-
-            Return = last_value - previous_value.
+        計算開倉損益
+        Return = last_value - previous_value.
         """
-        if not have_position:
+        if isinstance(position, bool):
+            position = 1 if position else 0
+        if position == 0:
             return 0.0
 
         return self.OpenReturn_weight * (last_value - previous_value)
-    
+
     def closeReturn(
-        self, CloseCash: float, cost: float, havePostion: bool, action: Actions
+        self, CloseCash: float, cost: float, position: int, action: Actions
     ):
         """
-            To caculate return when close the postion.
-
+        To calculate return when closing the position.
         """
-        _reward = 0
-        if havePostion and action == Actions.Sell:
+        if isinstance(position, bool):
+            position = 1 if position else 0
+        _reward = 0.0
+        is_closing = (position == 1 and action == Actions.Sell) or (
+            position == -1 and action == Actions.Buy
+        )
+        if is_closing:
             _reward = CloseCash - cost
 
         return self.closeReturn_weight * _reward, _reward
@@ -587,22 +671,31 @@ class Reward:
         _reward = -drawdown
         return self.drawdown_penalty_weight * _reward
 
-    def wrongTrade(self, havePostion: bool, action: Actions):
+    def wrongTrade(self, position: int, action: Actions) -> float:
         """
-        When already holding a position, making an additional buy incurs a small penalty to encourage prudent trading.
+        When already holding a long position, making an additional buy incurs a penalty.
+        When already holding a short position, making an additional sell incurs a penalty.
+        Flat position (0) Buy or Sell are valid entry trades (no penalty).
         """
-        _reward = 0
-        if havePostion and action == Actions.Buy:
+        if isinstance(position, bool):
+            position = 1 if position else 0
+        _reward = 0.0
+        if position == 1 and action == Actions.Buy:
+            _reward = 0.001
+        elif position == -1 and action == Actions.Sell:
             _reward = 0.001
 
-        elif not (havePostion) and action == Actions.Sell:
-            _reward = 0.001
+        return float(self.wrongTrade_weight * _reward * -1)
 
-        return self.wrongTrade_weight * _reward * -1
-
-    def trendTrade(self, havePostion: bool, action: Actions, slope: float):
-        _reward = 0
-        if not (havePostion) and action == Actions.Buy:
+    def trendTrade(
+        self, position: int, action: Actions, slope: float
+    ) -> float:
+        if isinstance(position, bool):
+            position = 1 if position else 0
+        _reward = 0.0
+        if position == 0 and action == Actions.Buy:
             _reward = slope
+        elif position == 0 and action == Actions.Sell:
+            _reward = -slope
 
         return self.trendTrade_weight * _reward

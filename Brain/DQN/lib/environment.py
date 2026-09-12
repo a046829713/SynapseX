@@ -61,6 +61,8 @@ class State_time_step(State_time_step_template):
         }
         self.risk_free_rate = 0.0
 
+        self.position = 0
+
         # 為了方便計算，我們維持一個總淨值的滾動歷史
         self.benchmark_returns = deque(maxlen=N_steps)
         self.return_history = deque(maxlen=N_steps)  # 改為儲存每一期的 return
@@ -147,7 +149,7 @@ class State_time_step(State_time_step_template):
     def reset(self, prices: Prices, offset):
         assert offset >= self.bars_count - 1
         self._prices = prices
-        self.have_position = False
+        self.position = 0
         self.benchmark_returns.clear()
         self.canusecash = 1.0
         self._offset = offset
@@ -174,13 +176,11 @@ class State_time_step(State_time_step_template):
         step return: we need the every step return
 
 
-        起始資金 (100 %) + 已平倉損益 + 未平倉損益 - 手許費用
+        起始資金 (100 %) + 已平倉損益 + 未平倉損益 - 手續費用
 
         Rate of Return
         """
         assert isinstance(action, Actions)
-
-        # print("原始部位：", self.have_position)
 
         reward = 0.0
         done = False
@@ -190,79 +190,79 @@ class State_time_step(State_time_step_template):
 
         self.benchmark_returns.append((_close_price - prev_close) / prev_close)
 
-        # # 獲取上一步的總淨值
+        # 獲取上一步的總淨值
         previous_PortfolioPercent = self.TotalPortfolioPercent
 
         # 1. 計算規則懲罰
         wrongTrade_reward = self.reward_function.wrongTrade(
-            self.have_position, action=action
+            self.position, action=action
         )
 
-        # 3. 計算平倉損益 （不包含交易稅）
+        # 2. 計算平倉損益 （不包含交易稅）
         closecash_diff = self.reward_help.CaculateCloseProfit(
-            self.have_position,
+            self.position,
             action=action,
             openPrice=self.open_price,
             default_slippage=self.max_default_slippage,
-            closePrcie=_close_price,
+            closePrice=_close_price,
         )
 
-        # 4. 更新開倉價格
+        # 3. 更新開倉價格
         self.open_price = self.reward_help.CaculateOpenPrcie(
             self.open_price,
-            self.have_position,
+            self.position,
             action=action,
             default_slippage=self.max_default_slippage,
-            closePrcie=_close_price,
+            closePrice=_close_price,
         )
 
-        # 5. 預先計算「動作後」的持倉狀態
-        next_have_position = self.reward_help.CaculatePostion(
-            self.have_position, action=action
+        # 4. 預先計算「動作後」的持倉狀態
+        next_position = self.reward_help.CaculatePostion(
+            self.position, action=action
         )
 
-        # # 6. 計算交易成本
+        # 5. 計算交易成本
         current_step_cost = self.reward_help.CaculateCost(
-            havePostion=self.have_position, action=action, cost=self.max_commission
+            position=self.position, action=action, cost=self.max_commission
         )
 
         self.cost_sum += current_step_cost
         self.closecash += closecash_diff
 
-        # 7. 計算浮動損益 (基於 next_have_position)
+        # 6. 計算浮動損益 (基於 next_position)
         opencash_diff = self.reward_help.CaculateOpenProfit(
-            next_have_position,
+            next_position,
             action=action,
             closePrice=_close_price,
-            OpenPrice=self.open_price,
+            openPrice=self.open_price,
         )
 
-        # 8. 更新統計數據
+        # 7. 更新統計數據
         self.trade_bar = self.reward_help.Caculatetrade_bar(
-            self.trade_bar, self.have_position, action=action
+            self.trade_bar, self.position, action=action
         )
 
-        # 9. 正式更新持倉狀態
-        self.have_position = next_have_position
+        # 8. 正式更新持倉狀態
+        self.position = next_position
 
-        # 10. 計算當前的總淨值 (Equity)
+        # 9. 計算當前的總淨值 (Equity)
         self.TotalPortfolioPercent = (
             1.0 - self.cost_sum + self.closecash + opencash_diff
         )
         current_p_return = self.TotalPortfolioPercent - previous_PortfolioPercent
         self.return_history.append(current_p_return)
 
-        # 計算單步下行風險懲罰
+        # 10. 計算單步下行風險懲罰
         downside_penalty = self.calculate_step_downside_penalty()
 
-        # 計算單步總獎勵
+        # 11. 計算單步總獎勵
         reward = (
             self.weights["w1_step_return"] * current_p_return
             - downside_penalty
             + self.weights["w5_wrong_trade"] * wrongTrade_reward
         )
 
-        # --- 11. 更新步數與結束判斷 ---
+        # 12. 更新步數與結束判斷
         self._offset += 1
         self.game_steps += 1
         done |= self._offset >= self._prices.close.shape[0] - 1
@@ -271,6 +271,41 @@ class State_time_step(State_time_step_template):
             done = True
 
         return reward, done
+
+    def encode(self):
+        data_res = np.zeros(shape=self.getStateShape(), dtype=np.float32)
+        time_res = np.zeros(shape=self.getTimeShape(), dtype=np.float32)
+
+        ofs = self.bars_count
+        for bar_idx in range(self.bars_count):
+            for idx, field in enumerate(self.info_list):
+                data_res[bar_idx][idx] = getattr(self._prices, field)[
+                    self._offset - ofs + bar_idx
+                ]
+
+        # --- 部位與交易特徵更新 ---
+        if self.position != 0:
+            # 特徵 1: 部位方向與大小 (-1.0 代表空頭，1.0 代表多頭)
+            data_res[:, len(self.info_list)] = float(self.position)
+
+            # 特徵 2: 浮動損益率 (依多空方向正確計算，做空跌為正)
+            unrealized_return = (
+                self.position
+                * (self._prices.close[self._offset - 1] - self.open_price)
+                / self.open_price
+            )
+            data_res[:, len(self.info_list) + 1] = float(unrealized_return)
+
+            # 特徵 3: 持倉時間累計
+            data_res[:, len(self.info_list) + 2] = float(self.trade_bar)
+
+        for bar_idx in range(self.bars_count):
+            for idx, field in enumerate(self.timelist):
+                time_res[bar_idx][idx] = getattr(self._prices, field)[
+                    self._offset - ofs + bar_idx
+                ]
+
+        return data_res, time_res
 
 
 class BaseTradingEnv(gym.Env, ABC):
@@ -315,7 +350,7 @@ class BaseTradingEnv(gym.Env, ABC):
         info = {
             "instrument": self._instrument,
             "offset": self._state._offset,
-            "postion": float(self._state.have_position),
+            "postion": float(self._state.position),
         }
 
         return obs, reward, done, info
