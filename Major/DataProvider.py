@@ -1,5 +1,7 @@
 """all data and datatransformer active"""
 
+from pathlib import Path
+
 from Database import SQL_operate
 from Database.SQL_operate import SqlSentense
 import pandas as pd
@@ -180,7 +182,12 @@ class DataProvider:
         return out_list
 
     def Downloader(
-        self, symbol_name, freq: int = 15, save=True, symbol_type: str = "FUTURES"
+        self,
+        symbol_name,
+        freq: int = 15,
+        save=True,
+        symbol_type: str = "FUTURES",
+        save_path: Path = Path("."),
     ):
         """
             用來下載整理好的時序資料
@@ -195,8 +202,10 @@ class DataProvider:
         new_df = self.datatransformer.get_tradedata(original_df, freq=freq)
 
         if save:
+            finally_path = str(save_path / f"{symbol_name}-F-{freq}-Min.csv")
+            print("finally_path :",finally_path)
             if symbol_type == "FUTURES":
-                new_df.to_csv(f"{symbol_name}-F-{freq}-Min.csv")
+                new_df.to_csv(finally_path)
             else:
                 ValueError("系統尚未配置請確認後再次執行")
 
@@ -274,16 +283,17 @@ class DataProvider:
         return list(set(all_symbol_name_of_futures) & set(all_symbol_name_of_spot))
 
     def get_symbol_first_day(self, symbol_type: str, time_type: str):
-        out_put ={}
+        out_put = {}
 
         for symbol_name in self.Binanceapp.get_targetsymobls(symbol_type=symbol_type):
             tb_symbol_name = self.datatransformer.generate_table_name(
                 symbol_name, symbol_type, time_type
             )
-            out_put[symbol_name] = self.SQL.get_db_data(f"select * from `{tb_symbol_name}` limit 1")[0][0]
+            out_put[symbol_name] = self.SQL.get_db_data(
+                f"select * from `{tb_symbol_name}` limit 1"
+            )[0][0]
 
         return out_put
-    
 
 
 class AsyncDataProvider:

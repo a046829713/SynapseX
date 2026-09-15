@@ -504,9 +504,7 @@ def main():
     symbolNames = os.listdir(os.path.join(os.getcwd() , "Brain","simulation","train_data"))
     symbolNames = [_fileName.split('.')[0] for _fileName in symbolNames]
 
-
-    # unique_symbols = list(set(symbolNames))
-    unique_symbols = ["BTCUSDT-F-30-Min"]
+    unique_symbols = list(set(symbolNames))
 
 
     config.update_steps_by_symbols(len(unique_symbols))

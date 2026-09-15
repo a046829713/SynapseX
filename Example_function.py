@@ -1,3 +1,4 @@
+from Brain.Common.SimulationDataManager import SimulationDataManager
 from Major.DataProvider import DataProvider
 from Major.Datatransformer import Datatransformer
 # from EIIE.lib import Train_neural_networks
@@ -135,22 +136,23 @@ def get_futures_position_information():
     #     print('*'*120)
 
 
-def example_get_symboldata():
+def example_get_model_train_symboldata():
     """
         introduction:
             this function is for download history data to experiment.
 
     """
     
+    SimulationDataManager().Downloader()
 
-    symbols = list(
-        set(['KOMAUSDT', 'VIRTUALUSDT', 'SPXUSDT', 'MEUSDT', 'AVAUSDT', 'DEGOUSDT', 'VELODROMEUSDT', 'MOCAUSDT', 'VANAUSDT', 'PENGUUSDT', 'LUMIAUSDT', 'USUALUSDT', 'AIXBTUSDT', 'FARTCOINUSDT', 'KMNOUSDT', 'CGPTUSDT', 'HIVEUSDT', 'DEXEUSDT', 'PHAUSDT', 'DFUSDT', 'GRIFFAINUSDT', 'ZEREBROUSDT', 'BIOUSDT', 'COOKIEUSDT', 'ALCHUSDT', 'SWARMSUSDT', 'SONICUSDT', 'DUSDT', 'PROMUSDT', 'SUSDT', 'SOLVUSDT', 'ARCUSDT', 'AVAAIUSDT', 'TRUMPUSDT', 'MELANIAUSDT', 'ANIMEUSDT', 'VINEUSDT', 'PIPPINUSDT', 'VVVUSDT', 'BERAUSDT', 'TSTUSDT', 'LAYERUSDT', 'HEIUSDT', 'IPUSDT', 'GPSUSDT', 'SHELLUSDT', 'KAITOUSDT', 'REDUSDT', 'VICUSDT', 'EPICUSDT', 'BMTUSDT', 'MUBARAKUSDT', 'FORMUSDT', 'BIDUSDT', 'TUTUSDT', 'SIRENUSDT', 'BRUSDT', 'PLUMEUSDT', 'NILUSDT', 'PARTIUSDT', 'JELLYJELLYUSDT', 'MAVIAUSDT', 'PAXGUSDT', 'WALUSDT', 'MLNUSDT', 'GUNUSDT', 'ATHUSDT', 'BABYUSDT', 'FORTHUSDT', 'PROMPTUSDT', 'XCNUSDT', 'STOUSDT', 'FHEUSDT', 'KERNELUSDT', 'WCTUSDT', 'INITUSDT', 'AERGOUSDT', 'BANKUSDT', 'DEEPUSDT', 'HYPERUSDT', 'FISUSDT', 'JSTUSDT', 'SIGNUSDT', 'PUNDIXUSDT', 'CTKUSDT', 'AIOTUSDT', 'DOLOUSDT', 'HAEDALUSDT', 'SXTUSDT', 'ASRUSDT', 'ALPINEUSDT', 'MILKUSDT', 'SYRUPUSDT', 'OBOLUSDT', 'OGUSDT', 'ZKJUSDT', 'SKYAIUSDT', 'NXPCUSDT', 'CVCUSDT', 'AWEUSDT']))
+def example_get_smybols_mockuse():
+    """
+        introduction:
+            this function is for download history data to experiment.
 
-
-
-    for _each_symbol_name in symbols:
-        DataProvider().Downloader(symbol_name=_each_symbol_name, save=True, freq=30)
-
+    """
+    
+    SimulationDataManager().get_smybols_mockuse()
 
 def example_get_targetsymobls():
     """
@@ -214,7 +216,7 @@ def example_simple_evaluate():
 
 # getAllDailyData()
 # example_reload_all_data(symbol_type="FUTURES",time_type = '1m')
-# example_get_symboldata()
+example_get_smybols_mockuse()
 # checksymbol(symbol='TUSDUSDT')
 # example_get_target_symbol(filter_type='MTM')
 
