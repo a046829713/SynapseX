@@ -78,9 +78,12 @@ class SimulationDataManager:
             df["new_high"] = df["new_close"] + df["High"] - df["Close"]
             df["new_low"] = df["new_close"] + df["Low"] - df["Close"]
 
-            df["new_vloume"] = np.exp(
-                np.log(df["Volume"])
-                + np.random.normal(loc=0.0, scale=0.1, size=len(df))
+            noise = np.random.normal(loc=0.0, scale=0.1, size=len(df))
+            safe_volume = np.where(df["Volume"] > 0, df["Volume"], 1.0)
+            df["new_vloume"] = np.where(
+                df["Volume"] > 0,
+                np.exp(np.log(safe_volume) + noise),
+                0.0,
             )
             df["new_quote_av"] = df["new_vloume"] * df["new_close"]
             df["new_trades"] = df.apply(

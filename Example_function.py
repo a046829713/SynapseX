@@ -193,8 +193,8 @@ def example_reload_all_data(symbol_type:str, time_type: str):
 
 def example_Train_neural_networks():
     Train_neural_networks.train(Train_data_path='EIIE/simulation/train_data.csv',
-                                Meta_path="EIIE\Meta\policy_EIIE.pt",
-                                Train_path="EIIE\Train\policy_EIIE.pt",
+                                Meta_path="EIIE/Meta/policy_EIIE.pt",
+                                Train_path="EIIE/Train/policy_EIIE.pt",
                                 episodes=100000,
                                 save=True,
                                 pre_train=False,
@@ -202,9 +202,9 @@ def example_Train_neural_networks():
 
 
 def example_simple_evaluate():
-    evaluate_train_test_performance(Train_data_path=r'EIIE\simulation\train_data.csv',
-                                    Test_data_path=r'EIIE\simulation\test_data.csv',
-                                    Meta_path=r'EIIE\Meta\policy_EIIE.pt')
+    evaluate_train_test_performance(Train_data_path='EIIE/simulation/train_data.csv',
+                                    Test_data_path='EIIE/simulation/test_data.csv',
+                                    Meta_path='EIIE/Meta/policy_EIIE.pt')
 
 
 
