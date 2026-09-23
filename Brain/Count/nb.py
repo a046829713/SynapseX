@@ -30,7 +30,7 @@ def get_drawdown(ClosedPostionprofit: np.ndarray):
 
 
 @njit
-def get_entryprice(entryprice, target_price: float, marketpostion, last_marketpostion, slippage=None, direction=None):
+def get_entryprice(entryprice, target_price: float, marketpostion, last_marketpostion, slippage=0.0, direction=None):
     """
     用來取得入場價格
 
@@ -39,24 +39,29 @@ def get_entryprice(entryprice, target_price: float, marketpostion, last_marketpo
         target_price (float): "Close" or "Open" >> any price to link entryprice
         marketpostion (_type_): _description_
         last_marketpostion (_type_): _description_
-        slippage (_type_, optional): _description_. Defaults to None.
+        slippage (_type_, optional): _description_. Defaults to 0.0.
         direction (_type_, optional): _description_. Defaults to None.
 
     Returns:
         _type_: _description_
     """
     if marketpostion == 1 and last_marketpostion == 0:
-        if slippage:
-            entryprice = target_price * (1 + slippage)
+        if slippage != 0.0:
+            entryprice = target_price * (1.0 + slippage)
+        else:
+            entryprice = target_price
+    elif marketpostion == -1 and last_marketpostion == 0:
+        if slippage != 0.0:
+            entryprice = target_price * (1.0 - slippage)
         else:
             entryprice = target_price
     elif marketpostion == 0:
-        entryprice = 0
+        entryprice = 0.0
     return entryprice
 
 
 @njit
-def get_exitsprice(exitsprice, target_price: float, marketpostion, last_marketpostion, slippage=None, direction=None):
+def get_exitsprice(exitsprice, target_price: float, marketpostion, last_marketpostion, slippage=0.0, direction=None):
     """
     exitsprice (有2種連貫性的設定)
     決定採用2
@@ -70,24 +75,28 @@ def get_exitsprice(exitsprice, target_price: float, marketpostion, last_marketpo
         target_price (float): _description_
         marketpostion (_type_): _description_
         last_marketpostion (_type_): _description_
-        slippage (_type_, optional): _description_. Defaults to None.
+        slippage (_type_, optional): _description_. Defaults to 0.0.
 
     Returns:
         _type_: _description_
     """
-    if direction == 'buyonly':
-        if marketpostion == 0 and last_marketpostion == 1:
-            if slippage:
-                exitsprice = target_price * (1 - slippage)
-            else:
-                exitsprice = target_price
-        elif marketpostion == 1:
-            exitsprice = 0
+    if marketpostion == 0 and last_marketpostion == 1:
+        if slippage != 0.0:
+            exitsprice = target_price * (1.0 - slippage)
+        else:
+            exitsprice = target_price
+    elif marketpostion == 0 and last_marketpostion == -1:
+        if slippage != 0.0:
+            exitsprice = target_price * (1.0 + slippage)
+        else:
+            exitsprice = target_price
+    else:
+        exitsprice = 0.0
     return exitsprice
 
 
 @njit
-def get_buy_Fees(buy_Fee, fee, size, target_price: float, marketpostion, last_marketpostion):
+def get_buy_Fees(buy_Fee, fee: float, size: float, target_price: float, marketpostion, last_marketpostion):
     """_summary_
 
     Args:
@@ -101,15 +110,15 @@ def get_buy_Fees(buy_Fee, fee, size, target_price: float, marketpostion, last_ma
     Returns:
         _type_: _description_
     """
-    if marketpostion == 1 and last_marketpostion == 0:
+    if (marketpostion == 1 and last_marketpostion == 0) or (marketpostion == 0 and last_marketpostion == -1):
         buy_Fee = target_price * fee * size
-    elif marketpostion == 0:
-        buy_Fee = 0
+    else:
+        buy_Fee = 0.0
     return buy_Fee
 
 
 @njit
-def get_sell_Fees(sell_Fee, fee: float, size, target_price: float, marketpostion, last_marketpostion):
+def get_sell_Fees(sell_Fee, fee: float, size: float, target_price: float, marketpostion, last_marketpostion):
     """_summary_
 
     Args:
@@ -122,49 +131,48 @@ def get_sell_Fees(sell_Fee, fee: float, size, target_price: float, marketpostion
     Returns:
         _type_: _description_
     """
-    if marketpostion == 0 and last_marketpostion == 1:
+    if (marketpostion == 0 and last_marketpostion == 1) or (marketpostion == -1 and last_marketpostion == 0):
         sell_Fee = target_price * fee * size
-    elif marketpostion == 0:
-        sell_Fee = 0
+    else:
+        sell_Fee = 0.0
     return sell_Fee
 
 
 @njit
-def get_OpenPostionprofit(OpenPostionprofit, marketpostion, last_marketpostion, buy_Fees, Close, buy_sizes, entryprice):
+def get_OpenPostionprofit(OpenPostionprofit, marketpostion, last_marketpostion, buy_Fees, Close: float, buy_sizes: float, entryprice: float, sell_sizes: float = 0.0):
     if marketpostion == 1:
         OpenPostionprofit = (Close - entryprice) * buy_sizes
+    elif marketpostion == -1:
+        size = sell_sizes if sell_sizes > 0.0 else buy_sizes
+        OpenPostionprofit = (entryprice - Close) * size
     else:
-        OpenPostionprofit = 0
+        OpenPostionprofit = 0.0
     return OpenPostionprofit
 
 
 @njit
-def get_ClosedPostionprofit(ClosedPostionprofit, marketpostion, last_marketpostion, buy_Fees, sell_Fees, sizes, last_entryprice, exitsprice):
+def get_ClosedPostionprofit(ClosedPostionprofit, marketpostion, last_marketpostion, buy_Fees, sell_Fees, sizes: float, last_entryprice: float, exitsprice: float):
     # 我的定義是當部位改變的時候再紀錄
     if marketpostion == 1 and last_marketpostion == 0:
         ClosedPostionprofit = ClosedPostionprofit - buy_Fees
-    elif marketpostion == 0 and last_marketpostion == 1:
+    elif marketpostion == -1 and last_marketpostion == 0:
         ClosedPostionprofit = ClosedPostionprofit - sell_Fees
-        # 當部位為平倉後 計算交易損益
-        # =====================================================================
-        # 注意這邊應該是會以開盤價做平倉?
-        # 思考方向是 因為當收盤價結束時才會判斷 是否需要賣出 當需要賣出的時候 以收盤價 當作出場價
-        # 是否需要考量賣出時的滑價
-        ClosedPostionprofit = ClosedPostionprofit + \
-            (exitsprice * sizes - last_entryprice * sizes)
-        # =====================================================================
+    elif marketpostion == 0 and last_marketpostion == 1:
+        ClosedPostionprofit = ClosedPostionprofit - sell_Fees + (exitsprice * sizes - last_entryprice * sizes)
+    elif marketpostion == 0 and last_marketpostion == -1:
+        ClosedPostionprofit = ClosedPostionprofit - buy_Fees + (last_entryprice * sizes - exitsprice * sizes)
     return ClosedPostionprofit
 
 
 @njit
-def get_profit(profit, marketpostion, last_marketpostion, target_price: float, sell_sizes, last_entryprice):
+def get_profit(profit, marketpostion, last_marketpostion, exitsprice: float, sell_sizes: float, last_entryprice: float):
     """_summary_
 
     Args:
         profit (_type_): _description_
         marketpostion (_type_): _description_
         last_marketpostion (_type_): _description_
-        target_price (float): "Close" or "Open" >> any price to link entryprice
+        exitsprice (float): "Close" or "Open" or exitsprice >> price to link exitsprice
         sell_sizes (_type_): _description_
         last_entryprice (_type_): _description_
 
@@ -172,9 +180,11 @@ def get_profit(profit, marketpostion, last_marketpostion, target_price: float, s
         _type_: _description_
     """
     if marketpostion == 0 and last_marketpostion == 1:
-        profit = target_price * sell_sizes - last_entryprice * sell_sizes
+        profit = exitsprice * sell_sizes - last_entryprice * sell_sizes
+    elif marketpostion == 0 and last_marketpostion == -1:
+        profit = last_entryprice * sell_sizes - exitsprice * sell_sizes
     else:
-        profit = 0
+        profit = 0.0
     return profit
 
 
@@ -223,23 +233,24 @@ def Lowest(data_array: np.ndarray, step: int) -> np.ndarray:
 
 
 @njit
-def get_order(marketpostion: np.array) -> np.array:
+def get_order(marketpostion: np.ndarray) -> np.ndarray:
     order_array = np.empty(shape=marketpostion.shape[0])
     for i in range(len(marketpostion)):
         if i > 0:
-            # 用來比較轉換的時候
-            # 狀態一樣不需要改變
             if marketpostion[i] == marketpostion[i-1]:
-                order_array[i] = 0
-
-            # 當狀態不一樣的時候
-            if marketpostion[i] != marketpostion[i-1]:
-                if marketpostion[i] == 1:
-                    order_array[i] = 1
-                else:
-                    order_array[i] = -1
+                order_array[i] = 0.0
+            elif marketpostion[i] == 1 and marketpostion[i-1] == 0:
+                order_array[i] = 1.0
+            elif marketpostion[i] == 0 and marketpostion[i-1] == 1:
+                order_array[i] = -1.0
+            elif marketpostion[i] == -1 and marketpostion[i-1] == 0:
+                order_array[i] = -1.0
+            elif marketpostion[i] == 0 and marketpostion[i-1] == -1:
+                order_array[i] = 1.0
+            else:
+                order_array[i] = float(marketpostion[i] - marketpostion[i-1])
         else:
-            order_array[i] = marketpostion[i]
+            order_array[i] = float(marketpostion[i])
     return order_array
 
 
@@ -367,25 +378,25 @@ def logic_order(
     netprofit_array = np.empty(shape=Length)
 
     # 此變數區列可以在迭代當中改變
-    marketpostion = 0  # 部位方向
-    entryprice = 0  # 入場價格
-    exitsprice = 0  # 出場價格
-    buy_Fees = 0  # 買方手續費
-    sell_Fees = 0  # 賣方手續費
-    OpenPostionprofit = 0  # 未平倉損益(非累積式純計算有多單時)
+    marketpostion = 0.0  # 部位方向
+    entryprice = 0.0  # 入場價格
+    exitsprice = 0.0  # 出場價格
+    buy_Fees = 0.0  # 買方手續費
+    sell_Fees = 0.0  # 賣方手續費
+    OpenPostionprofit = 0.0  # 未平倉損益(非累積式純計算有多單或空單時)
     ClosedPostionprofit = init_cash   # 已平倉損益
-    profit = 0  # 計算已平倉損益(非累積式純計算無單時)
+    profit = 0.0  # 計算已平倉損益(非累積式純計算平倉當下)
     buy_sizes = size  # 買進部位大小
     sell_sizes = size  # 賣出進部位大小
-    Gross_profit = 0  # 毛利
-    Gross_loss = 0  # 毛損
-    all_Fees = 0  # 累積手續費
-    netprofit = 0  # 淨利
+    Gross_profit = 0.0  # 毛利
+    Gross_loss = 0.0  # 毛損
+    all_Fees = 0.0  # 累積手續費
+    netprofit = 0.0  # 淨利
 
     # 商品固定屬性
     slippage = slippage  # 滑價計算
     fee = fee  # 手續費率
-    direction = "buyonly"
+    direction = None
 
     # 主循環區域
     for i in range(Length):
@@ -394,11 +405,18 @@ def logic_order(
         last_marketpostion = marketpostion
         last_entryprice = entryprice
         # ==============================================================
-        # 部位方向區段
-        if current_order == 1:
-            marketpostion = 1
-        if current_order == -1:
-            marketpostion = 0
+        # 部位方向區段 (支援做多 1、做空 -1、平倉 0、續抱)
+        if marketpostion == 0:
+            if current_order == 1:
+                marketpostion = 1
+            elif current_order == -1:
+                marketpostion = -1
+        elif marketpostion == 1:
+            if current_order == -1:
+                marketpostion = 0
+        elif marketpostion == -1:
+            if current_order == 1:
+                marketpostion = 0
 
         marketpostion_array[i] = marketpostion
 
@@ -420,15 +438,15 @@ def logic_order(
 
         # 未平倉損益(不包含手續費用)
         OpenPostionprofit = get_OpenPostionprofit(
-            OpenPostionprofit, marketpostion, last_marketpostion, buy_Fees, Open, buy_sizes, entryprice)
+            OpenPostionprofit, marketpostion, last_marketpostion, buy_Fees, Open, buy_sizes, entryprice, sell_sizes)
 
-        # 計算已平倉損益(累積式) # v:20221213
+        # 計算已平倉損益(累積式)
         ClosedPostionprofit = get_ClosedPostionprofit(
             ClosedPostionprofit, marketpostion, last_marketpostion, buy_Fees, sell_Fees, sell_sizes, last_entryprice, exitsprice)
 
-        # 計算已平倉損益(非累積式純計算無單時)
+        # 計算已平倉損益(非累積式純計算平倉當下)
         profit = get_profit(
-            profit, marketpostion, last_marketpostion, Open, sell_sizes, last_entryprice)
+            profit, marketpostion, last_marketpostion, exitsprice, sell_sizes, last_entryprice)
 
         # Gross_profit (毛利)
         if profit > 0:
@@ -438,10 +456,10 @@ def logic_order(
         if profit < 0:
             Gross_loss = Gross_loss + profit
 
-        # 累積手續費
-        if marketpostion == 1 and last_marketpostion == 0:
+        # 累積手續費 (開多、平空收取買進手續費；平多、開空收取賣出手續費)
+        if (marketpostion == 1 and last_marketpostion == 0) or (marketpostion == 0 and last_marketpostion == -1):
             all_Fees = all_Fees + buy_Fees
-        elif marketpostion == 0 and last_marketpostion == 1:
+        elif (marketpostion == 0 and last_marketpostion == 1) or (marketpostion == -1 and last_marketpostion == 0):
             all_Fees = all_Fees + sell_Fees
 
         # 計算當下淨利(類似權益數) 起始資金 - 買入手續費 - 賣出手續費 + 毛利 + 毛損 + 未平倉損益
