@@ -13,27 +13,62 @@ from pathlib import Path
 import time
 from utils.AppSetting import RLConfig
 import json
-from typing import Optional
+from typing import Optional, Union, Dict, Any, List
 from Brain.DQN.lib.Strategy import Strategy
 
 
-def load_from_json(filename="data.json"):
-    with open(filename, "r", encoding="utf-8") as f:
+def _json_default(obj):
+    if isinstance(obj, (np.integer, np.int64, np.int32)):
+        return int(obj)
+    elif isinstance(obj, (np.floating, np.float64, np.float32)):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, Path):
+        return str(obj)
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+
+
+def load_from_json(filename: Union[str, Path] = "record_orders.json"):
+    """
+    從本地端讀取 JSON 檔案
+
+    :param filename: 讀取的檔案名稱或路徑
+    :return: JSON 解析後的資料
+    """
+    filepath = Path(filename)
+    with open(filepath, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
-def save_to_json(data, filename="data.json"):
+def save_to_json(data: Any, filename: Union[str, Path] = "record_orders.json"):
     """
     將資料保存為本地端的 JSON 檔案
 
     :param data: 要保存的資料（字典、列表等可 JSON 化的物件）
     :param filename: 保存的檔案名稱或路徑
     """
-    with open(filename, "w", encoding="utf-8") as f:
+    filepath = Path(filename)
+    if filepath.parent and str(filepath.parent) not in ("", "."):
+        filepath.parent.mkdir(parents=True, exist_ok=True)
+    with open(filepath, "w", encoding="utf-8") as f:
         # indent=4 可以讓產生的 JSON 檔案自動排版，方便閱讀
         # ensure_ascii=False 確保中文字元不會被轉成 Unicode 碼
-        json.dump(data, f, ensure_ascii=False, indent=4)
-    print(f"資料已成功保存至：{filename}")
+        json.dump(data, f, ensure_ascii=False, indent=4, default=_json_default)
+    print(f"資料已成功保存至：{filepath}")
+
+
+def load_orders_from_json(filename: Union[str, Path] = "record_orders.json") -> List[int]:
+    """
+    專門讀取 record_orders 的便捷函式，支援直接回傳 orders list
+
+    :param filename: 讀取的檔案名稱或路徑
+    :return: orders 列表 (List[int])
+    """
+    data = load_from_json(filename)
+    if isinstance(data, dict) and "record_orders" in data:
+        return data["record_orders"]
+    return data
 
 
 class RL_evaluate:
@@ -42,7 +77,10 @@ class RL_evaluate:
         strategy: Strategy,
         formal: bool,
         preloaded_agent: Optional[torch.nn.Module] = None,
+        if_save: bool = False,
+        save_path: Optional[str] = None,
     ) -> None:
+        self.strategy = strategy
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.hyperparameters(strategy)
 
@@ -70,7 +108,7 @@ class RL_evaluate:
         else:
             self.agent = self.load_model(model_path=strategy.model_count_path)
 
-        self.test()
+        self.test(if_save=if_save, save_path=save_path)
 
     def load_model(self, model_path: str):
         engine_info = self.evaluate_env.engine_info()
@@ -109,7 +147,7 @@ class RL_evaluate:
         net.eval()  # 將模型設置為評估模式
         return net
 
-    def test(self):
+    def test(self, if_save: bool = False, save_path: Optional[str] = None):
         """
             order  length : L - B -1
         """
@@ -145,6 +183,14 @@ class RL_evaluate:
                 rewards.append(reward)
 
         self.record_orders = record_orders
+
+        if if_save:
+            target_filename = save_path or "record_orders.json"
+            data_to_save = {
+                "symbol": getattr(self.strategy, "symbol_name", ""),
+                "record_orders": record_orders,
+            }
+            save_to_json(data_to_save, filename=target_filename)
         
 
     def hyperparameters(self, strategy):
