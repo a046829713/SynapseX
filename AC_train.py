@@ -260,8 +260,14 @@ class LearnerProcess(mp.Process):
         time_states_v = torch.from_numpy(np.array(time_states, dtype=np.float32))
         time_states_v = time_states_v.to(self.config.DEVICE)
 
-        with torch.no_grad():
-            q_values,_,imagined_features = self.net(states_v,time_states_v)
+        # 切換為評估模式（關閉 Dropout，確保推理 Q 值確定性）
+        self.net.eval()
+        try:
+            with torch.no_grad():
+                q_values, _, imagined_features = self.net(states_v, time_states_v)
+        finally:
+            # 確保一定切回訓練模式，保證後續 backward 與訓練正常
+            self.net.train()
 
         # 這裡我們需要 epsilon-greedy 策略來選擇動作 Learner 統一管理 epsilon
         self.epsilon = max(
