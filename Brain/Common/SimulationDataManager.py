@@ -26,20 +26,21 @@ class SimulationDataManager:
 
         return x
 
-    def Downloader(self, symbol_type: str = "FUTURES", time_type="1m"):
+    def Downloader(self, symbol_type: str = "FUTURES"):
         """
             We need to reload_all_data in first, because reload_all_data can save data into database first.
 
         Args:
             symbol_type (str, optional): _description_. Defaults to "FUTURES".
         """
+        # reload daily data
+        self.dataProvider.reload_all_data(time_type='1d', symbol_type=symbol_type)
+        self.dataProvider.reload_all_data(time_type='1m', symbol_type=symbol_type)
 
-        self.dataProvider.reload_all_data(time_type=time_type, symbol_type=symbol_type)
+        all_symbols = self.dataProvider.get_symbols_history_data(
+            symbol_type='FUTURES', time_type='1d')    
 
-        for symbol_name in self.dataProvider.Binanceapp.get_targetsymobls(
-            symbol_type=symbol_type
-        ):
-
+        for symbol_name in self.dataProvider.filter_useful_symbol(all_symbols, tag="MOCK_TYPE"):
             self.dataProvider.Downloader(
                 symbol_name=symbol_name,
                 save=True,

@@ -241,6 +241,18 @@ class Datatransformer:
 
         sort_example = sorted(out_list, key=lambda x: x[1], reverse=True)        
         return [eachrow[0] for eachrow in sort_example[:max_symbols]]
+
+    def get_enough_day_symbol(self, all_symbols:list):
+        out_list = []
+        for each_data in all_symbols:
+            symbolname = each_data[0]
+            data = each_data[1]
+            # 不想要太新的商品
+            if len(data) > 30 and data.iloc[-1]['Close'] > 0.1:                
+                out_list.append(symbolname.split('-')[0].upper())
+
+        print("結果：",out_list)
+        return out_list
     
     def get_volume_top_filter_symobl(self, all_symbols, max_symbols: int, last_sum_day:int = 10):
         """

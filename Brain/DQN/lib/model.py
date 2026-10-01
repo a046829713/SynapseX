@@ -415,6 +415,7 @@ class mambaDuelingModel(nn.Module):
                  dropout: float = 0.1,
                  hidden_size: int = 96,
                  mode='full',
+                 portfolio_dim: int = 3,
                  ssm_cfg: Optional[dict] = None,
                  moe_cfg: Optional[dict] = None,
                  ):
@@ -424,8 +425,10 @@ class mambaDuelingModel(nn.Module):
         
         """
         super().__init__()
+        self.portfolio_dim = portfolio_dim
+        self.market_dim = d_model - self.portfolio_dim
         self.time_embedding = SineActivation(in_features=time_features_in, out_features=time_features_out)
-        self.dean = DAIN_Layer(mode=mode, input_dim=d_model) # DAIN 只處理市場數據
+        self.dean = DAIN_Layer(mode=mode, input_dim=self.market_dim) # DAIN 只處理市場數據 (14 維)
 
         self.market_embedding = nn.Linear(d_model, hidden_size)
         self.time_emb_projection = nn.Linear(time_features_out, hidden_size)
@@ -484,11 +487,14 @@ class mambaDuelingModel(nn.Module):
         time_emb_proj = self.time_emb_projection(time_emb) # [B, L, hidden_size]
         
         
-        # 市場數據流
-        market_data = src.transpose(1, 2)
-        market_data = self.dean(market_data)
-        market_data = market_data.transpose(1, 2)
-        market_emb = self.market_embedding(market_data) # [B, L, hidden_size]
+        # 市場數據流 (僅前 market_dim 維進入 DAIN)
+        market_raw = src[:, :, :self.market_dim].transpose(1, 2)
+        market_norm = self.dean(market_raw).transpose(1, 2)
+        
+        # 帳戶特徵 (後 portfolio_dim 維繞過 DAIN，保持真實數值信號)
+        portfolio_raw = src[:, :, self.market_dim:]
+        combined_src = torch.cat([market_norm, portfolio_raw], dim=-1)
+        market_emb = self.market_embedding(combined_src) # [B, L, hidden_size]
 
         # 計算門控值
         gate = self.gate_layer(torch.cat([market_emb, time_emb_proj], dim=-1))

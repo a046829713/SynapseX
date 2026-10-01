@@ -478,8 +478,8 @@ def logic_order(
         netprofit_array[i] = netprofit
 
     # for i in range(Length):
-    #     print("部位:", marketpostion_array[i], "進場價格:", entryprice_array[i],"未平倉損益:",OpenPostionprofit_array[i],
-    #           "買入手續費", buy_Fees_array[i], "賣出手續費:", sell_Fees_array[i])
+    #     print("訊號：",shiftorder[i],"部位:", marketpostion_array[i], "進場價格:", entryprice_array[i],"未平倉損益:",OpenPostionprofit_array[i],
+    #           "買入手續費", buy_Fees_array[i], "賣出手續費:", sell_Fees_array[i],"已平倉損益：",ClosedPostionprofit_array[i])
 
     # 秘密就在這裡,透過這邊統一將order 做出調整,所以後面的order 才可以用SUM
     neworders = get_order(marketpostion_array)

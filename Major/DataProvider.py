@@ -265,6 +265,10 @@ class DataProvider:
             return self.datatransformer.get_mtm_filter_symbol(
                 all_symbols, max_symbols=20
             )
+        elif tag == "MOCK_TYPE":
+            return self.datatransformer.get_enough_day_symbol(
+                all_symbols
+            )
 
     def last_profolio_adjust_time(self):
         data = self.SQL.get_db_data("select * from interval_record")

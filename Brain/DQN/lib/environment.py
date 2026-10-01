@@ -295,8 +295,8 @@ class State_time_step(State_time_step_template):
             )
             data_res[:, len(self.info_list) + 1] = float(unrealized_return)
 
-            # 特徵 3: 持倉時間累計
-            data_res[:, len(self.info_list) + 2] = float(self.trade_bar)
+            # 特徵 3: 持倉時間累計 (以日為基準標準化: 48 根 30m K 棒為 1 天)
+            data_res[:, len(self.info_list) + 2] = float(self.trade_bar) / 48.0
 
         for bar_idx in range(self.bars_count):
             for idx, field in enumerate(self.timelist):

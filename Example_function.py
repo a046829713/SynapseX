@@ -1,6 +1,7 @@
 from Brain.Common.SimulationDataManager import SimulationDataManager
 from Major.DataProvider import DataProvider
 from Major.Datatransformer import Datatransformer
+
 # from EIIE.lib import Train_neural_networks
 import matplotlib.pyplot as plt
 from pathlib import Path
@@ -9,12 +10,12 @@ from binance.client import Client
 from Major.UserManager import UserManager
 import json
 import time
+
 # from EIIE.lib.simple_evaluate import evaluate_train_test_performance
 import re
 import pandas as pd
 from Database.SQL_operate import SqlSentense
 from Brain.Common.DataFeature import OriginalDataFeature
-
 
 # def fix_data_different_len_and_na(df: pd.DataFrame):
 #     # 找出最長的歷史數據長度
@@ -85,52 +86,35 @@ from Brain.Common.DataFeature import OriginalDataFeature
 #         new_df.to_csv(r'EIIE\simulation\test_data.csv')
 
 
-
-
-
 def getAllDailyData():
 
-    
     # get alive symbol
     all_symbols_dataframes = DataProvider().get_symbols_history_data(
-        symbol_type='FUTURES', time_type='1d')
+        symbol_type="FUTURES", time_type="1d"
+    )
 
     new_df = pd.DataFrame()
 
-    for tb_symbol_name,df in all_symbols_dataframes:        
+    for tb_symbol_name, df in all_symbols_dataframes:
         new_df = pd.concat([new_df, df])
-
 
     print(new_df)
 
 
-
-
-
-
-
-
-
-
-def checksymbol(symbol:str):
-    account, passwd = UserManager.GetAccount_Passwd('author')
+def checksymbol(symbol: str):
+    account, passwd = UserManager.GetAccount_Passwd("author")
     client = Client(account, passwd)
     info = client.get_exchange_info()
-    for s in info['symbols']:
-        if s['symbol']  == symbol:
+    for s in info["symbols"]:
+        if s["symbol"] == symbol:
             print(s)
-    
-
-
-
-
 
 
 def get_futures_position_information():
-    account, passwd = UserManager.GetAccount_Passwd('author')
+    account, passwd = UserManager.GetAccount_Passwd("author")
     client = Client(account, passwd)
     data = client.futures_position_information(symbol="BTCUSDT")
-    print(float(data[0]['positionAmt']) != 0)
+    print(float(data[0]["positionAmt"]) != 0)
     # for i in data:
     #     print(i['symbol'],i['positionAmt'])
     #     print('*'*120)
@@ -138,75 +122,81 @@ def get_futures_position_information():
 
 def example_get_model_train_symboldata():
     """
-        introduction:
-            this function is for download history data to experiment.
+    introduction:
+        this function is for download history data to experiment.
 
     """
-    
+
     SimulationDataManager().Downloader()
+
 
 def example_get_smybols_mockuse():
     """
-        introduction:
-            this function is for download history data to experiment.
+    introduction:
+        this function is for download history data to experiment.
 
     """
-    
+
     SimulationDataManager().get_smybols_mockuse()
+
 
 def example_get_targetsymobls():
     """
-        取得有效名稱
+    取得有效名稱
     """
     print(DataProvider().get_both_type_targetsymbols())
 
 
 def example_get_target_symbol(filter_type: str):
     """
-        introduction:
-            this function is for filter 
+    introduction:
+        this function is for filter
     """
     all_symbols = DataProvider().get_symbols_history_data(
-        symbol_type='FUTURES', time_type='1d')
+        symbol_type="FUTURES", time_type="1d"
+    )
 
-    if filter_type == 'MTM':
-        example = Datatransformer().get_mtm_filter_symbol(all_symbols,max_symbols=30)
-    elif filter_type == 'VOLUME':
-        example = Datatransformer().get_volume_top_filter_symobl(all_symbols, max_symbols=30)
-    elif filter_type == 'NEW':
+    if filter_type == "MTM":
+        example = Datatransformer().get_mtm_filter_symbol(all_symbols, max_symbols=30)
+    elif filter_type == "VOLUME":
+        example = Datatransformer().get_volume_top_filter_symobl(
+            all_symbols, max_symbols=30
+        )
+    elif filter_type == "NEW":
         example = Datatransformer().get_newthink_symbol(all_symbols)
     else:
         raise ValueError("please, this filter_type undefine")
-    
+
     print(example)
-    print('*'*120)
+    print("*" * 120)
 
 
-def example_reload_all_data(symbol_type:str, time_type: str):
+def example_reload_all_data(symbol_type: str, time_type: str):
     """
     Args:
         time_type (str): "1m","1d"
         symbol_type(str) :"SPOT","FUTURES"
     """
-    DataProvider().reload_all_data(time_type=time_type,symbol_type=symbol_type)
+    DataProvider().reload_all_data(time_type=time_type, symbol_type=symbol_type)
 
 
 def example_Train_neural_networks():
-    Train_neural_networks.train(Train_data_path='EIIE/simulation/train_data.csv',
-                                Meta_path="EIIE/Meta/policy_EIIE.pt",
-                                Train_path="EIIE/Train/policy_EIIE.pt",
-                                episodes=100000,
-                                save=True,
-                                pre_train=False,
-                                )  # True
+    Train_neural_networks.train(
+        Train_data_path="EIIE/simulation/train_data.csv",
+        Meta_path="EIIE/Meta/policy_EIIE.pt",
+        Train_path="EIIE/Train/policy_EIIE.pt",
+        episodes=100000,
+        save=True,
+        pre_train=False,
+    )  # True
 
 
 def example_simple_evaluate():
-    evaluate_train_test_performance(Train_data_path='EIIE/simulation/train_data.csv',
-                                    Test_data_path='EIIE/simulation/test_data.csv',
-                                    Meta_path='EIIE/Meta/policy_EIIE.pt')
-
-
+    evaluate_train_test_performance(
+        Train_data_path="EIIE/simulation/train_data.csv",
+        Test_data_path="EIIE/simulation/test_data.csv",
+        Meta_path="EIIE/Meta/policy_EIIE.pt",
+    )
 
 
 # from Database.BackUp import BasePreparator
@@ -216,9 +206,10 @@ def example_simple_evaluate():
 
 # getAllDailyData()
 # example_reload_all_data(symbol_type="FUTURES",time_type = '1m')
-example_get_smybols_mockuse()
+# example_get_smybols_mockuse()
 # checksymbol(symbol='TUSDUSDT')
 # example_get_target_symbol(filter_type='MTM')
 
 
 # OriginalDataFrature().get_train_net_work_data_by_path(['BTCUSDT-F-30-Min'])
+example_get_model_train_symboldata()
