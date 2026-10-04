@@ -421,6 +421,8 @@ class ActorProcess(mp.Process):
             state = self.env.reset(symbol=symbol)
 
             n_step_buffer = deque(maxlen=self.config.REWARD_STEPS)
+            terminated = False
+            truncated = False
             done = False
             episode_accumulated_reward = 0.0
             episode_steps = 0
@@ -433,9 +435,10 @@ class ActorProcess(mp.Process):
                 # 3.2. 阻塞等待，直到收到 Learner 回傳的動作
                 action = self.action_queue.get()
 
-                # 3.3. 在環境中執行動作
-                next_state, reward, done, info = self.env.step(action)
-                
+                # 3.3. 在環境中執行動作 (Gymnasium 5-tuple standard)
+                next_state, reward, terminated, truncated, info = self.env.step(action)
+                done = terminated or truncated
+
                 episode_accumulated_reward += reward
                 episode_steps += 1
                 n_step_buffer.append((state, action, reward))
@@ -448,7 +451,9 @@ class ActorProcess(mp.Process):
                         total_reward = reward_in_step + self.config.GAMMA * total_reward
 
                     first_state, first_action, _ = n_step_buffer[0]
-                    last_state = None if done else next_state
+                    # CRITICAL FIX: Only set last_state = None on true termination.
+                    # On truncation, next_state has real continuation value and MUST bootstrap!
+                    last_state = None if terminated else next_state
 
                     self.experience_queue.put(
                         ExperienceFirstLast(
@@ -457,28 +462,33 @@ class ActorProcess(mp.Process):
                     )
 
                 state = next_state
-                
+
                 # 3.5. 如果 episode 結束，處理剩餘的 n-step transitions
                 if done:
-                    try:                        
+                    try:
                         self.metrics_queue.put_nowait(
                             ("episode_done", self.actor_id, episode_accumulated_reward, episode_steps)
                         )
                     except Full:
-                        pass # 如果佇列滿了，就跳過
-                    
-                    while len(n_step_buffer) > 1:
-                        n_step_buffer.popleft()
-                        total_reward = 0.0
-                        for transition in reversed(n_step_buffer):
-                            total_reward = transition[2] + self.config.GAMMA * total_reward
-                        
-                        first_state, first_action, _ = n_step_buffer[0]
-                        self.experience_queue.put(
-                            ExperienceFirstLast(
-                                first_state, first_action, total_reward, None, info, done
+                        pass  # 如果佇列滿了，就跳過
+
+                    if terminated:
+                        # 真正終止時，未來價值為 0，可安全 flush
+                        while len(n_step_buffer) > 1:
+                            n_step_buffer.popleft()
+                            total_reward = 0.0
+                            for transition in reversed(n_step_buffer):
+                                total_reward = transition[2] + self.config.GAMMA * total_reward
+
+                            first_state, first_action, _ = n_step_buffer[0]
+                            self.experience_queue.put(
+                                ExperienceFirstLast(
+                                    first_state, first_action, total_reward, None, info, done
+                                )
                             )
-                        )
+                    else:
+                        # 人為截斷 (truncated) 時，丟棄未滿 N 步的殘留片段，保證全體經驗皆為精確 N 步與 gamma^N 折扣
+                        n_step_buffer.clear()
 
 
 class SymbolProcess(mp.Process):

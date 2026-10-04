@@ -183,7 +183,6 @@ class State_time_step(State_time_step_template):
         assert isinstance(action, Actions)
 
         reward = 0.0
-        done = False
 
         _close_price = self._prices.close[self._offset]
         prev_close = self._prices.close[self._offset - 1]
@@ -264,12 +263,11 @@ class State_time_step(State_time_step_template):
         # 12. 更新步數與結束判斷
         self._offset += 1
         self.game_steps += 1
-        done |= self._offset >= self._prices.close.shape[0] - 1
 
-        if self.game_steps == self.N_steps and self.model_train:
-            done = True
+        terminated = bool(self._offset >= self._prices.close.shape[0] - 1)
+        truncated = bool(self.game_steps >= self.N_steps and self.model_train)
 
-        return reward, done
+        return reward, terminated, truncated
 
     def encode(self):
         data_res = np.zeros(shape=self.getStateShape(), dtype=np.float32)
@@ -343,7 +341,7 @@ class BaseTradingEnv(gym.Env, ABC):
         執行一個時間步。這個邏輯在所有環境中都是相同的。
         """
         action = Actions(action_idx)
-        reward, done = self._state.step(action)
+        reward, terminated, truncated = self._state.step(action)
         obs = self._state.encode()
 
         info = {
@@ -352,7 +350,7 @@ class BaseTradingEnv(gym.Env, ABC):
             "postion": float(self._state.position),
         }
 
-        return obs, reward, done, info
+        return obs, reward, terminated, truncated, info
 
     def engine_info(self):
         if isinstance(self._state, State_time_step):

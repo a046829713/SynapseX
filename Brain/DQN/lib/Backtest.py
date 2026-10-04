@@ -171,7 +171,8 @@ class RL_evaluate:
                 action, _,_ = self.agent(state, time_state)
                 action_idx = action.max(dim=1)[1].item()
                 record_orders.append(self._parser_order(action_idx))
-                _state, reward, done, info = self.evaluate_env.step(action_idx)
+                _state, reward, terminated, truncated, info = self.evaluate_env.step(action_idx)
+                done = terminated or truncated
                 # info = common.turn_to_tensor([info],self.device)
                 state, time_state = _state
 
