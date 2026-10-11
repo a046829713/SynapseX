@@ -2,6 +2,7 @@ import os
 import time
 from datetime import datetime
 
+from collections import deque
 import hydra
 import numpy as np
 import torch
@@ -9,10 +10,34 @@ import torch.nn.functional as F
 import torch.optim as optim
 from omegaconf import DictConfig, OmegaConf
 
+from Brain.Common.DataFeature import OriginalDataFeature
 from Brain.Common.PytorchModelTool import ModelTool
 from Brain.PPO2.lib.Agent import PPO2Agent
-from Brain.PPO2.lib.environment import TrainingEnv
+from Brain.PPO2.lib.environment import TrainingEnv, SubprocVecEnv
 from Brain.PPO2.lib.experience import RolloutBuffer
+
+
+class SymbolQueue:
+    """
+    全域商品洗牌佇列 (Global Shuffled Round-Robin Queue)。
+    維護訓練集內所有唯一標的，依序取出；當佇列抽空時自動重新洗牌補充，保證 100% 均勻覆蓋。
+    """
+
+    def __init__(self, symbols: list):
+        self.all_symbols = list(symbols)
+        self.queue = deque()
+        self._refill()
+
+    def _refill(self):
+        shuffled = list(self.all_symbols)
+        np.random.shuffle(shuffled)
+        self.queue.extend(shuffled)
+
+    def get_next(self) -> str:
+        if len(self.queue) == 0:
+            self._refill()
+        return self.queue.popleft()
+
 
 
 def build_optimizer(
@@ -105,48 +130,75 @@ class PPO2:
         cfg_training.UNIQUE_SYMBOLS = unique_symbols
         print(f"--SYMBOLNAMES--: Total {len(unique_symbols)} unique symbols found.")
 
+        # 全域商品預載入快取，供所有 Worker 零拷貝共享讀取，徹底杜絕重複讀取 CSV 與記憶體膨脹
+        print(
+            f"--PRELOAD--: Preloading {len(unique_symbols)} unique symbols into memory cache..."
+        )
+        t0 = time.time()
+        self.preloaded_data = (
+            OriginalDataFeature().get_train_net_work_data_by_path(unique_symbols)
+        )
+        print(
+            f"--PRELOAD--: Preloaded {len(self.preloaded_data)} symbols in {time.time() - t0:.2f}s."
+        )
+
+        self.symbol_queue = SymbolQueue(unique_symbols)
+
         saves_tag = getattr(cfg_training, "SAVES_TAG", "saves")
         bars_count = getattr(cfg_training, "BARS_COUNT", 300)
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        self.saves_path = os.path.join(base_dir, saves_tag, f"{timestamp}-{bars_count}k-")
+        self.saves_path = os.path.join(
+            base_dir, saves_tag, f"{timestamp}-{bars_count}k-"
+        )
         os.makedirs(self.saves_path, exist_ok=True)
         print(f"--SAVES_PATH--: {self.saves_path}")
 
     def _prepare_env(self):
-        self.train_env = TrainingEnv(config=self.config)
-        print(f"--TrainingEnv--: {self.train_env}")
+        cfg_training = getattr(self.config, "training", self.config)
+        self.num_workers = getattr(cfg_training, "NUM_WORKERS", 8)
+
+        def make_env():
+            return TrainingEnv(config=self.config, preloaded_data=self.preloaded_data)
+
+        self.vec_env = SubprocVecEnv(
+            [make_env for _ in range(self.num_workers)], context="fork"
+        )
+        print(
+            f"--SubprocVecEnv--: Initialized with {self.num_workers} parallel workers."
+        )
 
     def _prepare_agent(self):
         cfg_training = getattr(self.config, "training", self.config)
-        
-        
+
         ssm_cfg_fast = {
             "layer": "Mamba2",
-            "expand": 2,             # d_inner = 96 * 2 = 192
-            "d_ssm": 96,             # 核心關鍵: 192 維中，96 維走 SSM，剩餘 96 維走 Gated MLP
-            "headdim": 32,           # nheads = 96 // 32 = 3 個 SSM 頭
-            "d_state": 64,           # 狀態維度
+            "expand": 2,  # d_inner = 96 * 2 = 192
+            "d_ssm": 96,  # 核心關鍵: 192 維中，96 維走 SSM，剩餘 96 維走 Gated MLP
+            "headdim": 32,  # nheads = 96 // 32 = 3 個 SSM 頭
+            "d_state": 64,  # 狀態維度
             "ngroups": 1,
             "chunk_size": 64,
             "d_conv": 4,
             "rmsnorm": True,
             "bias": False,
-            "conv_bias": True
+            "conv_bias": True,
         }
 
         self.agent = PPO2Agent(
-            ob_space=self.train_env.observation_space,
-            ac_space=self.train_env.action_space,
+            ob_space=self.vec_env.observation_space,
+            ac_space=self.vec_env.action_space,
             device=self.device,
             seq_dim=getattr(cfg_training, "BARS_COUNT", 300),
             hidden_size=getattr(cfg_training, "HIDDEN_SIZE", 96),
             nlayers=getattr(cfg_training, "NLAYERS", 2),
             time_features_out=getattr(cfg_training, "TIME_FEATURES_OUT", 32),
             dropout=getattr(cfg_training, "DROPOUT", 0.1),
-            ssm_cfg=ssm_cfg_fast
+            ssm_cfg=ssm_cfg_fast,
         )
 
-        print(f"--Agent--: Initialized with model {self.agent.model.__class__.__name__}")
+        print(
+            f"--Agent--: Initialized with model {self.agent.model.__class__.__name__}"
+        )
 
 
     def _prepare_optimizer(self):
@@ -233,7 +285,8 @@ class PPO2:
 
     def train(self):
         cfg_training = getattr(self.config, "training", self.config)
-        n_steps = getattr(cfg_training, "N_STEPS", 1000)
+        num_workers = self.num_workers
+        horizon_steps = getattr(cfg_training, "HORIZON_STEPS", 500)
         batch_size = getattr(cfg_training, "BATCH_SIZE", 64)
         ppo_epochs = getattr(cfg_training, "PPO_EPOCHS", 4)
         clip_eps = getattr(cfg_training, "CLIP_EPS", 0.2)
@@ -242,8 +295,12 @@ class PPO2:
         max_grad_norm = getattr(cfg_training, "MAX_GRAD_NORM", 0.5)
         checkpoint_every = getattr(cfg_training, "CHECKPOINT_EVERY_ITER", 10)
 
-        obs = self.train_env.reset()
-        episode_reward = 0.0
+        initial_symbols = [self.symbol_queue.get_next() for _ in range(num_workers)]
+        obs = self.vec_env.reset(symbols=initial_symbols)
+        current_symbols = list(initial_symbols)
+
+        episode_rewards = np.zeros(num_workers, dtype=np.float64)
+        episode_steps = np.zeros(num_workers, dtype=np.int64)
         episode_count = 0
         total_steps = 0
         iteration = 0
@@ -252,51 +309,62 @@ class PPO2:
         fps_start_time = time.time()
         recent_episode_returns = []
 
-        print(f"\n{'=' * 30} Starting PPO2 Training {'=' * 30}")
+        total_rollout_steps = num_workers * horizon_steps
+        print(f"\n{'=' * 30} Starting Multi-Instrument PPO2 Training {'=' * 30}")
         print(
-            f"Rollout Horizon (N_STEPS): {n_steps} | Batch Size: {batch_size} | "
+            f"Workers: {num_workers} | Horizon/Worker: {horizon_steps} | "
+            f"Total Rollout Steps: {total_rollout_steps} | Batch Size: {batch_size} | "
             f"PPO Epochs: {ppo_epochs} | Device: {self.device}"
         )
 
         try:
             while True:
-                # 1. Rollout sampling
-                for _ in range(n_steps):
+                # 1. Rollout sampling across all N workers
+                for _ in range(horizon_steps):
                     out = self.agent.get_action(obs, stochastic=True)
-                    action_scalar = float(out.action.cpu().numpy()[0])
-                    next_obs, reward, done, info = self.train_env.step(action_scalar)
+                    actions_np = out.action.cpu().numpy()
+                    next_obs, rewards, dones, infos = self.vec_env.step(actions_np)
 
                     self.buffer.store(
                         obs,
                         out.action.cpu(),
                         out.log_prob.cpu(),
-                        reward,
+                        rewards,
                         next_obs,
-                        done,
+                        dones,
                         out.value.cpu(),
                     )
-                    episode_reward += reward
-                    total_steps += 1
+                    episode_rewards += rewards
+                    episode_steps += 1
+                    total_steps += num_workers
                     obs = next_obs
 
-                    if done:
-                        episode_count += 1
-                        recent_episode_returns.append(episode_reward)
-                        pos = info.get("position", 0.0)
-                        sym = info.get("instrument", "N/A")
-                        print(
-                            f"[Ep #{episode_count:04d}] Symbol: {sym} | TotalSteps: {total_steps:07d} | "
-                            f"Return: {episode_reward:+.4f} | End Pos: {pos:+.2f}"
-                        )
-                        obs = self.train_env.reset()
-                        episode_reward = 0.0
+                    for i, done in enumerate(dones):
+                        if done:
+                            episode_count += 1
+                            recent_episode_returns.append(float(episode_rewards[i]))
+                            sym = infos[i].get("instrument", current_symbols[i])
+                            pos = infos[i].get("position", 0.0)
+                            print(
+                                f"[Ep #{episode_count:04d} | W{i}] Symbol: {sym:<20s} | "
+                                f"Steps: {episode_steps[i]:04d} | Return: {episode_rewards[i]:+.4f} | "
+                                f"End Pos: {pos:+.2f} | TotalSteps: {total_steps:07d}"
+                            )
+                            # Reset worker i with next symbol from round-robin queue
+                            next_sym = self.symbol_queue.get_next()
+                            current_symbols[i] = next_sym
+                            new_obs_i = self.vec_env.reset_at(i, symbol=next_sym)
+                            obs["states"][i] = new_obs_i["states"]
+                            obs["time_states"][i] = new_obs_i["time_states"]
+                            episode_rewards[i] = 0.0
+                            episode_steps[i] = 0
 
                 # 2. Compute Bootstrap value & GAE
                 with torch.no_grad():
                     last_out = self.agent.get_action(obs, stochastic=False)
-                    last_value = last_out.value.item()
+                    last_values = last_out.value.cpu()
 
-                self.buffer.compute_gae(last_value)
+                self.buffer.compute_gae(last_values)
 
                 # 3. PPO Update
                 metrics = self.update_ppo(
@@ -317,7 +385,7 @@ class PPO2:
                 fps_start_time = time.time()
 
                 avg_ret_str = (
-                    f"{np.mean(recent_episode_returns[-10:]):+.4f}"
+                    f"{np.mean(recent_episode_returns[-20:]):+.4f}"
                     if recent_episode_returns
                     else "N/A"
                 )
@@ -325,7 +393,7 @@ class PPO2:
                     f"[Iter #{iteration:04d}] Steps: {total_steps:07d} | FPS: {fps:6.1f} | "
                     f"PiLoss: {metrics['policy_loss']:+.4f} | VfLoss: {metrics['value_loss']:.4f} | "
                     f"Ent: {metrics['entropy']:.4f} | KL: {metrics['approx_kl']:.5f} | "
-                    f"AvgRet(10): {avg_ret_str}"
+                    f"AvgRet(20): {avg_ret_str}"
                 )
 
                 # 5. Checkpoint Saving
@@ -335,6 +403,8 @@ class PPO2:
         except KeyboardInterrupt:
             print("\nTraining interrupted by user. Saving final checkpoint...")
             self.save_checkpoint(iteration, total_steps, is_final=True)
+        finally:
+            self.vec_env.close()
 
     def save_checkpoint(self, iteration: int, total_steps: int, is_final: bool = False):
         prefix = "final_checkpoint" if is_final else f"checkpoint_iter_{iteration}"

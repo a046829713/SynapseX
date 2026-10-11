@@ -1,4 +1,6 @@
+import multiprocessing as mp
 from collections import deque
+from typing import Optional, List, Dict, Callable
 import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
@@ -318,12 +320,12 @@ class TrainingEnv(BaseTradingEnv):
     動態加載數據，支援記憶體快取以避免重複磁碟 I/O，並在每次 reset 時隨機化起始位置（邊界安全）。
     """
 
-    def __init__(self, config):
+    def __init__(self, config, preloaded_data: Optional[Dict[str, Prices]] = None):
         self.config = config
         cfg_training = getattr(self.config, "training", self.config)
         self.unique_symbols = cfg_training.UNIQUE_SYMBOLS
         self.data_type_name = "train_data"
-        self._data_cache = {}
+        self._data_cache = preloaded_data if preloaded_data is not None else {}
 
         state_params = {
             "bars_count": cfg_training.BARS_COUNT,
@@ -332,7 +334,9 @@ class TrainingEnv(BaseTradingEnv):
             ),
             "model_train": True,
             "default_slippage": getattr(cfg_training, "DEFAULT_SLIPPAGE", 0.0001),
-            "N_steps": getattr(cfg_training, "N_STEPS", 250),
+            "N_steps": getattr(
+                cfg_training, "EPISODE_STEPS", getattr(cfg_training, "N_STEPS", 500)
+            ),
             "deadzone_threshold": getattr(cfg_training, "DEADZONE_THRESHOLD", 0.01),
             "downside_window_size": getattr(cfg_training, "DOWNSIDE_WINDOW_SIZE", 60),
             "w1_step_return": getattr(cfg_training, "W1_STEP_RETURN", 1.0),
@@ -343,12 +347,14 @@ class TrainingEnv(BaseTradingEnv):
 
     def _load_data_for_instrument(self, instrument: str):
         if instrument not in self._data_cache:
-            self._data_cache[instrument] = (
-                OriginalDataFeature().get_train_net_work_data_by_path(
-                    [instrument], typeName=self.data_type_name
-                )
+            loaded = OriginalDataFeature().get_train_net_work_data_by_path(
+                [instrument], typeName=self.data_type_name
             )
-        return self._data_cache[instrument]
+            self._data_cache.update(loaded)
+        data = self._data_cache[instrument]
+        if isinstance(data, dict) and instrument in data:
+            return data[instrument]
+        return data
 
     def reset(self, symbol: str = None):
         if symbol is None:
@@ -356,8 +362,7 @@ class TrainingEnv(BaseTradingEnv):
         else:
             self._instrument = symbol
 
-        all_prices = self._load_data_for_instrument(self._instrument)
-        prices = all_prices[self._instrument]
+        prices = self._load_data_for_instrument(self._instrument)
 
         max_offset = prices.high.shape[0] - self._state.N_steps - 1
         min_offset = self._state.bars_count
@@ -366,12 +371,9 @@ class TrainingEnv(BaseTradingEnv):
         ), f"Dataset length {prices.high.shape[0]} too short for N_steps={self._state.N_steps}"
         offset = np.random.randint(min_offset, max_offset)
 
-        print(
-            f"[{self.data_type_name}] Actor resetting env with symbol: {self._instrument} at offset: {offset}"
-        )
-
         self._state.reset(prices, offset)
         return self._state.encode()
+
 
 
 class ProductionEnv(BaseTradingEnv):
@@ -397,4 +399,135 @@ class ProductionEnv(BaseTradingEnv):
         )
 
         self._state.reset(prices, offset)
-        return self._state.encode()
+        return self._state.encode()
+
+
+def _subproc_worker(remote, parent_remote, env_fn):
+    parent_remote.close()
+    env = env_fn()
+    try:
+        while True:
+            cmd, data = remote.recv()
+            if cmd == "step":
+                obs, reward, done, info = env.step(data)
+                remote.send((obs, reward, done, info))
+            elif cmd == "reset":
+                obs = env.reset(symbol=data)
+                remote.send(obs)
+            elif cmd == "get_spaces":
+                remote.send((env.observation_space, env.action_space))
+            elif cmd == "close":
+                remote.close()
+                break
+            else:
+                raise NotImplementedError(
+                    f"SubprocVecEnv worker received unknown command: {cmd}"
+                )
+    except Exception as e:
+        import traceback
+
+        traceback.print_exc()
+        remote.send(("error", e))
+    finally:
+        if hasattr(env, "close"):
+            env.close()
+
+
+class SubprocVecEnv:
+    """
+    自建輕量級多進程向量化交易環境封裝 (基於 multiprocessing.Pipe)。
+    支援 Dict 觀測空間與多商品重置，專為高吞吐量並行強化學習設計。
+    """
+
+    def __init__(
+        self,
+        env_fns: List[Callable[[], BaseTradingEnv]],
+        context: str = "fork",
+    ):
+        self.waiting = False
+        self.closed = False
+        self.num_envs = len(env_fns)
+        ctx = mp.get_context(context)
+        self.remotes, self.work_remotes = zip(
+            *[ctx.Pipe() for _ in range(self.num_envs)]
+        )
+        self.ps = [
+            ctx.Process(
+                target=_subproc_worker,
+                args=(work_remote, remote, env_fn),
+                daemon=True,
+            )
+            for work_remote, remote, env_fn in zip(
+                self.work_remotes, self.remotes, env_fns
+            )
+        ]
+        for p in self.ps:
+            p.start()
+        for remote in self.work_remotes:
+            remote.close()
+
+        # 獲取 spaces
+        self.remotes[0].send(("get_spaces", None))
+        res = self.remotes[0].recv()
+        if isinstance(res, tuple) and len(res) == 2 and res[0] == "error":
+            raise RuntimeError(f"Failed to initialize worker 0: {res[1]}")
+        self.observation_space, self.action_space = res
+
+    def _stack_obs(self, obs_list):
+        return {
+            "states": np.stack([o["states"] for o in obs_list], axis=0),
+            "time_states": np.stack([o["time_states"] for o in obs_list], axis=0),
+        }
+
+    def reset(self, symbols: Optional[List[Optional[str]]] = None):
+        if symbols is None:
+            symbols = [None] * self.num_envs
+        for remote, sym in zip(self.remotes, symbols):
+            remote.send(("reset", sym))
+        obs_list = []
+        for remote in self.remotes:
+            res = remote.recv()
+            if isinstance(res, tuple) and len(res) == 2 and res[0] == "error":
+                raise RuntimeError(f"Error resetting env: {res[1]}")
+            obs_list.append(res)
+        return self._stack_obs(obs_list)
+
+    def reset_at(self, env_idx: int, symbol: Optional[str] = None):
+        self.remotes[env_idx].send(("reset", symbol))
+        res = self.remotes[env_idx].recv()
+        if isinstance(res, tuple) and len(res) == 2 and res[0] == "error":
+            raise RuntimeError(f"Error resetting env {env_idx}: {res[1]}")
+        return res
+
+    def step(self, actions: np.ndarray):
+        for remote, action in zip(self.remotes, actions):
+            remote.send(("step", action))
+        results = []
+        for remote in self.remotes:
+            res = remote.recv()
+            if isinstance(res, tuple) and len(res) == 2 and res[0] == "error":
+                raise RuntimeError(f"Error stepping env: {res[1]}")
+            results.append(res)
+        obs_list, rewards, dones, infos = zip(*results)
+        return (
+            self._stack_obs(obs_list),
+            np.array(rewards, dtype=np.float32),
+            np.array(dones, dtype=bool),
+            list(infos),
+        )
+
+    def close(self):
+        if self.closed:
+            return
+        for remote in self.remotes:
+            try:
+                remote.send(("close", None))
+            except Exception:
+                pass
+        for p in self.ps:
+            p.join(timeout=1.0)
+        self.closed = True
+
+    def __len__(self):
+        return self.num_envs
+

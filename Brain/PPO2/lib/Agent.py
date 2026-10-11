@@ -57,14 +57,16 @@ class PPO2Agent:
     def _preprocess_obs(self, obs):
         states = torch.as_tensor(obs["states"], dtype=torch.float32, device=self.device)
         time_states = torch.as_tensor(obs["time_states"], dtype=torch.float32, device=self.device)
+        is_single = False
         if states.dim() == 2:
             states = states.unsqueeze(0)
             time_states = time_states.unsqueeze(0)
-        return states, time_states
+            is_single = True
+        return states, time_states, is_single
 
     def get_action(self, obs, stochastic: bool = True) -> AgentOutput:
         self.model.eval()
-        states, time_states = self._preprocess_obs(obs)
+        states, time_states, is_single = self._preprocess_obs(obs)
         with torch.no_grad():
             mu, std, value = self.model(states, time_states)
             dist = torch.distributions.Normal(mu, std)
@@ -77,10 +79,17 @@ class PPO2Agent:
             action = torch.clamp(action, -1.0, 1.0)
             log_prob = dist.log_prob(action).sum(dim=-1)
 
+        if is_single:
+            return AgentOutput(
+                action=action.squeeze(0),  # 1D Tensor e.g., shape (action_dim,)
+                value=value.squeeze(0),    # 0D scalar Tensor
+                log_prob=log_prob.squeeze(0), # 0D scalar Tensor
+            )
+
         return AgentOutput(
-            action=action.squeeze(0),  # 1D Tensor e.g., shape (action_dim,)
-            value=value.squeeze(0),    # 0D scalar Tensor
-            log_prob=log_prob.squeeze(0), # 0D scalar Tensor
+            action=action,              # 2D Tensor e.g., shape (N, action_dim)
+            value=value,                # 1D Tensor e.g., shape (N,)
+            log_prob=log_prob,          # 1D Tensor e.g., shape (N,)
         )
 
     def evaluate_actions(self, states, time_states, actions):
