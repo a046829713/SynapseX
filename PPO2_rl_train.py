@@ -1,7 +1,6 @@
 import os
 import time
 from datetime import datetime
-from typing import Optional
 
 import hydra
 import numpy as np
@@ -119,6 +118,22 @@ class PPO2:
 
     def _prepare_agent(self):
         cfg_training = getattr(self.config, "training", self.config)
+        
+        
+        ssm_cfg_fast = {
+            "layer": "Mamba2",
+            "expand": 2,             # d_inner = 96 * 2 = 192
+            "d_ssm": 96,             # 核心關鍵: 192 維中，96 維走 SSM，剩餘 96 維走 Gated MLP
+            "headdim": 32,           # nheads = 96 // 32 = 3 個 SSM 頭
+            "d_state": 64,           # 狀態維度
+            "ngroups": 1,
+            "chunk_size": 64,
+            "d_conv": 4,
+            "rmsnorm": True,
+            "bias": False,
+            "conv_bias": True
+        }
+
         self.agent = PPO2Agent(
             ob_space=self.train_env.observation_space,
             ac_space=self.train_env.action_space,
@@ -128,8 +143,11 @@ class PPO2:
             nlayers=getattr(cfg_training, "NLAYERS", 2),
             time_features_out=getattr(cfg_training, "TIME_FEATURES_OUT", 32),
             dropout=getattr(cfg_training, "DROPOUT", 0.1),
+            ssm_cfg=ssm_cfg_fast
         )
+
         print(f"--Agent--: Initialized with model {self.agent.model.__class__.__name__}")
+
 
     def _prepare_optimizer(self):
         cfg_training = getattr(self.config, "training", self.config)
@@ -213,7 +231,7 @@ class PPO2:
             "approx_kl": float(np.mean(approx_kls)) if approx_kls else 0.0,
         }
 
-    def train(self, max_iterations: Optional[int] = None):
+    def train(self):
         cfg_training = getattr(self.config, "training", self.config)
         n_steps = getattr(cfg_training, "N_STEPS", 1000)
         batch_size = getattr(cfg_training, "BATCH_SIZE", 64)
@@ -242,10 +260,6 @@ class PPO2:
 
         try:
             while True:
-                if max_iterations is not None and iteration >= max_iterations:
-                    print(f"Reached max iterations ({max_iterations}). Stopping training.")
-                    break
-
                 # 1. Rollout sampling
                 for _ in range(n_steps):
                     out = self.agent.get_action(obs, stochastic=True)
@@ -341,9 +355,7 @@ class PPO2:
 def main(cfg: DictConfig):
     print(OmegaConf.to_yaml(cfg))
     ppo_instance = PPO2(cfg)
-    cfg_training = getattr(cfg, "training", cfg)
-    max_iters = getattr(cfg_training, "MAX_ITERATIONS", None)
-    ppo_instance.train(max_iterations=max_iters)
+    ppo_instance.train()
 
 
 if __name__ == "__main__":
