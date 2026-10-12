@@ -193,6 +193,7 @@ class PPO2:
             nlayers=getattr(cfg_training, "NLAYERS", 2),
             time_features_out=getattr(cfg_training, "TIME_FEATURES_OUT", 32),
             dropout=getattr(cfg_training, "DROPOUT", 0.1),
+            portfolio_dim=getattr(cfg_training, "PORTFOLIO_DIM", 3),
             ssm_cfg=ssm_cfg_fast,
         )
 

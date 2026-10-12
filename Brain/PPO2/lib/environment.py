@@ -241,7 +241,8 @@ class State_time_step(State_time_step_template):
                 * ((prev_close - self.open_price) / max(self.open_price, 1e-8))
             )
             data_res[:, len(self.info_list) + 1] = unrealized_return
-            data_res[:, len(self.info_list) + 2] = float(self.trade_bar)
+            # 特徵 3: 持倉時間累計 (以日為基準標準化: 48 根 30m K 棒為 1 天)
+            data_res[:, len(self.info_list) + 2] = float(self.trade_bar) / 48.0
         else:
             data_res[:, len(self.info_list) + 1] = 0.0
             data_res[:, len(self.info_list) + 2] = 0.0

@@ -19,6 +19,7 @@ class PPO2Agent:
         dropout: float = 0.1,
         mode: str = "full",
         init_log_std: float = -0.5,
+        portfolio_dim: int = 3,
         ssm_cfg: Optional[dict] = None,
         moe_cfg: Optional[dict] = None,
     ):
@@ -43,6 +44,7 @@ class PPO2Agent:
             dropout=dropout,
             mode=mode,
             init_log_std=init_log_std,
+            portfolio_dim=portfolio_dim,
             ssm_cfg=ssm_cfg,
             moe_cfg=moe_cfg,
         ).to(self.device)

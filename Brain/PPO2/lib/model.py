@@ -277,15 +277,20 @@ class MambaContinuousActorCritic(nn.Module):
         dropout: float = 0.1,
         mode: str = "full",
         init_log_std: float = -0.5,
+        portfolio_dim: int = 3,
         ssm_cfg: Optional[dict] = None,
         moe_cfg: Optional[dict] = None,
     ):
         super().__init__()
+        assert d_model > portfolio_dim, f"d_model ({d_model}) must be greater than portfolio_dim ({portfolio_dim})"
+        self.portfolio_dim = portfolio_dim
+        self.market_dim = d_model - self.portfolio_dim
+
         self.time_embedding = SineActivation(
             in_features=time_features_in, out_features=time_features_out
         )
-        self.dean = DAIN_Layer(mode=mode, input_dim=d_model)
-        self.market_embedding = nn.Linear(d_model, hidden_size)
+        self.dean = DAIN_Layer(mode=mode, input_dim=self.market_dim)  # DAIN 只處理市場數據 (14 維)
+        self.market_embedding = nn.Linear(d_model, hidden_size)       # 接收拼接後的 17 維特徵
         self.time_emb_projection = nn.Linear(time_features_out, hidden_size)
 
         self.gate_layer = nn.Sequential(
@@ -343,10 +348,14 @@ class MambaContinuousActorCritic(nn.Module):
         time_emb = self.time_embedding(time_states)
         time_proj = self.time_emb_projection(time_emb)
 
-        market_data = states.transpose(1, 2)
-        market_data = self.dean(market_data)
-        market_data = market_data.transpose(1, 2)
-        market_emb = self.market_embedding(market_data)
+        # 市場數據流 (僅前 market_dim 維進入 DAIN 歸一化)
+        market_raw = states[:, :, :self.market_dim].transpose(1, 2)
+        market_norm = self.dean(market_raw).transpose(1, 2)
+
+        # 帳戶/投資組合特徵 (後 portfolio_dim 維繞過 DAIN，保持真實數值信號)
+        portfolio_raw = states[:, :, self.market_dim:]
+        combined_states = torch.cat([market_norm, portfolio_raw], dim=-1)
+        market_emb = self.market_embedding(combined_states)
 
         # 2. 門控融合
         gate = self.gate_layer(torch.cat([market_emb, time_proj], dim=-1))
