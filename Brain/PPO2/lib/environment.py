@@ -323,25 +323,21 @@ class TrainingEnv(BaseTradingEnv):
 
     def __init__(self, config, preloaded_data: Optional[Dict[str, Prices]] = None):
         self.config = config
-        cfg_training = getattr(self.config, "training", self.config)
+        cfg_training = self.config.training
         self.unique_symbols = cfg_training.UNIQUE_SYMBOLS
         self.data_type_name = "train_data"
         self._data_cache = preloaded_data if preloaded_data is not None else {}
 
         state_params = {
             "bars_count": cfg_training.BARS_COUNT,
-            "commission_perc": getattr(
-                cfg_training, "MODEL_DEFAULT_COMMISSION_PERC_TRAING", 0.0003
-            ),
+            "commission_perc": cfg_training.MODEL_DEFAULT_COMMISSION_PERC_TRAING,
             "model_train": True,
-            "default_slippage": getattr(cfg_training, "DEFAULT_SLIPPAGE", 0.0001),
-            "N_steps": getattr(
-                cfg_training, "EPISODE_STEPS", getattr(cfg_training, "N_STEPS", 500)
-            ),
-            "deadzone_threshold": getattr(cfg_training, "DEADZONE_THRESHOLD", 0.01),
-            "downside_window_size": getattr(cfg_training, "DOWNSIDE_WINDOW_SIZE", 60),
-            "w1_step_return": getattr(cfg_training, "W1_STEP_RETURN", 1.0),
-            "w2_downside_ratio": getattr(cfg_training, "W2_DOWNSIDE_RATIO", 1.0),
+            "default_slippage": cfg_training.DEFAULT_SLIPPAGE,
+            "N_steps": cfg_training.EPISODE_STEPS,
+            "deadzone_threshold": cfg_training.DEADZONE_THRESHOLD,
+            "downside_window_size": cfg_training.DOWNSIDE_WINDOW_SIZE,
+            "w1_step_return": cfg_training.W1_STEP_RETURN,
+            "w2_downside_ratio": cfg_training.W2_DOWNSIDE_RATIO,
         }
 
         super().__init__(state=State_time_step(**state_params))

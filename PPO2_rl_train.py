@@ -1,7 +1,6 @@
 import os
 import time
 from datetime import datetime
-
 from collections import deque
 import hydra
 import numpy as np
@@ -9,9 +8,9 @@ import torch
 import torch.nn.functional as F
 import torch.optim as optim
 from omegaconf import DictConfig, OmegaConf
-
 from Brain.Common.DataFeature import OriginalDataFeature
 from Brain.Common.PytorchModelTool import ModelTool
+from Brain.Common.optimization import build_optimizer
 from Brain.PPO2.lib.Agent import PPO2Agent
 from Brain.PPO2.lib.environment import TrainingEnv, SubprocVecEnv
 from Brain.PPO2.lib.experience import RolloutBuffer
@@ -40,74 +39,20 @@ class SymbolQueue:
 
 
 
-def build_optimizer(
-    model: torch.nn.Module,
-    lr: float = 3e-4,
-    weight_decay: float = 1e-4,
-    base_lr: float = 1e-4,
-) -> optim.AdamW:
-    """
-    建立專屬 AdamW 優化器：
-    1. `dean` (DAIN_Layer) 的特殊層 (`mean_layer`, `scaling_layer`, `gating_layer`)
-       使用獨立學習率且 0 weight decay。
-    2. `LayerNorm`、`bias` 與 `log_std` 參數排除 weight decay。
-    3. 其餘參數施加標準 weight decay。
-    """
-    dean_params_ids = set()
-    if hasattr(model, "dean"):
-        dean_params_ids.update(id(p) for p in model.dean.parameters())
-
-    decay_params = []
-    no_decay_params = []
-
-    for name, param in model.named_parameters():
-        if not param.requires_grad or id(param) in dean_params_ids:
-            continue
-        if "norm" in name or name.endswith(".bias") or "log_std" in name:
-            no_decay_params.append(param)
-        else:
-            decay_params.append(param)
-
-    param_groups = [
-        {"params": decay_params, "lr": lr, "weight_decay": weight_decay},
-        {"params": no_decay_params, "lr": lr, "weight_decay": 0.0},
-    ]
-
-    if hasattr(model, "dean"):
-        param_groups.extend([
-            {
-                "params": list(model.dean.mean_layer.parameters()),
-                "lr": base_lr * model.dean.mean_lr,
-                "weight_decay": 0.0,
-            },
-            {
-                "params": list(model.dean.scaling_layer.parameters()),
-                "lr": base_lr * model.dean.scale_lr,
-                "weight_decay": 0.0,
-            },
-            {
-                "params": list(model.dean.gating_layer.parameters()),
-                "lr": base_lr * model.dean.gate_lr,
-                "weight_decay": 0.0,
-            },
-        ])
-
-    return optim.AdamW(param_groups)
-
 
 class PPO2:
     def __init__(self, cfg: DictConfig):
         self.config = cfg
+        self.cfg_training = cfg.training
         self._prepare_device()
         self._prepare_symbols()
         self._prepare_env()
         self._prepare_agent()
         self._prepare_optimizer()
 
-        cfg_training = getattr(self.config, "training", self.config)
         self.buffer = RolloutBuffer(
-            gamma=getattr(cfg_training, "GAMMA", 0.99),
-            lam=getattr(cfg_training, "GAE_LAMBDA", 0.95),
+            gamma=self.cfg_training.GAMMA,
+            lam=self.cfg_training.GAE_LAMBDA,
         )
         self.model_tool = ModelTool()
 
@@ -126,8 +71,7 @@ class PPO2:
         symbol_files = [f for f in os.listdir(train_data_path) if f.endswith(".csv")]
         unique_symbols = sorted(list(set(f.split(".")[0] for f in symbol_files)))
 
-        cfg_training = getattr(self.config, "training", self.config)
-        cfg_training.UNIQUE_SYMBOLS = unique_symbols
+        self.cfg_training.UNIQUE_SYMBOLS = unique_symbols
         print(f"--SYMBOLNAMES--: Total {len(unique_symbols)} unique symbols found.")
 
         # 全域商品預載入快取，供所有 Worker 零拷貝共享讀取，徹底杜絕重複讀取 CSV 與記憶體膨脹
@@ -144,8 +88,8 @@ class PPO2:
 
         self.symbol_queue = SymbolQueue(unique_symbols)
 
-        saves_tag = getattr(cfg_training, "SAVES_TAG", "saves")
-        bars_count = getattr(cfg_training, "BARS_COUNT", 300)
+        saves_tag = self.cfg_training.SAVES_TAG
+        bars_count = self.cfg_training.BARS_COUNT
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         self.saves_path = os.path.join(
             base_dir, saves_tag, f"{timestamp}-{bars_count}k-"
@@ -154,8 +98,7 @@ class PPO2:
         print(f"--SAVES_PATH--: {self.saves_path}")
 
     def _prepare_env(self):
-        cfg_training = getattr(self.config, "training", self.config)
-        self.num_workers = getattr(cfg_training, "NUM_WORKERS", 8)
+        self.num_workers = self.cfg_training.NUM_WORKERS
 
         def make_env():
             return TrainingEnv(config=self.config, preloaded_data=self.preloaded_data)
@@ -168,45 +111,25 @@ class PPO2:
         )
 
     def _prepare_agent(self):
-        cfg_training = getattr(self.config, "training", self.config)
-
-        ssm_cfg_fast = {
-            "layer": "Mamba2",
-            "expand": 2,  # d_inner = 96 * 2 = 192
-            "d_ssm": 96,  # 核心關鍵: 192 維中，96 維走 SSM，剩餘 96 維走 Gated MLP
-            "headdim": 32,  # nheads = 96 // 32 = 3 個 SSM 頭
-            "d_state": 64,  # 狀態維度
-            "ngroups": 1,
-            "chunk_size": 64,
-            "d_conv": 4,
-            "rmsnorm": True,
-            "bias": False,
-            "conv_bias": True,
-        }
+        ssm_cfg = OmegaConf.to_container(self.cfg_training.SSM_CFG, resolve=True)
 
         self.agent = PPO2Agent(
             ob_space=self.vec_env.observation_space,
             ac_space=self.vec_env.action_space,
             device=self.device,
-            seq_dim=getattr(cfg_training, "BARS_COUNT", 300),
-            hidden_size=getattr(cfg_training, "HIDDEN_SIZE", 96),
-            nlayers=getattr(cfg_training, "NLAYERS", 2),
-            time_features_out=getattr(cfg_training, "TIME_FEATURES_OUT", 32),
-            dropout=getattr(cfg_training, "DROPOUT", 0.1),
-            portfolio_dim=getattr(cfg_training, "PORTFOLIO_DIM", 3),
-            ssm_cfg=ssm_cfg_fast,
+            seq_dim=self.cfg_training.BARS_COUNT,
+            hidden_size=self.cfg_training.HIDDEN_SIZE,
+            nlayers=self.cfg_training.NLAYERS,
+            time_features_out=self.cfg_training.TIME_FEATURES_OUT,
+            dropout=self.cfg_training.DROPOUT,
+            portfolio_dim=self.cfg_training.PORTFOLIO_DIM,
+            ssm_cfg=ssm_cfg,
         )
-
-        print(
-            f"--Agent--: Initialized with model {self.agent.model.__class__.__name__}"
-        )
-
 
     def _prepare_optimizer(self):
-        cfg_training = getattr(self.config, "training", self.config)
-        lr = getattr(cfg_training, "LEARNING_RATE", 3e-4)
-        weight_decay = getattr(cfg_training, "WEIGHT_DECAY", 1e-4)
-        base_lr = getattr(cfg_training, "BASE_LR", 1e-4)
+        lr = self.cfg_training.LEARNING_RATE
+        weight_decay = self.cfg_training.WEIGHT_DECAY
+        base_lr = self.cfg_training.BASE_LR
         self.optimizer = build_optimizer(
             self.agent.model, lr=lr, weight_decay=weight_decay, base_lr=base_lr
         )
@@ -285,16 +208,15 @@ class PPO2:
         }
 
     def train(self):
-        cfg_training = getattr(self.config, "training", self.config)
         num_workers = self.num_workers
-        horizon_steps = getattr(cfg_training, "HORIZON_STEPS", 500)
-        batch_size = getattr(cfg_training, "BATCH_SIZE", 64)
-        ppo_epochs = getattr(cfg_training, "PPO_EPOCHS", 4)
-        clip_eps = getattr(cfg_training, "CLIP_EPS", 0.2)
-        vf_coef = getattr(cfg_training, "VF_COEF", 0.5)
-        ent_coef = getattr(cfg_training, "ENT_COEF", 0.01)
-        max_grad_norm = getattr(cfg_training, "MAX_GRAD_NORM", 0.5)
-        checkpoint_every = getattr(cfg_training, "CHECKPOINT_EVERY_ITER", 10)
+        horizon_steps = self.cfg_training.HORIZON_STEPS
+        batch_size = self.cfg_training.BATCH_SIZE
+        ppo_epochs = self.cfg_training.PPO_EPOCHS
+        clip_eps = self.cfg_training.CLIP_EPS
+        vf_coef = self.cfg_training.VF_COEF
+        ent_coef = self.cfg_training.ENT_COEF
+        max_grad_norm = self.cfg_training.MAX_GRAD_NORM
+        checkpoint_every = self.cfg_training.CHECKPOINT_EVERY_ITER
 
         initial_symbols = [self.symbol_queue.get_next() for _ in range(num_workers)]
         obs = self.vec_env.reset(symbols=initial_symbols)
@@ -424,7 +346,6 @@ class PPO2:
 
 @hydra.main(version_base=None, config_path="configs", config_name="config")
 def main(cfg: DictConfig):
-    print(OmegaConf.to_yaml(cfg))
     ppo_instance = PPO2(cfg)
     ppo_instance.train()
 

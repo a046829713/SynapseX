@@ -12,7 +12,7 @@ WIN_PAYOFF_WEIGHT: 1.0
 
 # PPO Hyperparameters
 LEARNING_RATE: 0.0003
-WEIGHT_DECAY: 0.0001
+WEIGHT_DECAY: 0
 BASE_LR: 0.0001
 BATCH_SIZE: 64
 PPO_EPOCHS: 4
@@ -21,3 +21,32 @@ VF_COEF: 0.5
 ENT_COEF: 0.01
 MAX_GRAD_NORM: 0.5
 CHECKPOINT_EVERY_ITER: 10
+GAMMA: 0.99
+GAE_LAMBDA: 0.95
+
+# Model Architecture (Mamba2 Continuous Actor-Critic)
+HIDDEN_SIZE: 96
+NLAYERS: 2
+TIME_FEATURES_OUT: 32
+DROPOUT: 0.1
+PORTFOLIO_DIM: 3
+
+# SSM / Mamba2 Configuration
+SSM_CFG:
+  layer: "Mamba2"
+  expand: 2           # d_inner = 96 * 2 = 192
+  d_ssm: 96           # 核心關鍵: 192 維中，96 維走 SSM，剩餘 96 維走 Gated MLP
+  headdim: 32         # nheads = 96 // 32 = 3 個 SSM 頭
+  d_state: 64         # 狀態維度
+  ngroups: 1
+  chunk_size: 64
+  d_conv: 4
+  rmsnorm: true
+  bias: false
+  conv_bias: true
+
+# Environment Penalty / Downside Risk Parameters
+DEADZONE_THRESHOLD: 0.01
+DOWNSIDE_WINDOW_SIZE: 60
+W1_STEP_RETURN: 1.0
+W2_DOWNSIDE_RATIO: 1.0
