@@ -121,7 +121,6 @@ class PPO2:
             hidden_size=self.cfg_training.HIDDEN_SIZE,
             nlayers=self.cfg_training.NLAYERS,
             time_features_out=self.cfg_training.TIME_FEATURES_OUT,
-            dropout=self.cfg_training.DROPOUT,
             portfolio_dim=self.cfg_training.PORTFOLIO_DIM,
             ssm_cfg=ssm_cfg,
         )

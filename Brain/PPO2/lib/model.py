@@ -274,7 +274,6 @@ class MambaContinuousActorCritic(nn.Module):
         hidden_size: int = 96,
         nlayers: int = 2,
         time_features_out: int = 32,
-        dropout: float = 0.1,
         mode: str = "full",
         init_log_std: float = -0.5,
         portfolio_dim: int = 3,
@@ -306,7 +305,7 @@ class MambaContinuousActorCritic(nn.Module):
             d_model=hidden_size,
             n_layer=nlayers,
             d_intermediate=256,
-            dropout=dropout,
+            dropout=None,
             ssm_cfg=ssm_cfg,
             moe_cfg=moe_cfg,
         )
@@ -318,11 +317,9 @@ class MambaContinuousActorCritic(nn.Module):
             nn.Linear(flat_dim, 512),
             nn.LayerNorm(512),
             nn.ReLU(),
-            nn.Dropout(dropout),
             nn.Linear(512, 256),
             nn.LayerNorm(256),
             nn.ReLU(),
-            nn.Dropout(dropout),
             nn.Linear(256, 1),
         )
 
@@ -331,11 +328,9 @@ class MambaContinuousActorCritic(nn.Module):
             nn.Linear(flat_dim, 512),
             nn.LayerNorm(512),
             nn.ReLU(),
-            nn.Dropout(dropout),
             nn.Linear(512, 256),
             nn.LayerNorm(256),
             nn.ReLU(),
-            nn.Dropout(dropout),
             nn.Linear(256, action_dim),
             nn.Tanh(),
         )

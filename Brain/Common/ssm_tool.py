@@ -140,11 +140,11 @@ class GatedMLP(nn.Module):
     def forward(self, x):
         y = self.fc1(x)
         y, gate = y.chunk(2, dim=-1)
-        if hasattr(self, 'dropout'):
+        if self.dropout is not None:
             y = self.dropout(y)  # 主路径 dropout
             gate = self.dropout(gate)  # 门控路径 dropout
         y = y * self.activation(gate)
-        if hasattr(self, 'dropout'):
+        if self.dropout is not None:
             y = self.dropout(y)  # 激活后 dropout
         y = self.fc2(y)
         return y
