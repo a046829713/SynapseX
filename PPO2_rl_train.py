@@ -245,18 +245,36 @@ class PPO2:
                 for _ in range(horizon_steps):
                     out = self.agent.get_action(obs, stochastic=True)
                     actions_np = out.action.cpu().numpy()
-                    next_obs, rewards, dones, infos = self.vec_env.step(actions_np)
+                    next_obs, rewards, terminateds, truncateds, infos = self.vec_env.step(actions_np)
+
+                    # Option A: Terminal Value Bootstrap Adjustment
+                    stored_rewards = rewards.copy()
+                    is_trunc = truncateds & (~terminateds)
+                    if np.any(is_trunc):
+                        trunc_indices = np.where(is_trunc)[0]
+                        trunc_obs = {
+                            "states": next_obs["states"][trunc_indices],
+                            "time_states": next_obs["time_states"][trunc_indices],
+                        }
+                        with torch.no_grad():
+                            trunc_out = self.agent.get_action(trunc_obs, stochastic=False)
+                            trunc_values = trunc_out.value.cpu().numpy().reshape(-1)
+
+                        gamma = float(self.cfg_training.GAMMA)
+                        stored_rewards[trunc_indices] += gamma * trunc_values
+
+                    dones = terminateds | truncateds
 
                     self.buffer.store(
                         obs,
                         out.action.cpu(),
                         out.log_prob.cpu(),
-                        rewards,
+                        stored_rewards,
                         next_obs,
                         dones,
                         out.value.cpu(),
                     )
-                    episode_rewards += rewards
+                    episode_rewards += rewards  # Record raw trading returns
                     episode_steps += 1
                     total_steps += num_workers
                     obs = next_obs

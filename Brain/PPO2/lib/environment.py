@@ -210,11 +210,10 @@ class State_time_step(State_time_step_template):
         # 6. 推進時間步與判斷終止
         self._offset += 1
         self.game_steps += 1
-        done = bool(self._offset >= self._prices.close.shape[0] - 1)
-        if self.game_steps >= self.N_steps and self.model_train:
-            done = True
+        terminated = bool(self._offset >= self._prices.close.shape[0] - 1)
+        truncated = bool(self.game_steps >= self.N_steps and self.model_train)
 
-        return reward, done
+        return reward, terminated, truncated
 
     def encode(self):
         """
@@ -293,7 +292,7 @@ class BaseTradingEnv(gym.Env, ABC):
         """
         action_val = float(np.asarray(action).squeeze())
         action_val = float(np.clip(action_val, -1.0, 1.0))
-        reward, done = self._state.step(action_val)
+        reward, terminated, truncated = self._state.step(action_val)
         obs = self._state.encode()
 
         info = {
@@ -303,7 +302,7 @@ class BaseTradingEnv(gym.Env, ABC):
             "postion": float(self._state.position),
         }
 
-        return obs, reward, done, info
+        return obs, reward, terminated, truncated, info
 
     def engine_info(self):
         if isinstance(self._state, State_time_step):
@@ -406,8 +405,8 @@ def _subproc_worker(remote, parent_remote, env_fn):
         while True:
             cmd, data = remote.recv()
             if cmd == "step":
-                obs, reward, done, info = env.step(data)
-                remote.send((obs, reward, done, info))
+                obs, reward, terminated, truncated, info = env.step(data)
+                remote.send((obs, reward, terminated, truncated, info))
             elif cmd == "reset":
                 obs = env.reset(symbol=data)
                 remote.send(obs)
@@ -505,11 +504,12 @@ class SubprocVecEnv:
             if isinstance(res, tuple) and len(res) == 2 and res[0] == "error":
                 raise RuntimeError(f"Error stepping env: {res[1]}")
             results.append(res)
-        obs_list, rewards, dones, infos = zip(*results)
+        obs_list, rewards, terminateds, truncateds, infos = zip(*results)
         return (
             self._stack_obs(obs_list),
             np.array(rewards, dtype=np.float32),
-            np.array(dones, dtype=bool),
+            np.array(terminateds, dtype=bool),
+            np.array(truncateds, dtype=bool),
             list(infos),
         )
 
