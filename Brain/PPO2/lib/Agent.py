@@ -75,21 +75,25 @@ class PPO2Agent:
             else:
                 action = mu
 
-            # 連續動作裁剪至合法邊界 [-1.0, 1.0]
-            action = torch.clamp(action, -1.0, 1.0)
+            # 根據 OpenAI Baselines / CleanRL 標準實作：
+            # 1. log_prob 必須基於未裁剪的原始高斯採樣動作計算
+            # 2. clipped_action 供環境 step 執行，確保環境介面在合法範圍內
             log_prob = dist.log_prob(action).sum(dim=-1)
+            clipped_action = torch.clamp(action, -1.0, 1.0)
 
         if is_single:
             return AgentOutput(
-                action=action.squeeze(0),  # 1D Tensor e.g., shape (action_dim,)
-                value=value.squeeze(0),    # 0D scalar Tensor
-                log_prob=log_prob.squeeze(0), # 0D scalar Tensor
+                action=action.squeeze(0),                  # 原始未裁剪動作
+                clipped_action=clipped_action.squeeze(0),  # 裁剪後動作
+                value=value.squeeze(0),
+                log_prob=log_prob.squeeze(0),
             )
 
         return AgentOutput(
-            action=action,              # 2D Tensor e.g., shape (N, action_dim)
-            value=value,                # 1D Tensor e.g., shape (N,)
-            log_prob=log_prob,          # 1D Tensor e.g., shape (N,)
+            action=action,                                 # 原始未裁剪動作 (N, action_dim)
+            clipped_action=clipped_action,                 # 裁剪後動作 (N, action_dim)
+            value=value,                                   # (N,)
+            log_prob=log_prob,                             # (N,)
         )
 
     def evaluate_actions(self, states, time_states, actions):

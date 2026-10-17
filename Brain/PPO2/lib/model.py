@@ -251,18 +251,62 @@ def init_(layer, std=1.0):
     return layer
 
 
+class TemporalAttentionPool(nn.Module):
+    """
+    Multi-horizon temporal pooling module for sequential financial RL.
+    Extracts three complementary representations from Mamba output H of shape [B, L, D]:
+      1. h_last: Causal final hidden state H[:, -1, :] (immediate market state at decision step T).
+      2. h_short: Mean-pooled short-term window H[:, -K:, :] (recent micro-trend & momentum).
+      3. h_attn: Query-guided cross-time attention over all L steps using h_last as query
+                 (captures historical support/resistance pivots and regime shifts).
+    """
 
+    def __init__(self, hidden_size: int, short_window: int = 16):
+        super().__init__()
+        self.hidden_size = hidden_size
+        self.short_window = short_window
+        self.scale = 1.0 / math.sqrt(hidden_size)
+
+        self.q_proj = init_(nn.Linear(hidden_size, hidden_size), std=1.0)
+        self.k_proj = init_(nn.Linear(hidden_size, hidden_size), std=1.0)
+        self.v_proj = init_(nn.Linear(hidden_size, hidden_size), std=1.0)
+
+    def forward(self, h: torch.Tensor) -> torch.Tensor:
+        # h: [B, L, D]
+        h_last = h[:, -1, :]  # [B, D]
+
+        k_win = min(self.short_window, h.size(1))
+        h_short = h[:, -k_win:, :].mean(dim=1)  # [B, D]
+
+        # Query-guided temporal attention: h_last queries the full sequence H
+        q = self.q_proj(h_last).unsqueeze(1)  # [B, 1, D]
+        k = self.k_proj(h)  # [B, L, D]
+        v = self.v_proj(h)  # [B, L, D]
+
+        attn_scores = torch.bmm(q, k.transpose(1, 2)) * self.scale  # [B, 1, L]
+        attn_weights = F.softmax(attn_scores, dim=-1)  # [B, 1, L]
+        h_attn = torch.bmm(attn_weights, v).squeeze(1)  # [B, D]
+
+        return torch.cat([h_last, h_short, h_attn], dim=-1)  # [B, 3 * D]
 
 
 class MambaContinuousActorCritic(nn.Module):
     """
-    Mamba 連續動作 Actor-Critic 網路架構：
-    - 雙流特徵編碼：DAIN_Layer (市場數據) + SineActivation (時間特徵)
-    - 自適應門控融合：Sigmoid gate + GELU feature embedding
-    - 時序骨幹：MixerModel (Mamba SSM)
-    - Critic 頭：輸出狀態期望價值 V(s)
-    - Actor 頭：輸出連續動作均值 mu in [-1.0, 1.0] (經由 Tanh)
-    - 獨立可學習 log_std：連續動作高斯分佈標準差
+    Mamba2 Continuous Action Actor-Critic Network for Financial Reinforcement Learning:
+      - Decoupled Dual-Stream Input:
+          * Market stream (first d_model - portfolio_dim features) normalized via DAIN_Layer.
+          * Portfolio stream (last portfolio_dim features: position, unrealized_return, trade_bar/48)
+            bypasses DAIN to preserve real account state signals.
+      - Gated Temporal-Market Fusion: SineActivation (Time2Vec) + Sigmoid Gate + GELU embedding.
+      - Temporal Backbone: MixerModel (Mamba / Mamba2 SSM, deterministic without dropout).
+      - Multi-Horizon Temporal Pooling + Late Portfolio Skip Connection:
+          * TemporalAttentionPool compresses [B, L, D] -> [B, 3*D] with O(D^2) parameters.
+          * Current-step portfolio context is encoded into [B, portfolio_emb_dim] and concatenated
+            directly into the Actor-Critic trunk for unattenuated position & PnL awareness.
+      - Orthogonal-Initialized Compact Heads:
+          * Critic head outputs scalar state value V(s) (output gain=1.0).
+          * Actor head outputs continuous action mean mu in [-1.0, 1.0] (output gain=0.01 + Tanh).
+          * Clamped learnable log_std ensures numerical stability.
     """
 
     def __init__(
@@ -279,17 +323,28 @@ class MambaContinuousActorCritic(nn.Module):
         portfolio_dim: int = 3,
         ssm_cfg: Optional[dict] = None,
         moe_cfg: Optional[dict] = None,
+        d_intermediate: Optional[int] = None,
+        short_window: int = 16,
+        portfolio_emb_dim: Optional[int] = None,
+        log_std_min: float = -5.0,
+        log_std_max: float = 1.0,
     ):
         super().__init__()
-        assert d_model > portfolio_dim, f"d_model ({d_model}) must be greater than portfolio_dim ({portfolio_dim})"
+        assert d_model > portfolio_dim, (
+            f"d_model ({d_model}) must be greater than portfolio_dim ({portfolio_dim})"
+        )
+        self.seq_dim = seq_dim
+        self.hidden_size = hidden_size
         self.portfolio_dim = portfolio_dim
         self.market_dim = d_model - self.portfolio_dim
+        self.log_std_min = log_std_min
+        self.log_std_max = log_std_max
 
         self.time_embedding = SineActivation(
             in_features=time_features_in, out_features=time_features_out
         )
-        self.dean = DAIN_Layer(mode=mode, input_dim=self.market_dim)  # DAIN 只處理市場數據 (14 維)
-        self.market_embedding = nn.Linear(d_model, hidden_size)       # 接收拼接後的 17 維特徵
+        self.dean = DAIN_Layer(mode=mode, input_dim=self.market_dim)
+        self.market_embedding = nn.Linear(d_model, hidden_size)
         self.time_emb_projection = nn.Linear(time_features_out, hidden_size)
 
         self.gate_layer = nn.Sequential(
@@ -301,69 +356,110 @@ class MambaContinuousActorCritic(nn.Module):
             nn.GELU(),
         )
 
+        # When d_intermediate is None, GatedMLP automatically scales to 8/3 * hidden_size (multiple of 128)
         self.mixer = MixerModel(
             d_model=hidden_size,
             n_layer=nlayers,
-            d_intermediate=256,
+            d_intermediate=d_intermediate,
             dropout=None,
             ssm_cfg=ssm_cfg,
             moe_cfg=moe_cfg,
         )
 
-        flat_dim = seq_dim * hidden_size
-
-        # Critic 頭 (估計狀態價值 V(s))
-        self.fc_val = nn.Sequential(
-            nn.Linear(flat_dim, 512),
-            nn.LayerNorm(512),
-            nn.ReLU(),
-            nn.Linear(512, 256),
-            nn.LayerNorm(256),
-            nn.ReLU(),
-            nn.Linear(256, 1),
+        # Multi-horizon temporal pooling: [B, L, D] -> [B, 3 * D]
+        self.temporal_pool = TemporalAttentionPool(
+            hidden_size=hidden_size, short_window=short_window
         )
 
-        # Actor 頭 (輸出連續動作均值 mu，經 Tanh 限制在 [-1.0, 1.0])
+        # Late-fusion portfolio state encoder for direct position/PnL/duration awareness
+        gain_hid = math.sqrt(2)
+        p_emb_dim = (
+            portfolio_emb_dim
+            if portfolio_emb_dim is not None
+            else max(32, hidden_size // 8)
+        )
+        if self.portfolio_dim > 0:
+            self.portfolio_encoder = nn.Sequential(
+                init_(nn.Linear(self.portfolio_dim, p_emb_dim), std=gain_hid),
+                nn.LayerNorm(p_emb_dim),
+                nn.SiLU(),
+            )
+            trunk_dim = hidden_size * 3 + p_emb_dim
+        else:
+            self.portfolio_encoder = None
+            trunk_dim = hidden_size * 3
+
+        self.trunk_norm = nn.LayerNorm(trunk_dim)
+
+        # Proportional Actor & Critic hidden dimensions (256 -> 128 at D=96; 512 -> 256 at D=512)
+        head_h1 = max(256, hidden_size)
+        head_h2 = max(128, hidden_size // 2)
+
+        # Critic Head (estimates state value V(s))
+        self.fc_val = nn.Sequential(
+            init_(nn.Linear(trunk_dim, head_h1), std=gain_hid),
+            nn.LayerNorm(head_h1),
+            nn.SiLU(),
+            init_(nn.Linear(head_h1, head_h2), std=gain_hid),
+            nn.LayerNorm(head_h2),
+            nn.SiLU(),
+            init_(nn.Linear(head_h2, 1), std=1.0),
+        )
+
+        # Actor Head (outputs continuous action mean mu in [-1.0, 1.0])
         self.fc_actor = nn.Sequential(
-            nn.Linear(flat_dim, 512),
-            nn.LayerNorm(512),
-            nn.ReLU(),
-            nn.Linear(512, 256),
-            nn.LayerNorm(256),
-            nn.ReLU(),
-            nn.Linear(256, action_dim),
+            init_(nn.Linear(trunk_dim, head_h1), std=gain_hid),
+            nn.LayerNorm(head_h1),
+            nn.SiLU(),
+            init_(nn.Linear(head_h1, head_h2), std=gain_hid),
+            nn.LayerNorm(head_h2),
+            nn.SiLU(),
+            init_(nn.Linear(head_h2, action_dim), std=0.01),
             nn.Tanh(),
         )
 
-        # 連續動作 log_std (可學習參數，獨立於狀態)
+        # State-independent learnable log_std parameter
         self.log_std = nn.Parameter(torch.ones(action_dim) * init_log_std)
 
     def forward(self, states: torch.Tensor, time_states: torch.Tensor):
-        # 1. 提取時間特徵與市場特徵
+        # 1. Extract time features and decoupled market/portfolio features
         time_emb = self.time_embedding(time_states)
         time_proj = self.time_emb_projection(time_emb)
 
-        # 市場數據流 (僅前 market_dim 維進入 DAIN 歸一化)
-        market_raw = states[:, :, :self.market_dim].transpose(1, 2)
+        # Market stream (only first market_dim features enter DAIN normalization)
+        market_raw = states[:, :, : self.market_dim].transpose(1, 2)
         market_norm = self.dean(market_raw).transpose(1, 2)
 
-        # 帳戶/投資組合特徵 (後 portfolio_dim 維繞過 DAIN，保持真實數值信號)
-        portfolio_raw = states[:, :, self.market_dim:]
+        # Portfolio stream (last portfolio_dim features bypass DAIN)
+        portfolio_raw = states[:, :, self.market_dim :]
         combined_states = torch.cat([market_norm, portfolio_raw], dim=-1)
         market_emb = self.market_embedding(combined_states)
 
-        # 2. 門控融合
+        # 2. Gated feature fusion
         gate = self.gate_layer(torch.cat([market_emb, time_proj], dim=-1))
         fused = self.feature_embedding(gate * market_emb + (1 - gate) * time_proj)
 
-        # 3. Mamba 時序提煉
+        # 3. Mamba2 temporal backbone
         out, _ = self.mixer(fused)
-        flat = out.view(out.size(0), -1)
 
-        # 4. 頭部輸出
-        value = self.fc_val(flat).squeeze(-1)  # [B]
-        mu = self.fc_actor(flat)  # [B, action_dim]
-        std = self.log_std.exp().expand_as(mu)  # [B, action_dim]
+        # 4. Multi-horizon temporal pooling + late-fusion portfolio skip connection
+        temporal_feat = self.temporal_pool(out)  # [B, 3 * hidden_size]
+        if self.portfolio_encoder is not None:
+            current_portfolio = portfolio_raw[:, -1, :]  # [B, portfolio_dim]
+            portfolio_feat = self.portfolio_encoder(current_portfolio)  # [B, portfolio_emb_dim]
+            trunk = torch.cat([temporal_feat, portfolio_feat], dim=-1)
+        else:
+            trunk = temporal_feat
+
+        trunk = self.trunk_norm(trunk)
+
+        # 5. Actor & Critic head outputs
+        value = self.fc_val(trunk).squeeze(-1)  # [B]
+        mu = self.fc_actor(trunk)  # [B, action_dim]
+        clamped_log_std = torch.clamp(
+            self.log_std, self.log_std_min, self.log_std_max
+        )
+        std = clamped_log_std.exp().expand_as(mu)  # [B, action_dim]
 
         return mu, std, value
 
@@ -372,7 +468,9 @@ class MambaContinuousActorCritic(nn.Module):
 class AgentOutput:
     """Agent在與環境互動時的輸出。"""
 
-    action: torch.Tensor
-    value: torch.Tensor
-    log_prob: torch.Tensor
+    action: torch.Tensor          # 未裁剪的原始動作 (Unclipped / Raw Action)，用於 Buffer 儲存與策略訓練
+    value: torch.Tensor           # 狀態價值估計 V(s)
+    log_prob: torch.Tensor        # 基於未裁剪動作計算的高斯對數機率 log π(action)
+    clipped_action: Optional[torch.Tensor] = None  # 裁剪至合法邊界 [-1.0, 1.0] 的動作，專供環境執行
+
 

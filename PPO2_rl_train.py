@@ -244,8 +244,13 @@ class PPO2:
                 # 1. Rollout sampling across all N workers
                 for _ in range(horizon_steps):
                     out = self.agent.get_action(obs, stochastic=True)
-                    actions_np = out.action.cpu().numpy()
-                    next_obs, rewards, terminateds, truncateds, infos = self.vec_env.step(actions_np)
+                    # 傳入環境執行已裁剪動作
+                    env_actions_np = (
+                        out.clipped_action.cpu().numpy()
+                        if out.clipped_action is not None
+                        else np.clip(out.action.cpu().numpy(), -1.0, 1.0)
+                    )
+                    next_obs, rewards, terminateds, truncateds, infos = self.vec_env.step(env_actions_np)
 
                     # Option A: Terminal Value Bootstrap Adjustment
                     stored_rewards = rewards.copy()
