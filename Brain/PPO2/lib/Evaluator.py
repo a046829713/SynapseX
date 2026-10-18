@@ -21,8 +21,12 @@ class PPO2Evaluator:
         bars_count: int = 300,
         device: Optional[torch.device] = None,
         deadzone_threshold: float = 0.01,
-        commission_perc: float = 0.0,
-        default_slippage: float = 0.0,
+        commission_perc: float = 0.0045,
+        default_slippage: float = 0.0025,
+        downside_window_size: int = 60,
+        w1_step_return: float = 1.0,
+        w2_downside_ratio: float = 1.0,
+        episode_steps: int = 500,
     ):
         self.agent = agent
         self.bars_count = bars_count
@@ -30,6 +34,10 @@ class PPO2Evaluator:
         self.deadzone_threshold = deadzone_threshold
         self.commission_perc = commission_perc
         self.default_slippage = default_slippage
+        self.downside_window_size = downside_window_size
+        self.w1_step_return = w1_step_return
+        self.w2_downside_ratio = w2_downside_ratio
+        self.episode_steps = episode_steps
 
         # Force evaluation mode (deterministic inference)
         self.agent.model.eval()
@@ -68,8 +76,11 @@ class PPO2Evaluator:
             commission_perc=self.commission_perc,
             model_train=False,
             default_slippage=self.default_slippage,
-            N_steps=500,
+            N_steps=self.episode_steps,
             deadzone_threshold=self.deadzone_threshold,
+            downside_window_size=self.downside_window_size,
+            w1_step_return=self.w1_step_return,
+            w2_downside_ratio=self.w2_downside_ratio,
         )
         env = ProductionEnv(prices_data={symbol: prices}, state=state)
         obs = env.reset(symbol=symbol)

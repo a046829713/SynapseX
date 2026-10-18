@@ -38,6 +38,12 @@ def parse_arguments():
         default="results/ppo2_orders",
         help="Directory to export order CSVs and manifest files",
     )
+    parser.add_argument(
+        "--config",
+        type=str,
+        default="configs/training/ppo_v2.yaml",
+        help="Path to training/testing YAML configuration file",
+    )
     return parser.parse_args()
 
 
@@ -47,11 +53,12 @@ def main():
     print("=" * 70)
     print(" PPO2 Dedicated Testing & Order Export Environment")
     print(f" Mode: {'Formal Live Execution' if args.formal else 'Historical Backtest Orders Export'}")
+    print(f" Config: {args.config}")
     print(f" Output Directory: {args.output_dir}")
     print("=" * 70)
 
     # 1. Initialize PPO2Engine
-    engine = PPO2Engine(formal=args.formal)
+    engine = PPO2Engine(formal=args.formal, config=args.config)
 
     # 2. Prepare symbols and models
     # 【Option 1: Default】Batch test all checkpoints discovered in saves/ across test_data

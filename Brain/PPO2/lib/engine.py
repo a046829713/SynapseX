@@ -35,12 +35,11 @@ class PPO2Engine:
     def __init__(
         self,
         formal: bool = False,
-        config_path: str = "configs/training/ppo_v2.yaml",
+        config: Optional[Union[DictConfig, str]] = None,
         device: Optional[torch.device] = None,
         base_data_dir: str = "Brain/simulation/test_data",
     ):
         self.formal = formal
-        self.config_path = config_path
         self.base_data_dir = base_data_dir
         self.device = (
             device
@@ -48,40 +47,39 @@ class PPO2Engine:
             else torch.device("cuda" if torch.cuda.is_available() else "cpu")
         )
 
-        # Load PPO2 training configuration
-        if os.path.exists(config_path):
-            self.cfg = OmegaConf.load(config_path)
+        # Resolve configuration strictly without silent fallbacks
+        if config is None:
+            config_path = "configs/training/ppo_v2.yaml"
+            if not os.path.exists(config_path):
+                raise FileNotFoundError(f"Configuration file not found: {config_path}")
+            raw_cfg = OmegaConf.load(config_path)
+            self.cfg = raw_cfg.training if hasattr(raw_cfg, "training") else raw_cfg
+            self.config_path = config_path
+        elif isinstance(config, str):
+            if not os.path.exists(config):
+                raise FileNotFoundError(f"Configuration file not found: {config}")
+            raw_cfg = OmegaConf.load(config)
+            self.cfg = raw_cfg.training if hasattr(raw_cfg, "training") else raw_cfg
+            self.config_path = config
+        elif isinstance(config, DictConfig):
+            self.cfg = config.training if hasattr(config, "training") else config
+            self.config_path = getattr(config, "config_path", "DictConfig")
         else:
-            self.cfg = OmegaConf.create({
-                "BARS_COUNT": 300,
-                "HIDDEN_SIZE": 96,
-                "NLAYERS": 2,
-                "TIME_FEATURES_OUT": 32,
-                "PORTFOLIO_DIM": 3,
-                "DEADZONE_THRESHOLD": 0.01,
-                "DEFAULT_SLIPPAGE": 0.0025,
-                "MODEL_DEFAULT_COMMISSION_PERC_TRAING": 0.0045,
-                "SSM_CFG": {
-                    "layer": "Mamba2",
-                    "expand": 2,
-                    "d_ssm": 96,
-                    "headdim": 32,
-                    "d_state": 64,
-                    "ngroups": 1,
-                    "chunk_size": 64,
-                    "d_conv": 4,
-                    "rmsnorm": True,
-                    "bias": False,
-                    "conv_bias": True,
-                },
-            })
+            raise TypeError(f"Unsupported config type: {type(config)}")
 
-        self.bars_count = int(self.cfg.get("BARS_COUNT", 300))
-        self.deadzone_threshold = float(self.cfg.get("DEADZONE_THRESHOLD", 0.01))
-        self.commission_perc = float(
-            self.cfg.get("MODEL_DEFAULT_COMMISSION_PERC_TRAING", 0.0045)
-        )
-        self.default_slippage = float(self.cfg.get("DEFAULT_SLIPPAGE", 0.0025))
+        # Strict fail-fast binding of all model and environment hyperparameters
+        self.bars_count = int(self.cfg.BARS_COUNT)
+        self.deadzone_threshold = float(self.cfg.DEADZONE_THRESHOLD)
+        self.commission_perc = float(self.cfg.MODEL_DEFAULT_COMMISSION_PERC_TRAING)
+        self.default_slippage = float(self.cfg.DEFAULT_SLIPPAGE)
+        self.hidden_size = int(self.cfg.HIDDEN_SIZE)
+        self.nlayers = int(self.cfg.NLAYERS)
+        self.time_features_out = int(self.cfg.TIME_FEATURES_OUT)
+        self.portfolio_dim = int(self.cfg.PORTFOLIO_DIM)
+        self.downside_window_size = int(self.cfg.DOWNSIDE_WINDOW_SIZE)
+        self.w1_step_return = float(self.cfg.W1_STEP_RETURN)
+        self.w2_downside_ratio = float(self.cfg.W2_DOWNSIDE_RATIO)
+        self.episode_steps = int(self.cfg.EPISODE_STEPS)
 
         self.model_paths: List[str] = []
         self.target_symbols: List[str] = []
@@ -183,7 +181,11 @@ class PPO2Engine:
             commission_perc=self.commission_perc,
             model_train=False,
             default_slippage=self.default_slippage,
-            N_steps=500,
+            N_steps=self.episode_steps,
+            deadzone_threshold=self.deadzone_threshold,
+            downside_window_size=self.downside_window_size,
+            w1_step_return=self.w1_step_return,
+            w2_downside_ratio=self.w2_downside_ratio,
         )
         ob_space = spaces.Dict({
             "states": spaces.Box(
@@ -196,7 +198,7 @@ class PPO2Engine:
         ac_space = spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32)
 
         ssm_cfg = None
-        if "SSM_CFG" in self.cfg:
+        if hasattr(self.cfg, "SSM_CFG") and self.cfg.SSM_CFG is not None:
             if isinstance(self.cfg.SSM_CFG, (dict, DictConfig)):
                 ssm_cfg = OmegaConf.to_container(self.cfg.SSM_CFG, resolve=True)
             else:
@@ -207,10 +209,10 @@ class PPO2Engine:
             ac_space=ac_space,
             device=self.device,
             seq_dim=self.bars_count,
-            hidden_size=int(self.cfg.get("HIDDEN_SIZE", 96)),
-            nlayers=int(self.cfg.get("NLAYERS", 2)),
-            time_features_out=int(self.cfg.get("TIME_FEATURES_OUT", 32)),
-            portfolio_dim=int(self.cfg.get("PORTFOLIO_DIM", 3)),
+            hidden_size=self.hidden_size,
+            nlayers=self.nlayers,
+            time_features_out=self.time_features_out,
+            portfolio_dim=self.portfolio_dim,
             ssm_cfg=ssm_cfg,
         )
         return agent
@@ -296,6 +298,10 @@ class PPO2Engine:
                 deadzone_threshold=self.deadzone_threshold,
                 commission_perc=self.commission_perc,
                 default_slippage=self.default_slippage,
+                downside_window_size=self.downside_window_size,
+                w1_step_return=self.w1_step_return,
+                w2_downside_ratio=self.w2_downside_ratio,
+                episode_steps=self.episode_steps,
             )
 
             model_output_dir = os.path.join(output_dir, model_name)
@@ -450,6 +456,10 @@ class PPO2Engine:
             deadzone_threshold=self.deadzone_threshold,
             commission_perc=self.commission_perc,
             default_slippage=self.default_slippage,
+            downside_window_size=self.downside_window_size,
+            w1_step_return=self.w1_step_return,
+            w2_downside_ratio=self.w2_downside_ratio,
+            episode_steps=self.episode_steps,
         )
 
         feature_loader = OriginalDataFeature()
