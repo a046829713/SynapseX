@@ -127,10 +127,8 @@ class RolloutBuffer:
         flat_advantages = advantages.reshape(-1)
         flat_returns = returns.reshape(-1)
 
-        # Advantage 標準化
-        self.advantages = (flat_advantages - flat_advantages.mean()) / (
-            flat_advantages.std() + 1e-8
-        )
+        # 儲存未標準化的優勢與回報（標準化改於 Mini-Batch 層級執行，對齊 OpenAI Baselines / CleanRL）
+        self.advantages = flat_advantages
         self.returns = flat_returns
         return self.buffer
 
@@ -200,8 +198,15 @@ class RolloutBuffer:
         old_log_probs = torch.as_tensor(
             np.concatenate(self.log_probs, axis=0), dtype=torch.float32
         ).reshape(-1)
+        old_values = torch.as_tensor(
+            np.concatenate(self.values, axis=0), dtype=torch.float32
+        ).reshape(-1)
 
         dataset_size = len(self.advantages)
+        assert dataset_size % batch_size == 0, (
+            f"Rollout dataset size ({dataset_size}) must be evenly divisible by batch_size ({batch_size}) "
+            f"to prevent gradient scale imbalance from fractional trailing batches."
+        )
         indices = np.arange(dataset_size)
         if shuffle:
             np.random.shuffle(indices)
@@ -215,6 +220,7 @@ class RolloutBuffer:
                 old_log_probs[b_idx],
                 self.returns[b_idx],
                 self.advantages[b_idx],
+                old_values[b_idx],
             )
 
     def clear(self):

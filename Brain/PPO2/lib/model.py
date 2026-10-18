@@ -305,7 +305,7 @@ class MambaContinuousActorCritic(nn.Module):
             directly into the Actor-Critic trunk for unattenuated position & PnL awareness.
       - Orthogonal-Initialized Compact Heads:
           * Critic head outputs scalar state value V(s) (output gain=1.0).
-          * Actor head outputs continuous action mean mu in [-1.0, 1.0] (output gain=0.01 + Tanh).
+          * Actor head outputs continuous action mean mu via pure linear projection (output gain=0.01, no Tanh).
           * Clamped learnable log_std ensures numerical stability.
     """
 
@@ -406,7 +406,7 @@ class MambaContinuousActorCritic(nn.Module):
             init_(nn.Linear(head_h2, 1), std=1.0),
         )
 
-        # Actor Head (outputs continuous action mean mu in [-1.0, 1.0])
+        # Actor Head (outputs continuous action mean mu via unconstrained linear projection, aligned with OpenAI Baselines)
         self.fc_actor = nn.Sequential(
             init_(nn.Linear(trunk_dim, head_h1), std=gain_hid),
             nn.LayerNorm(head_h1),
@@ -415,7 +415,6 @@ class MambaContinuousActorCritic(nn.Module):
             nn.LayerNorm(head_h2),
             nn.SiLU(),
             init_(nn.Linear(head_h2, action_dim), std=0.01),
-            nn.Tanh(),
         )
 
         # State-independent learnable log_std parameter

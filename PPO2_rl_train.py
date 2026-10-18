@@ -16,6 +16,17 @@ from Brain.PPO2.lib.environment import TrainingEnv, SubprocVecEnv
 from Brain.PPO2.lib.experience import RolloutBuffer
 
 
+def explained_variance(y_pred: torch.Tensor, y_true: torch.Tensor) -> float:
+    """
+    Computes fraction of variance that ypred explains about y.
+    Returns 1 - Var[y - ypred] / Var[y], matching OpenAI Baselines.
+    """
+    var_y = torch.var(y_true, unbiased=False)
+    if var_y < 1e-8:
+        return 0.0
+    return float((1.0 - torch.var(y_true - y_pred, unbiased=False) / var_y).item())
+
+
 class SymbolQueue:
     """
     全域商品洗牌佇列 (Global Shuffled Round-Robin Queue)。
@@ -147,6 +158,8 @@ class PPO2:
         value_losses = []
         entropy_losses = []
         approx_kls = []
+        clipfracs = []
+        expl_vars = []
 
         for _ in range(ppo_epochs):
             for (
@@ -156,6 +169,7 @@ class PPO2:
                 old_log_probs_b,
                 returns_b,
                 advantages_b,
+                old_values_b,
             ) in self.buffer.get_batches(batch_size=batch_size, shuffle=True):
                 states_b = states_b.to(self.device)
                 time_states_b = time_states_b.to(self.device)
@@ -163,6 +177,7 @@ class PPO2:
                 old_log_probs_b = old_log_probs_b.to(self.device)
                 returns_b = returns_b.to(self.device)
                 advantages_b = advantages_b.to(self.device)
+                old_values_b = old_values_b.to(self.device)
 
                 log_probs, entropy, values = self.agent.evaluate_actions(
                     states_b, time_states_b, actions_b
@@ -172,18 +187,32 @@ class PPO2:
                 log_ratio = log_probs - old_log_probs_b
                 ratio = torch.exp(log_ratio)
 
-                # Approximate KL divergence for monitoring
+                # Approximate KL divergence & Clip Fraction for monitoring (OpenAI Baselines)
                 with torch.no_grad():
                     approx_kl = ((ratio - 1.0) - log_ratio).mean().item()
                     approx_kls.append(approx_kl)
+                    clipfrac = torch.mean((torch.abs(ratio - 1.0) > clip_eps).float()).item()
+                    clipfracs.append(clipfrac)
+                    expl_var = explained_variance(values, returns_b)
+                    expl_vars.append(expl_var)
+
+                # Mini-batch Advantage Normalization (OpenAI Baselines / CleanRL Detail #7)
+                mb_advantages = (advantages_b - advantages_b.mean()) / (
+                    advantages_b.std() + 1e-8
+                )
 
                 # Clipped surrogate objective
-                surr1 = ratio * advantages_b
-                surr2 = torch.clamp(ratio, 1.0 - clip_eps, 1.0 + clip_eps) * advantages_b
+                surr1 = ratio * mb_advantages
+                surr2 = torch.clamp(ratio, 1.0 - clip_eps, 1.0 + clip_eps) * mb_advantages
                 policy_loss = -torch.min(surr1, surr2).mean()
 
-                # Value function MSE loss
-                value_loss = F.mse_loss(values, returns_b)
+                # Clipped Value Function loss with 0.5 factor (OpenAI Baselines Detail #9)
+                v_clipped = old_values_b + torch.clamp(
+                    values - old_values_b, -clip_eps, clip_eps
+                )
+                vf_loss_unclipped = (values - returns_b).pow(2)
+                vf_loss_clipped = (v_clipped - returns_b).pow(2)
+                value_loss = 0.5 * torch.max(vf_loss_unclipped, vf_loss_clipped).mean()
 
                 # Entropy loss (bonus)
                 entropy_loss = -entropy.mean()
@@ -199,11 +228,16 @@ class PPO2:
                 value_losses.append(value_loss.item())
                 entropy_losses.append(entropy_loss.item())
 
+        policy_std = float(self.agent.model.log_std.exp().mean().item())
+
         return {
             "policy_loss": float(np.mean(policy_losses)) if policy_losses else 0.0,
             "value_loss": float(np.mean(value_losses)) if value_losses else 0.0,
             "entropy": float(-np.mean(entropy_losses)) if entropy_losses else 0.0,
             "approx_kl": float(np.mean(approx_kls)) if approx_kls else 0.0,
+            "clipfrac": float(np.mean(clipfracs)) if clipfracs else 0.0,
+            "explained_variance": float(np.mean(expl_vars)) if expl_vars else 0.0,
+            "policy_std": policy_std,
         }
 
     def train(self):
@@ -338,7 +372,8 @@ class PPO2:
                     f"[Iter #{iteration:04d}] Steps: {total_steps:07d} | FPS: {fps:6.1f} | "
                     f"PiLoss: {metrics['policy_loss']:+.4f} | VfLoss: {metrics['value_loss']:.4f} | "
                     f"Ent: {metrics['entropy']:.4f} | KL: {metrics['approx_kl']:.5f} | "
-                    f"AvgRet(20): {avg_ret_str}"
+                    f"ClipFrac: {metrics['clipfrac']:.3f} | ExplVar: {metrics['explained_variance']:+.3f} | "
+                    f"Std: {metrics['policy_std']:.3f} | AvgRet(20): {avg_ret_str}"
                 )
 
                 # 5. Checkpoint Saving

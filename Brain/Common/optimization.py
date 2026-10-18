@@ -9,6 +9,7 @@ def build_optimizer(
     lr: float = 3e-4,
     weight_decay: float = 1e-4,
     base_lr: float = 1e-4,
+    eps: float = 1e-5,
 ) -> optim.AdamW:
     """
     Builds a specialized AdamW optimizer for models containing DAIN (dean) layers:
@@ -16,6 +17,7 @@ def build_optimizer(
        learning rates (scaled by mean_lr, scale_lr, gate_lr) and 0.0 weight decay.
     2. LayerNorm/normalization layers, bias parameters, and `log_std` parameters are excluded from weight decay.
     3. Remaining model parameters receive standard weight decay.
+    4. Default eps=1e-5 aligns with OpenAI Baselines PPO2 for numerical gradient stability.
     """
     dean_params_ids = set()
     if hasattr(model, "dean"):
@@ -56,7 +58,7 @@ def build_optimizer(
             },
         ])
 
-    return optim.AdamW(param_groups)
+    return optim.AdamW(param_groups, eps=eps)
 
 
 class opitmizar:
