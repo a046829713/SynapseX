@@ -14,6 +14,7 @@ from Brain.Common.optimization import build_optimizer
 from Brain.PPO2.lib.Agent import PPO2Agent
 from Brain.PPO2.lib.environment import TrainingEnv, SubprocVecEnv
 from Brain.PPO2.lib.experience import RolloutBuffer
+import torch.nn as nn
 
 
 def explained_variance(y_pred: torch.Tensor, y_true: torch.Tensor) -> float:
@@ -49,8 +50,6 @@ class SymbolQueue:
         return self.queue.popleft()
 
 
-
-
 class PPO2:
     def __init__(self, cfg: DictConfig):
         self.config = cfg
@@ -74,6 +73,7 @@ class PPO2:
     def _prepare_symbols(self):
         try:
             from hydra.utils import get_original_cwd
+
             base_dir = get_original_cwd()
         except Exception:
             base_dir = os.getcwd()
@@ -90,8 +90,8 @@ class PPO2:
             f"--PRELOAD--: Preloading {len(unique_symbols)} unique symbols into memory cache..."
         )
         t0 = time.time()
-        self.preloaded_data = (
-            OriginalDataFeature().get_train_net_work_data_by_path(unique_symbols)
+        self.preloaded_data = OriginalDataFeature().get_train_net_work_data_by_path(
+            unique_symbols
         )
         print(
             f"--PRELOAD--: Preloaded {len(self.preloaded_data)} symbols in {time.time() - t0:.2f}s."
@@ -191,7 +191,9 @@ class PPO2:
                 with torch.no_grad():
                     approx_kl = ((ratio - 1.0) - log_ratio).mean().item()
                     approx_kls.append(approx_kl)
-                    clipfrac = torch.mean((torch.abs(ratio - 1.0) > clip_eps).float()).item()
+                    clipfrac = torch.mean(
+                        (torch.abs(ratio - 1.0) > clip_eps).float()
+                    ).item()
                     clipfracs.append(clipfrac)
                     expl_var = explained_variance(values, returns_b)
                     expl_vars.append(expl_var)
@@ -203,7 +205,9 @@ class PPO2:
 
                 # Clipped surrogate objective
                 surr1 = ratio * mb_advantages
-                surr2 = torch.clamp(ratio, 1.0 - clip_eps, 1.0 + clip_eps) * mb_advantages
+                surr2 = (
+                    torch.clamp(ratio, 1.0 - clip_eps, 1.0 + clip_eps) * mb_advantages
+                )
                 policy_loss = -torch.min(surr1, surr2).mean()
 
                 # Clipped Value Function loss with 0.5 factor (OpenAI Baselines Detail #9)
@@ -217,11 +221,15 @@ class PPO2:
                 # Entropy loss (bonus)
                 entropy_loss = -entropy.mean()
 
-                total_loss = policy_loss + vf_coef * value_loss + ent_coef * entropy_loss
+                total_loss = (
+                    policy_loss + vf_coef * value_loss + ent_coef * entropy_loss
+                )
 
                 self.optimizer.zero_grad()
                 total_loss.backward()
-                torch.nn.utils.clip_grad_norm_(self.agent.model.parameters(), max_grad_norm)
+                torch.nn.utils.clip_grad_norm_(
+                    self.agent.model.parameters(), max_grad_norm
+                )
                 self.optimizer.step()
 
                 policy_losses.append(policy_loss.item())
@@ -239,6 +247,14 @@ class PPO2:
             "explained_variance": float(np.mean(expl_vars)) if expl_vars else 0.0,
             "policy_std": policy_std,
         }
+
+    def checkgrad(self, model: nn.Module):
+        # 打印梯度統計數據
+        for name, param in model.named_parameters():
+            if param.grad is not None:
+                print(
+                    f"Layer: {name}, Grad Min: {param.grad.min()}, Grad Max: {param.grad.max()}, Grad Mean: {param.grad.mean()}"
+                )
 
     def train(self):
         num_workers = self.num_workers
@@ -284,7 +300,9 @@ class PPO2:
                         if out.clipped_action is not None
                         else np.clip(out.action.cpu().numpy(), -1.0, 1.0)
                     )
-                    next_obs, rewards, terminateds, truncateds, infos = self.vec_env.step(env_actions_np)
+                    next_obs, rewards, terminateds, truncateds, infos = (
+                        self.vec_env.step(env_actions_np)
+                    )
 
                     # Option A: Terminal Value Bootstrap Adjustment
                     stored_rewards = rewards.copy()
@@ -296,7 +314,9 @@ class PPO2:
                             "time_states": next_obs["time_states"][trunc_indices],
                         }
                         with torch.no_grad():
-                            trunc_out = self.agent.get_action(trunc_obs, stochastic=False)
+                            trunc_out = self.agent.get_action(
+                                trunc_obs, stochastic=False
+                            )
                             trunc_values = trunc_out.value.cpu().numpy().reshape(-1)
 
                         gamma = float(self.cfg_training.GAMMA)
@@ -354,6 +374,8 @@ class PPO2:
                     ent_coef=ent_coef,
                     max_grad_norm=max_grad_norm,
                 )
+
+                self.checkgrad(self.agent.model)
                 self.buffer.clear()
                 iteration += 1
 
