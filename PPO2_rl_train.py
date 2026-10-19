@@ -374,8 +374,7 @@ class PPO2:
                     ent_coef=ent_coef,
                     max_grad_norm=max_grad_norm,
                 )
-
-                self.checkgrad(self.agent.model)
+                
                 self.buffer.clear()
                 iteration += 1
 

@@ -69,7 +69,7 @@ class State_time_step(State_time_step_template):
         self.game_steps = 0
         self.return_history.clear()
         self.prev_downside_risk = 0.0
-        self._prev_close = float(self._prices.close[self._offset])
+        self._prev_close = float(self._prices.close[self._offset - 1])
 
     def calculate_downside_risk_numpy(self, returns) -> float:
         """
@@ -97,7 +97,7 @@ class State_time_step(State_time_step_template):
 
     def step(self, action: float):
         """
-        執行單步連續動作撮合、記帳、淨值與獎勵計算
+        執行單步連續動作撮合、記帳、淨值與獎勵計算（Market-Open 撮合與對數報酬 Option A）
         """
         # 1. 動作死區過濾
         if abs(action) <= self.deadzone_threshold:
@@ -105,48 +105,42 @@ class State_time_step(State_time_step_template):
         else:
             target_pos = float(action)
 
-        # 剛結束時段的資產收盤價
+        open_price = float(self._prices.open[self._offset])
         close_price = float(self._prices.close[self._offset])
         prev_pos = self.position
         safe_open_price = max(self.open_price, 1e-8)
 
-        # 2. 換倉量與交易摩擦成本 (手續費 + 滑價)
+        # 2. 換倉量與交易摩擦成本 (手續費 + 滑價，在開盤成交時扣除)
         delta_p = target_pos - prev_pos
         friction_rate = self.commission_perc + self.default_slippage
         cost_t = abs(delta_p) * friction_rate
         self.cost_sum += cost_t
 
-        # 3. 部位轉移與開倉均價維護、已實現損益結算
-        # Case A: 兩者皆為 0 (無持倉狀態)
+        # 3. 部位轉移與開倉均價維護、已實現損益結算 (以 open_price 成交)
+        # Case A: 兩者皆為 0 (無持倉狀態維持)
         if prev_pos == 0.0 and target_pos == 0.0:
             self.trade_bar = 0
             self.open_price = 0.0
 
         # Case B: 由空倉建立新部位 (做多或放空)
         elif prev_pos == 0.0 and target_pos != 0.0:
-            self.open_price = close_price
+            self.open_price = open_price
             self.trade_bar = 1
 
         # Case C: 反手翻倉 (Flip: 多翻空 或 空翻多)
         elif prev_pos * target_pos < 0.0:
-            # 結算上一期全部持倉已實現損益
+            # 以開盤價結算上一期全部持倉已實現對數損益
             closed_size = abs(prev_pos)
-            if prev_pos > 0:
-                realized_pnl = (
-                    closed_size
-                    * (close_price - safe_open_price)
-                    / safe_open_price
-                )
-            else:
-                realized_pnl = (
-                    closed_size
-                    * (safe_open_price - close_price)
-                    / safe_open_price
-                )
+            log_pnl = float(
+                np.log(max(open_price, 1e-8)) - np.log(safe_open_price)
+            )
+            realized_pnl = (
+                closed_size * log_pnl if prev_pos > 0 else closed_size * (-log_pnl)
+            )
             self.closecash += realized_pnl
 
-            # 以當前價格建立新方向部位
-            self.open_price = close_price
+            # 以開盤價格建立新方向部位
+            self.open_price = open_price
             self.trade_bar = 1
 
         # Case D: 同向持倉調整 (加倉、減倉、完全平倉或維持不變)
@@ -155,27 +149,21 @@ class State_time_step(State_time_step_template):
             curr_size = abs(target_pos)
 
             if curr_size > prev_size:
-                # 同向加倉：加權平均成本
+                # 同向加倉：加權平均開盤成本
                 added_size = curr_size - prev_size
                 self.open_price = (
-                    prev_size * self.open_price + added_size * close_price
+                    prev_size * self.open_price + added_size * open_price
                 ) / curr_size
                 self.trade_bar += 1
             elif curr_size < prev_size:
-                # 同向減倉 或 完全平倉：開倉均價不變，結算減倉比例損益
+                # 同向減倉 或 完全平倉：開倉均價不變，以開盤價結算減倉比例對數損益
                 reduced_size = prev_size - curr_size
-                if prev_pos > 0:
-                    realized_pnl = (
-                        reduced_size
-                        * (close_price - safe_open_price)
-                        / safe_open_price
-                    )
-                else:
-                    realized_pnl = (
-                        reduced_size
-                        * (safe_open_price - close_price)
-                        / safe_open_price
-                    )
+                log_pnl = float(
+                    np.log(max(open_price, 1e-8)) - np.log(safe_open_price)
+                )
+                realized_pnl = (
+                    reduced_size * log_pnl if prev_pos > 0 else reduced_size * (-log_pnl)
+                )
                 self.closecash += realized_pnl
 
                 if target_pos == 0.0:
@@ -191,11 +179,17 @@ class State_time_step(State_time_step_template):
         # 更新持倉比例
         self.position = target_pos
 
-        # 4. 單步盯市報酬 (Mark-to-Market Return) 與總淨值演進
-        # 報酬由持有部位經歷的價格變動減去交易摩擦成本組成，杜絕加倉時均價分母跳變失真
+        # 4. 單步對數報酬分解 (Mark-to-Market Log Return - Option A)
         safe_prev_close = max(self._prev_close, 1e-8)
-        step_price_return = (close_price - safe_prev_close) / safe_prev_close
-        current_p_return = prev_pos * step_price_return - cost_t
+        safe_curr_open = max(open_price, 1e-8)
+        safe_curr_close = max(close_price, 1e-8)
+
+        gap_log_return = float(np.log(safe_curr_open / safe_prev_close))
+        bar_log_return = float(np.log(safe_curr_close / safe_curr_open))
+
+        current_p_return = float(
+            prev_pos * gap_log_return + target_pos * bar_log_return - cost_t
+        )
 
         self.TotalPortfolioPercent += current_p_return
         self.return_history.append(current_p_return)
@@ -235,9 +229,12 @@ class State_time_step(State_time_step_template):
 
         if abs(self.position) > 0 and self.open_price > 0:
             prev_close = float(self._prices.close[self._offset - 1])
-            unrealized_return = (
+            unrealized_return = float(
                 self.position
-                * ((prev_close - self.open_price) / max(self.open_price, 1e-8))
+                * (
+                    np.log(max(prev_close, 1e-8))
+                    - np.log(max(self.open_price, 1e-8))
+                )
             )
             data_res[:, len(self.info_list) + 1] = unrealized_return
             # 特徵 3: 持倉時間累計 (以日為基準標準化: 48 根 30m K 棒為 1 天)

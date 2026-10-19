@@ -78,8 +78,6 @@ class DAIN_Layer(nn.Module):
             adaptive_avg = adaptive_avg.unsqueeze(-1)
             x = x - adaptive_avg
 
-
-
             # # Step 2:
             std = torch.mean(x ** 2, 2)
             std = torch.sqrt(std + self.eps)
