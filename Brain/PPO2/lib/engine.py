@@ -70,6 +70,7 @@ class PPO2Engine:
         # Strict fail-fast binding of all model and environment hyperparameters
         self.bars_count = int(self.cfg.BARS_COUNT)
         self.deadzone_threshold = float(self.cfg.DEADZONE_THRESHOLD)
+        self.rebalance_threshold = float(getattr(self.cfg, "REBALANCE_THRESHOLD", 0.03))
         self.commission_perc = float(self.cfg.MODEL_DEFAULT_COMMISSION_PERC_TRAING)
         self.default_slippage = float(self.cfg.DEFAULT_SLIPPAGE)
         self.hidden_size = int(self.cfg.HIDDEN_SIZE)
@@ -183,6 +184,7 @@ class PPO2Engine:
             default_slippage=self.default_slippage,
             N_steps=self.episode_steps,
             deadzone_threshold=self.deadzone_threshold,
+            rebalance_threshold=self.rebalance_threshold,
             downside_window_size=self.downside_window_size,
             w1_step_return=self.w1_step_return,
             w2_downside_ratio=self.w2_downside_ratio,
@@ -296,6 +298,7 @@ class PPO2Engine:
                 bars_count=self.bars_count,
                 device=self.device,
                 deadzone_threshold=self.deadzone_threshold,
+                rebalance_threshold=self.rebalance_threshold,
                 commission_perc=self.commission_perc,
                 default_slippage=self.default_slippage,
                 downside_window_size=self.downside_window_size,
@@ -454,6 +457,7 @@ class PPO2Engine:
             bars_count=self.bars_count,
             device=self.device,
             deadzone_threshold=self.deadzone_threshold,
+            rebalance_threshold=self.rebalance_threshold,
             commission_perc=self.commission_perc,
             default_slippage=self.default_slippage,
             downside_window_size=self.downside_window_size,

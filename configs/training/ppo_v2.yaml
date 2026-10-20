@@ -41,8 +41,9 @@ SSM_CFG:
   bias: false
   conv_bias: true
 
-# Environment Penalty / Downside Risk Parameters
+# Environment Penalty & Rebalance Parameters
 DEADZONE_THRESHOLD: 0.01
+REBALANCE_THRESHOLD: 0.03
 DOWNSIDE_WINDOW_SIZE: 60
 W1_STEP_RETURN: 1.0
 W2_DOWNSIDE_RATIO: 1.0

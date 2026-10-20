@@ -18,6 +18,7 @@ class State_time_step(State_time_step_template):
         default_slippage: float,
         N_steps: int,
         deadzone_threshold: float = 0.01,
+        rebalance_threshold: float = 0.03,
         downside_window_size: int = 60,
         w1_step_return: float = 1.0,
         w2_downside_ratio: float = 1.0,
@@ -32,6 +33,7 @@ class State_time_step(State_time_step_template):
         )
 
         self.deadzone_threshold = deadzone_threshold
+        self.rebalance_threshold = rebalance_threshold
         self.downside_window_size = downside_window_size
         self.prev_downside_risk = 0.0
 
@@ -40,21 +42,14 @@ class State_time_step(State_time_step_template):
             "w2_downside_ratio": w2_downside_ratio,  # 下行風險增量懲罰權重
         }
 
-        # 狀態與記帳變數初始化
+        # 狀態變數初始化
         self.position = 0.0
         self.open_price = 0.0
         self.trade_bar = 0
-        self.TotalPortfolioPercent = 1.0
-        self.cost_sum = 0.0
-        self.closecash = 0.0
         self.game_steps = 0
         # 確保佇列長度至少能容納下行風險視窗大小
         self.return_history = deque(maxlen=max(N_steps, self.downside_window_size))
         self._prev_close = 0.0
-
-    @property
-    def have_position(self) -> bool:
-        return abs(self.position) > 0.0
 
     def reset(self, prices: Prices, offset: int):
         assert offset >= self.bars_count - 1
@@ -63,9 +58,6 @@ class State_time_step(State_time_step_template):
         self.position = 0.0
         self.open_price = 0.0
         self.trade_bar = 0
-        self.TotalPortfolioPercent = 1.0
-        self.cost_sum = 0.0
-        self.closecash = 0.0
         self.game_steps = 0
         self.return_history.clear()
         self.prev_downside_risk = 0.0
@@ -101,22 +93,31 @@ class State_time_step(State_time_step_template):
         """
         # 1. 動作死區過濾
         if abs(action) <= self.deadzone_threshold:
-            target_pos = 0.0
+            candidate_pos = 0.0
         else:
-            target_pos = float(action)
+            candidate_pos = float(action)
 
         open_price = float(self._prices.open[self._offset])
         close_price = float(self._prices.close[self._offset])
         prev_pos = self.position
-        safe_open_price = max(self.open_price, 1e-8)
 
-        # 2. 換倉量與交易摩擦成本 (手續費 + 滑價，在開盤成交時扣除)
+        # 2. 再平衡調倉死區過濾 (抑制微幅抖動所致之手續費磨損)
+        # 規則：
+        # - 若為由空倉建立新部位 (prev == 0.0)、平倉退場 (candidate == 0.0) 或多空反轉翻倉 (candidate * prev < 0.0)，立即執行調倉
+        # - 若為同向持倉調整且部位變化小於 rebalance_threshold，維持前一期部位 (Δp = 0, 0 手續費)
+        if prev_pos == 0.0 or candidate_pos == 0.0 or (candidate_pos * prev_pos < 0.0):
+            target_pos = candidate_pos
+        elif abs(candidate_pos - prev_pos) < self.rebalance_threshold:
+            target_pos = prev_pos
+        else:
+            target_pos = candidate_pos
+
+        # 3. 換倉量與交易摩擦成本 (手續費 + 滑價，在開盤成交時扣除)
         delta_p = target_pos - prev_pos
         friction_rate = self.commission_perc + self.default_slippage
         cost_t = abs(delta_p) * friction_rate
-        self.cost_sum += cost_t
 
-        # 3. 部位轉移與開倉均價維護、已實現損益結算 (以 open_price 成交)
+        # 4. 部位轉移與開倉均價維護 (以 open_price 成交)
         # Case A: 兩者皆為 0 (無持倉狀態維持)
         if prev_pos == 0.0 and target_pos == 0.0:
             self.trade_bar = 0
@@ -129,16 +130,6 @@ class State_time_step(State_time_step_template):
 
         # Case C: 反手翻倉 (Flip: 多翻空 或 空翻多)
         elif prev_pos * target_pos < 0.0:
-            # 以開盤價結算上一期全部持倉已實現對數損益
-            closed_size = abs(prev_pos)
-            log_pnl = float(
-                np.log(max(open_price, 1e-8)) - np.log(safe_open_price)
-            )
-            realized_pnl = (
-                closed_size * log_pnl if prev_pos > 0 else closed_size * (-log_pnl)
-            )
-            self.closecash += realized_pnl
-
             # 以開盤價格建立新方向部位
             self.open_price = open_price
             self.trade_bar = 1
@@ -156,16 +147,7 @@ class State_time_step(State_time_step_template):
                 ) / curr_size
                 self.trade_bar += 1
             elif curr_size < prev_size:
-                # 同向減倉 或 完全平倉：開倉均價不變，以開盤價結算減倉比例對數損益
-                reduced_size = prev_size - curr_size
-                log_pnl = float(
-                    np.log(max(open_price, 1e-8)) - np.log(safe_open_price)
-                )
-                realized_pnl = (
-                    reduced_size * log_pnl if prev_pos > 0 else reduced_size * (-log_pnl)
-                )
-                self.closecash += realized_pnl
-
+                # 同向減倉 或 完全平倉：開倉均價不變
                 if target_pos == 0.0:
                     # 完全平倉
                     self.open_price = 0.0
@@ -179,7 +161,7 @@ class State_time_step(State_time_step_template):
         # 更新持倉比例
         self.position = target_pos
 
-        # 4. 單步對數報酬分解 (Mark-to-Market Log Return - Option A)
+        # 5. 單步對數報酬分解 (Mark-to-Market Log Return - Option A)
         safe_prev_close = max(self._prev_close, 1e-8)
         safe_curr_open = max(open_price, 1e-8)
         safe_curr_close = max(close_price, 1e-8)
@@ -191,17 +173,16 @@ class State_time_step(State_time_step_template):
             prev_pos * gap_log_return + target_pos * bar_log_return - cost_t
         )
 
-        self.TotalPortfolioPercent += current_p_return
         self.return_history.append(current_p_return)
         self._prev_close = close_price
 
-        # 5. 下行風險懲罰與總獎勵
+        # 6. 下行風險懲罰與總獎勵
         downside_penalty = self.calculate_step_downside_penalty()
         reward = float(
             self.weights["w1_step_return"] * current_p_return - downside_penalty
         )
 
-        # 6. 推進時間步與判斷終止
+        # 7. 推進時間步與判斷終止
         self._offset += 1
         self.game_steps += 1
         terminated = bool(self._offset >= self._prices.close.shape[0] - 1)
@@ -296,7 +277,6 @@ class BaseTradingEnv(gym.Env, ABC):
             "instrument": self._instrument,
             "offset": self._state._offset,
             "position": float(self._state.position),
-            "postion": float(self._state.position),
         }
 
         return obs, reward, terminated, truncated, info
@@ -331,6 +311,7 @@ class TrainingEnv(BaseTradingEnv):
             "default_slippage": cfg_training.DEFAULT_SLIPPAGE,
             "N_steps": cfg_training.EPISODE_STEPS,
             "deadzone_threshold": cfg_training.DEADZONE_THRESHOLD,
+            "rebalance_threshold": getattr(cfg_training, "REBALANCE_THRESHOLD", 0.03),
             "downside_window_size": cfg_training.DOWNSIDE_WINDOW_SIZE,
             "w1_step_return": cfg_training.W1_STEP_RETURN,
             "w2_downside_ratio": cfg_training.W2_DOWNSIDE_RATIO,

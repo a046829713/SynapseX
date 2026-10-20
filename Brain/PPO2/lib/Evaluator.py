@@ -21,6 +21,7 @@ class PPO2Evaluator:
         bars_count: int = 300,
         device: Optional[torch.device] = None,
         deadzone_threshold: float = 0.01,
+        rebalance_threshold: float = 0.03,
         commission_perc: float = 0.0045,
         default_slippage: float = 0.0025,
         downside_window_size: int = 60,
@@ -32,6 +33,7 @@ class PPO2Evaluator:
         self.bars_count = bars_count
         self.device = device or agent.device
         self.deadzone_threshold = deadzone_threshold
+        self.rebalance_threshold = rebalance_threshold
         self.commission_perc = commission_perc
         self.default_slippage = default_slippage
         self.downside_window_size = downside_window_size
@@ -78,6 +80,7 @@ class PPO2Evaluator:
             default_slippage=self.default_slippage,
             N_steps=self.episode_steps,
             deadzone_threshold=self.deadzone_threshold,
+            rebalance_threshold=self.rebalance_threshold,
             downside_window_size=self.downside_window_size,
             w1_step_return=self.w1_step_return,
             w2_downside_ratio=self.w2_downside_ratio,
