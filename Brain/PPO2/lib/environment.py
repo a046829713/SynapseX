@@ -1,5 +1,4 @@
 import multiprocessing as mp
-from collections import deque
 from typing import Optional, List, Dict, Callable
 import numpy as np
 import gymnasium as gym
@@ -7,6 +6,7 @@ from gymnasium import spaces
 from abc import ABC, abstractmethod
 from Brain.Common.env_components import State_time_step_template
 from Brain.Common.DataFeature import Prices, OriginalDataFeature
+from Brain.PPO2.lib.reward import DownsidePenaltyReward
 
 
 class State_time_step(State_time_step_template):
@@ -19,9 +19,10 @@ class State_time_step(State_time_step_template):
         N_steps: int,
         deadzone_threshold: float = 0.01,
         rebalance_threshold: float = 0.03,
-        downside_window_size: int = 60,
         w1_step_return: float = 1.0,
-        w2_downside_ratio: float = 1.0,
+        vol_window: int = 96,
+        risk_lambda: float = 0.5,
+        reward_clip: float = 5.0,
         **kwargs,
     ):
         super().__init__(
@@ -34,12 +35,9 @@ class State_time_step(State_time_step_template):
 
         self.deadzone_threshold = deadzone_threshold
         self.rebalance_threshold = rebalance_threshold
-        self.downside_window_size = downside_window_size
-        self.prev_downside_risk = 0.0
 
         self.weights = {
             "w1_step_return": w1_step_return,  # 單步報酬權重
-            "w2_downside_ratio": w2_downside_ratio,  # 下行風險增量懲罰權重
         }
 
         # 狀態變數初始化
@@ -47,9 +45,13 @@ class State_time_step(State_time_step_template):
         self.open_price = 0.0
         self.trade_bar = 0
         self.game_steps = 0
-        # 確保佇列長度至少能容納下行風險視窗大小
-        self.return_history = deque(maxlen=max(N_steps, self.downside_window_size))
         self._prev_close = 0.0
+
+        self.vol_window = int(vol_window)
+        self.reward_fn = DownsidePenaltyReward(
+            risk_lambda=risk_lambda,
+            clip=reward_clip,
+        )
 
     def reset(self, prices: Prices, offset: int):
         assert offset >= self.bars_count - 1
@@ -59,34 +61,25 @@ class State_time_step(State_time_step_template):
         self.open_price = 0.0
         self.trade_bar = 0
         self.game_steps = 0
-        self.return_history.clear()
-        self.prev_downside_risk = 0.0
         self._prev_close = float(self._prices.close[self._offset - 1])
 
-    def calculate_downside_risk_numpy(self, returns) -> float:
+    def calculate_asset_sigma(self) -> float:
         """
-        計算投資組合的下行風險 (Downside Risk / Semi-Deviation)
+        Computes ex-ante asset volatility using only completed bars prior to self._offset
+        (close[offset - vol_window - 1 : offset]), strictly preventing look-ahead bias.
         """
-        if len(returns) == 0:
-            return 0.0
-        downside_diff = np.maximum(0.0, -np.asarray(returns, dtype=np.float64))
-        squared_downside = downside_diff**2
-        return float(np.sqrt(np.mean(squared_downside)))
+        start = max(0, self._offset - self.vol_window - 1)
+        closes = np.maximum(
+            np.asarray(self._prices.close[start : self._offset], dtype=np.float64),
+            1e-8,
+        )
 
-    def calculate_step_downside_penalty(self) -> float:
-        """
-        計算單步滑動視窗下行風險增量懲罰 (Rolling Window Downside Risk Penalty)
-        """
-        if len(self.return_history) < 2:
-            return 0.0
+        if closes.shape[0] < 3:
+            return 1e-2
 
-        rolling_slice = list(self.return_history)[-self.downside_window_size :]
-        current_downside_risk = self.calculate_downside_risk_numpy(rolling_slice)
-        downside_delta = max(0.0, current_downside_risk - self.prev_downside_risk)
-        self.prev_downside_risk = current_downside_risk
-
-        return float(self.weights["w2_downside_ratio"] * downside_delta)
-
+        sigma = float(np.std(np.diff(np.log(closes))))
+        return max(sigma, 1e-5)
+    
     def step(self, action: float):
         """
         執行單步連續動作撮合、記帳、淨值與獎勵計算（Market-Open 撮合與對數報酬 Option A）
@@ -173,13 +166,15 @@ class State_time_step(State_time_step_template):
             prev_pos * gap_log_return + target_pos * bar_log_return - cost_t
         )
 
-        self.return_history.append(current_p_return)
         self._prev_close = close_price
 
         # 6. 下行風險懲罰與總獎勵
-        downside_penalty = self.calculate_step_downside_penalty()
         reward = float(
-            self.weights["w1_step_return"] * current_p_return - downside_penalty
+            self.weights["w1_step_return"]
+            * self.reward_fn.step(
+                step_return=current_p_return,
+                asset_sigma=self.calculate_asset_sigma(),
+            )
         )
 
         # 7. 推進時間步與判斷終止
@@ -312,9 +307,10 @@ class TrainingEnv(BaseTradingEnv):
             "N_steps": cfg_training.EPISODE_STEPS,
             "deadzone_threshold": cfg_training.DEADZONE_THRESHOLD,
             "rebalance_threshold": getattr(cfg_training, "REBALANCE_THRESHOLD", 0.03),
-            "downside_window_size": cfg_training.DOWNSIDE_WINDOW_SIZE,
             "w1_step_return": cfg_training.W1_STEP_RETURN,
-            "w2_downside_ratio": cfg_training.W2_DOWNSIDE_RATIO,
+            "vol_window": getattr(cfg_training, "VOL_WINDOW", 96),
+            "risk_lambda": getattr(cfg_training, "RISK_LAMBDA", 0.5),
+            "reward_clip": getattr(cfg_training, "REWARD_CLIP", 5.0),
         }
 
         super().__init__(state=State_time_step(**state_params))
@@ -505,4 +501,4 @@ class SubprocVecEnv:
 
     def __len__(self):
         return self.num_envs
-
+

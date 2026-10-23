@@ -24,9 +24,10 @@ class PPO2Evaluator:
         rebalance_threshold: float = 0.03,
         commission_perc: float = 0.0045,
         default_slippage: float = 0.0025,
-        downside_window_size: int = 60,
         w1_step_return: float = 1.0,
-        w2_downside_ratio: float = 1.0,
+        vol_window: int = 96,
+        risk_lambda: float = 0.5,
+        reward_clip: float = 5.0,
         episode_steps: int = 500,
     ):
         self.agent = agent
@@ -36,9 +37,10 @@ class PPO2Evaluator:
         self.rebalance_threshold = rebalance_threshold
         self.commission_perc = commission_perc
         self.default_slippage = default_slippage
-        self.downside_window_size = downside_window_size
         self.w1_step_return = w1_step_return
-        self.w2_downside_ratio = w2_downside_ratio
+        self.vol_window = vol_window
+        self.risk_lambda = risk_lambda
+        self.reward_clip = reward_clip
         self.episode_steps = episode_steps
 
         # Force evaluation mode (deterministic inference)
@@ -81,9 +83,10 @@ class PPO2Evaluator:
             N_steps=self.episode_steps,
             deadzone_threshold=self.deadzone_threshold,
             rebalance_threshold=self.rebalance_threshold,
-            downside_window_size=self.downside_window_size,
             w1_step_return=self.w1_step_return,
-            w2_downside_ratio=self.w2_downside_ratio,
+            vol_window=self.vol_window,
+            risk_lambda=self.risk_lambda,
+            reward_clip=self.reward_clip,
         )
         env = ProductionEnv(prices_data={symbol: prices}, state=state)
         obs = env.reset(symbol=symbol)

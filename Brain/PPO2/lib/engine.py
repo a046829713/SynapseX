@@ -70,16 +70,17 @@ class PPO2Engine:
         # Strict fail-fast binding of all model and environment hyperparameters
         self.bars_count = int(self.cfg.BARS_COUNT)
         self.deadzone_threshold = float(self.cfg.DEADZONE_THRESHOLD)
-        self.rebalance_threshold = float(getattr(self.cfg, "REBALANCE_THRESHOLD", 0.03))
+        self.rebalance_threshold = float(self.cfg.REBALANCE_THRESHOLD)
         self.commission_perc = float(self.cfg.MODEL_DEFAULT_COMMISSION_PERC_TRAING)
         self.default_slippage = float(self.cfg.DEFAULT_SLIPPAGE)
         self.hidden_size = int(self.cfg.HIDDEN_SIZE)
         self.nlayers = int(self.cfg.NLAYERS)
         self.time_features_out = int(self.cfg.TIME_FEATURES_OUT)
         self.portfolio_dim = int(self.cfg.PORTFOLIO_DIM)
-        self.downside_window_size = int(self.cfg.DOWNSIDE_WINDOW_SIZE)
         self.w1_step_return = float(self.cfg.W1_STEP_RETURN)
-        self.w2_downside_ratio = float(self.cfg.W2_DOWNSIDE_RATIO)
+        self.vol_window = int(self.cfg.VOL_WINDOW)
+        self.risk_lambda = float(self.cfg.RISK_LAMBDA)
+        self.reward_clip = float(self.cfg.REWARD_CLIP)
         self.episode_steps = int(self.cfg.EPISODE_STEPS)
 
         self.model_paths: List[str] = []
@@ -185,9 +186,10 @@ class PPO2Engine:
             N_steps=self.episode_steps,
             deadzone_threshold=self.deadzone_threshold,
             rebalance_threshold=self.rebalance_threshold,
-            downside_window_size=self.downside_window_size,
             w1_step_return=self.w1_step_return,
-            w2_downside_ratio=self.w2_downside_ratio,
+            vol_window=self.vol_window,
+            risk_lambda=self.risk_lambda,
+            reward_clip=self.reward_clip,
         )
         ob_space = spaces.Dict({
             "states": spaces.Box(
@@ -301,9 +303,10 @@ class PPO2Engine:
                 rebalance_threshold=self.rebalance_threshold,
                 commission_perc=self.commission_perc,
                 default_slippage=self.default_slippage,
-                downside_window_size=self.downside_window_size,
                 w1_step_return=self.w1_step_return,
-                w2_downside_ratio=self.w2_downside_ratio,
+                vol_window=self.vol_window,
+                risk_lambda=self.risk_lambda,
+                reward_clip=self.reward_clip,
                 episode_steps=self.episode_steps,
             )
 
@@ -460,9 +463,10 @@ class PPO2Engine:
             rebalance_threshold=self.rebalance_threshold,
             commission_perc=self.commission_perc,
             default_slippage=self.default_slippage,
-            downside_window_size=self.downside_window_size,
             w1_step_return=self.w1_step_return,
-            w2_downside_ratio=self.w2_downside_ratio,
+            vol_window=self.vol_window,
+            risk_lambda=self.risk_lambda,
+            reward_clip=self.reward_clip,
             episode_steps=self.episode_steps,
         )
 
