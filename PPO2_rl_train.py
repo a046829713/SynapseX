@@ -121,6 +121,9 @@ class PPO2:
             f"--SubprocVecEnv--: Initialized with {self.num_workers} parallel workers."
         )
 
+    def count_parameters(self, net: nn.modules):
+        return sum(p.numel() for p in net.parameters() if p.requires_grad)
+
     def _prepare_agent(self):
         ssm_cfg = OmegaConf.to_container(self.cfg_training.SSM_CFG, resolve=True)
 
@@ -135,6 +138,8 @@ class PPO2:
             portfolio_dim=self.cfg_training.PORTFOLIO_DIM,
             ssm_cfg=ssm_cfg,
         )
+
+        print(f"net create current parameter size:{self.count_parameters(self.agent.model)}")
 
     def _prepare_optimizer(self):
         lr = self.cfg_training.LEARNING_RATE
@@ -374,7 +379,7 @@ class PPO2:
                     ent_coef=ent_coef,
                     max_grad_norm=max_grad_norm,
                 )
-                
+
                 self.buffer.clear()
                 iteration += 1
 

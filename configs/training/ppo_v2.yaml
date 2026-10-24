@@ -22,19 +22,19 @@ GAMMA: 0.99
 GAE_LAMBDA: 0.95
 
 # Model Architecture (Mamba2 Continuous Actor-Critic)
-HIDDEN_SIZE: 96
-NLAYERS: 2
+HIDDEN_SIZE: 256
+NLAYERS: 4
 TIME_FEATURES_OUT: 32
 PORTFOLIO_DIM: 3
 
 # SSM / Mamba2 Configuration
 SSM_CFG:
   layer: "Mamba2"
-  expand: 2           # d_inner = 96 * 2 = 192
-  d_ssm: 96           # 核心關鍵: 192 維中，96 維走 SSM，剩餘 96 維走 Gated MLP
-  headdim: 32         # nheads = 96 // 32 = 3 個 SSM 頭
+  expand: 2           # d_inner = 256 * 2 = 512
+  d_ssm: 256           # 核心關鍵: 512 維中，256 維走 SSM，剩餘 256 維走 Gated MLP
+  headdim: 32         # nheads = 256 // 32 = 3 個 SSM 頭
   d_state: 64         # 狀態維度
-  ngroups: 1
+  ngroups: 2
   chunk_size: 64
   d_conv: 4
   rmsnorm: true

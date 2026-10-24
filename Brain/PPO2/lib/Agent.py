@@ -27,6 +27,9 @@ class PPO2Agent:
         self.ac_space = ac_space
 
         self._validate_spaces()
+        self._validate_ssm_config_eight_heads(ssm_cfg)
+
+
 
         d_model = self.ob_space["states"].shape[1]
         time_features_in = self.ob_space["time_states"].shape[1]
@@ -47,16 +50,25 @@ class PPO2Agent:
             moe_cfg=moe_cfg,
         ).to(self.device)
 
+    def _validate_ssm_config_eight_heads(self, ssm_cfg: dict):
+        # {'layer': 'Mamba2', 'expand': 2, 'd_ssm': 96, 'headdim': 32, 'd_state': 64, 'ngroups': 1, 'chunk_size': 64, 'd_conv': 4, 'rmsnorm': True, 'bias': False, 'conv_bias': True}
+        assert(ssm_cfg['d_ssm'] / ssm_cfg['headdim']) % 8 == 0,"for best train performance please check the d_ssm size and headdim size"
+
+
     def _validate_spaces(self):
         assert isinstance(self.ac_space, Box), "PPO2Agent 動作空間必須為 gym.spaces.Box"
-        assert isinstance(self.ob_space, Dict), "PPO2Agent 觀測空間必須為 gym.spaces.Dict"
-        assert "states" in self.ob_space.spaces and "time_states" in self.ob_space.spaces, (
-            "PPO2Agent 觀測字典必須包含 'states' 與 'time_states'"
-        )
+        assert isinstance(
+            self.ob_space, Dict
+        ), "PPO2Agent 觀測空間必須為 gym.spaces.Dict"
+        assert (
+            "states" in self.ob_space.spaces and "time_states" in self.ob_space.spaces
+        ), "PPO2Agent 觀測字典必須包含 'states' 與 'time_states'"
 
     def _preprocess_obs(self, obs):
         states = torch.as_tensor(obs["states"], dtype=torch.float32, device=self.device)
-        time_states = torch.as_tensor(obs["time_states"], dtype=torch.float32, device=self.device)
+        time_states = torch.as_tensor(
+            obs["time_states"], dtype=torch.float32, device=self.device
+        )
         is_single = False
         if states.dim() == 2:
             states = states.unsqueeze(0)
@@ -83,17 +95,17 @@ class PPO2Agent:
 
         if is_single:
             return AgentOutput(
-                action=action.squeeze(0),                  # 原始未裁剪動作
+                action=action.squeeze(0),  # 原始未裁剪動作
                 clipped_action=clipped_action.squeeze(0),  # 裁剪後動作
                 value=value.squeeze(0),
                 log_prob=log_prob.squeeze(0),
             )
 
         return AgentOutput(
-            action=action,                                 # 原始未裁剪動作 (N, action_dim)
-            clipped_action=clipped_action,                 # 裁剪後動作 (N, action_dim)
-            value=value,                                   # (N,)
-            log_prob=log_prob,                             # (N,)
+            action=action,  # 原始未裁剪動作 (N, action_dim)
+            clipped_action=clipped_action,  # 裁剪後動作 (N, action_dim)
+            value=value,  # (N,)
+            log_prob=log_prob,  # (N,)
         )
 
     def evaluate_actions(self, states, time_states, actions):

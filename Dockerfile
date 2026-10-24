@@ -1,88 +1,32 @@
-FROM nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04
+FROM nvidia/cuda:13.3.0-cudnn-devel-ubuntu24.04
 ENV DEBIAN_FRONTEND=noninteractive
+ENV PIP_BREAK_SYSTEM_PACKAGES=1
 
 WORKDIR /SynapseX
 
 # 1. 安裝系統依賴、Python3、pip、編譯工具，並清理快取
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-      python3 python3-pip python3-dev build-essential libssl-dev libffi-dev libjpeg-dev zlib1g-dev && \
-    rm -rf /var/lib/apt/lists/*
+RUN apt-get update 
+RUN apt-get install -y --no-install-recommends python3 python3-pip python3-dev build-essential libssl-dev libffi-dev libjpeg-dev zlib1g-dev
+    
+RUN apt install -y python3.12-venv
+RUN rm -rf /var/lib/apt/lists/*
 
-# 2. 升級 pip、wheel、setuptools
-RUN pip3 install --upgrade pip wheel setuptools
+# 建立虛擬環境並將其加入 PATH
+ENV VIRTUAL_ENV=/opt/venv
+RUN python3 -m venv $VIRTUAL_ENV
+ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 
-# 3. 安裝 Python 相依套件
-COPY requirements.txt /SynapseX/
-RUN pip3 install -r requirements.txt
+# 此時更新的是虛擬環境內的 pip，不會觸發 debian 卸載衝突
+RUN pip install --upgrade pip wheel setuptools
+RUN pip install torch==2.10.0 torchvision==0.25.0 torchaudio==2.10.0 --index-url https://download.pytorch.org/whl/cu130
+
+
+COPY . /SynapseX
+RUN pip install .
 
 
 # 4. 複製並安裝 mamba_ssm wheel    
-COPY mamba_ssm-2.2.4+cu12torch2.5cxx11abiFALSE-cp310-cp310-linux_x86_64.whl /SynapseX/
-RUN pip3 install mamba_ssm-2.2.4+cu12torch2.5cxx11abiFALSE-cp310-cp310-linux_x86_64.whl
+RUN pip install mamba_ssm-2.3.2.post1+cu13torch2.10cxx11abiTRUE-cp312-cp312-linux_x86_64.whl
+RUN pip install causal_conv1d-1.7.0+cu13torch2.10cxx11abiTRUE-cp312-cp312-linux_x86_64.whl
 
-# 5. 安裝 PyTorch (CUDA 12.4)
-RUN pip3 install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu124
-
-
-RUN pip3 install causal-conv1d==1.5.0.post8 --no-build-isolation
-RUN pip3 install soft-moe-pytorch==0.1.9
-# 5. 複製專案程式碼
-COPY . /SynapseX
-COPY ssd_combined.py /usr/local/lib/python3.10/dist-packages/mamba_ssm/ops/triton/ssd_combined.py
-
-
-
-
-# Mamba2
-
-# FROM nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04
-# ENV DEBIAN_FRONTEND=noninteractive
-
-# WORKDIR /SynapseX
-
-# # 1. 安裝系統依賴、Python3、pip、編譯工具，並清理快取
-# RUN apt-get update && \
-#     apt-get install -y --no-install-recommends \
-#       python3 python3-pip python3-dev build-essential libssl-dev libffi-dev libjpeg-dev zlib1g-dev && \
-#     rm -rf /var/lib/apt/lists/*
-
-# # 2. 升級 pip、wheel、setuptools
-# RUN pip3 install --upgrade pip wheel setuptools
-
-# # 3. 安裝 Python 相依套件
-# COPY requirements.txt /SynapseX/
-# RUN pip3 install -r requirements.txt
-
-
-# # 4. 複製並安裝 mamba_ssm wheel    
-# COPY mamba_ssm-2.2.4+cu12torch2.2cxx11abiFALSE-cp310-cp310-linux_x86_64.whl /SynapseX/
-# RUN pip3 install mamba_ssm-2.2.4+cu12torch2.2cxx11abiFALSE-cp310-cp310-linux_x86_64.whl
-
-# # 5. 安裝 PyTorch (cu121)
-# RUN pip3 install torch==2.2.2 torchvision==0.17.2 torchaudio==2.2.2 --index-url https://download.pytorch.org/whl/cu121
-
-
-# RUN pip3 install causal-conv1d>=1.4.0 --no-build-isolation
-
-# # 5. 複製專案程式碼
-# COPY . /SynapseX
-# COPY ssd_combined.py /usr/local/lib/python3.10/dist-packages/mamba_ssm/ops/triton/ssd_combined.py
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+ENV LD_LIBRARY_PATH="/opt/venv/lib/python3.12/site-packages/nvidia/nccl/lib:/opt/venv/lib/python3.12/site-packages/nvidia/cudnn/lib:/opt/venv/lib/python3.12/site-packages/nvidia/nvshmem/lib:/opt/venv/lib/python3.12/site-packages/nvidia/cusparselt/lib:/opt/venv/lib/python3.12/site-packages/nvidia/cu13/lib:${LD_LIBRARY_PATH}"
