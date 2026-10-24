@@ -80,10 +80,23 @@ class PPO2:
 
         train_data_path = os.path.join(base_dir, "Brain", "simulation", "train_data")
         symbol_files = [f for f in os.listdir(train_data_path) if f.endswith(".csv")]
-        unique_symbols = sorted(list(set(f.split(".")[0] for f in symbol_files)))
+        all_symbols = sorted(list(set(f.split(".")[0] for f in symbol_files)))
+        exclude_cfg = getattr(self.cfg_training, "EXCLUDE_SYMBOLS", None) or []
+        exclude_set = set(str(s) for s in exclude_cfg)
+        excluded_found = [s for s in all_symbols if s in exclude_set]
+        unique_symbols = [s for s in all_symbols if s not in exclude_set]
+        assert (
+            len(unique_symbols) > 0
+        ), "No symbols remaining after applying EXCLUDE_SYMBOLS"
 
         self.cfg_training.UNIQUE_SYMBOLS = unique_symbols
-        print(f"--SYMBOLNAMES--: Total {len(unique_symbols)} unique symbols found.")
+        if excluded_found:
+            print(
+                f"--SYMBOLNAMES--: Excluded {len(excluded_found)} symbols: {excluded_found}"
+            )
+        print(
+            f"--SYMBOLNAMES--: Total {len(unique_symbols)} active unique symbols found."
+        )
 
         # 全域商品預載入快取，供所有 Worker 零拷貝共享讀取，徹底杜絕重複讀取 CSV 與記憶體膨脹
         print(
@@ -165,6 +178,7 @@ class PPO2:
         approx_kls = []
         clipfracs = []
         expl_vars = []
+        grad_norms = []
 
         for _ in range(ppo_epochs):
             for (
@@ -232,7 +246,7 @@ class PPO2:
 
                 self.optimizer.zero_grad()
                 total_loss.backward()
-                torch.nn.utils.clip_grad_norm_(
+                grad_norm = torch.nn.utils.clip_grad_norm_(
                     self.agent.model.parameters(), max_grad_norm
                 )
                 self.optimizer.step()
@@ -240,6 +254,7 @@ class PPO2:
                 policy_losses.append(policy_loss.item())
                 value_losses.append(value_loss.item())
                 entropy_losses.append(entropy_loss.item())
+                grad_norms.append(float(grad_norm.item()))
 
         policy_std = float(self.agent.model.log_std.exp().mean().item())
 
@@ -251,6 +266,7 @@ class PPO2:
             "clipfrac": float(np.mean(clipfracs)) if clipfracs else 0.0,
             "explained_variance": float(np.mean(expl_vars)) if expl_vars else 0.0,
             "policy_std": policy_std,
+            "grad_norm": float(np.mean(grad_norms)) if grad_norms else 0.0,
         }
 
     def checkgrad(self, model: nn.Module):
@@ -277,6 +293,11 @@ class PPO2:
         current_symbols = list(initial_symbols)
 
         episode_rewards = np.zeros(num_workers, dtype=np.float64)
+        episode_net_pnl = np.zeros(num_workers, dtype=np.float64)
+        episode_cost = np.zeros(num_workers, dtype=np.float64)
+        episode_trades = np.zeros(num_workers, dtype=np.int64)
+        episode_turnover = np.zeros(num_workers, dtype=np.float64)
+        episode_abs_pos_sum = np.zeros(num_workers, dtype=np.float64)
         episode_steps = np.zeros(num_workers, dtype=np.int64)
         episode_count = 0
         total_steps = 0
@@ -285,6 +306,10 @@ class PPO2:
         fps_step_count = 0
         fps_start_time = time.time()
         recent_episode_returns = []
+        recent_episode_net_pnl_pct = []
+        recent_episode_cost_pct = []
+        recent_episode_trades = []
+        recent_episode_avg_abs_pos = []
 
         total_rollout_steps = num_workers * horizon_steps
         print(f"\n{'=' * 30} Starting Multi-Instrument PPO2 Training {'=' * 30}")
@@ -338,7 +363,15 @@ class PPO2:
                         dones,
                         out.value.cpu(),
                     )
-                    episode_rewards += rewards  # Record raw trading returns
+                    episode_rewards += rewards
+                    for w_idx, info_w in enumerate(infos):
+                        episode_net_pnl[w_idx] += float(info_w.get("step_return", 0.0))
+                        episode_cost[w_idx] += float(info_w.get("cost", 0.0))
+                        episode_trades[w_idx] += int(bool(info_w.get("traded", False)))
+                        episode_turnover[w_idx] += float(info_w.get("turnover", 0.0))
+                        episode_abs_pos_sum[w_idx] += abs(
+                            float(info_w.get("position", 0.0))
+                        )
                     episode_steps += 1
                     total_steps += num_workers
                     obs = next_obs
@@ -346,13 +379,29 @@ class PPO2:
                     for i, done in enumerate(dones):
                         if done:
                             episode_count += 1
-                            recent_episode_returns.append(float(episode_rewards[i]))
+                            steps_i = int(max(episode_steps[i], 1))
+                            ret_i = float(episode_rewards[i])
+                            net_pnl_pct_i = float(episode_net_pnl[i] * 100.0)
+                            cost_pct_i = float(episode_cost[i] * 100.0)
+                            trades_i = int(episode_trades[i])
+                            turnover_i = float(episode_turnover[i])
+                            avg_abs_pos_i = float(episode_abs_pos_sum[i] / steps_i)
+
+                            recent_episode_returns.append(ret_i)
+                            recent_episode_net_pnl_pct.append(net_pnl_pct_i)
+                            recent_episode_cost_pct.append(cost_pct_i)
+                            recent_episode_trades.append(trades_i)
+                            recent_episode_avg_abs_pos.append(avg_abs_pos_i)
+
                             sym = infos[i].get("instrument", current_symbols[i])
                             pos = infos[i].get("position", 0.0)
                             print(
                                 f"[Ep #{episode_count:04d} | W{i}] Symbol: {sym:<20s} | "
-                                f"Steps: {episode_steps[i]:04d} | Return: {episode_rewards[i]:+.4f} | "
-                                f"End Pos: {pos:+.2f} | TotalSteps: {total_steps:07d}"
+                                f"Steps: {episode_steps[i]:04d} | Return: {ret_i:+.4f} | "
+                                f"NetPnL: {net_pnl_pct_i:+.2f}% | Cost: {cost_pct_i:.2f}% | "
+                                f"Trades: {trades_i:03d} | Turnover: {turnover_i:5.2f} | "
+                                f"Avg|Pos|: {avg_abs_pos_i:.2f} | End Pos: {pos:+.2f} | "
+                                f"TotalSteps: {total_steps:07d}"
                             )
                             # Reset worker i with next symbol from round-robin queue
                             next_sym = self.symbol_queue.get_next()
@@ -361,6 +410,11 @@ class PPO2:
                             obs["states"][i] = new_obs_i["states"]
                             obs["time_states"][i] = new_obs_i["time_states"]
                             episode_rewards[i] = 0.0
+                            episode_net_pnl[i] = 0.0
+                            episode_cost[i] = 0.0
+                            episode_trades[i] = 0
+                            episode_turnover[i] = 0.0
+                            episode_abs_pos_sum[i] = 0.0
                             episode_steps[i] = 0
 
                 # 2. Compute Bootstrap value & GAE
@@ -389,17 +443,34 @@ class PPO2:
                 fps_step_count = total_steps
                 fps_start_time = time.time()
 
-                avg_ret_str = (
-                    f"{np.mean(recent_episode_returns[-20:]):+.4f}"
-                    if recent_episode_returns
-                    else "N/A"
-                )
+                if recent_episode_returns:
+                    avg_ret_str = f"{np.mean(recent_episode_returns[-20:]):+.4f}"
+                    med_ret_100_str = f"{np.median(recent_episode_returns[-100:]):+.4f}"
+                    net_pnl_100 = recent_episode_net_pnl_pct[-100:]
+                    net_pnl_100_str = f"{np.mean(net_pnl_100):+.2f}%"
+                    cost_100_str = f"{np.mean(recent_episode_cost_pct[-100:]):.2f}%"
+                    win_100_str = f"{np.mean([p > 0.0 for p in net_pnl_100]) * 100.0:.1f}%"
+                    trades_100_str = f"{np.mean(recent_episode_trades[-100:]):.1f}"
+                    avg_pos_100_str = f"{np.mean(recent_episode_avg_abs_pos[-100:]):.2f}"
+                else:
+                    avg_ret_str = "N/A"
+                    med_ret_100_str = "N/A"
+                    net_pnl_100_str = "N/A"
+                    cost_100_str = "N/A"
+                    win_100_str = "N/A"
+                    trades_100_str = "N/A"
+                    avg_pos_100_str = "N/A"
+
                 print(
                     f"[Iter #{iteration:04d}] Steps: {total_steps:07d} | FPS: {fps:6.1f} | "
                     f"PiLoss: {metrics['policy_loss']:+.4f} | VfLoss: {metrics['value_loss']:.4f} | "
                     f"Ent: {metrics['entropy']:.4f} | KL: {metrics['approx_kl']:.5f} | "
                     f"ClipFrac: {metrics['clipfrac']:.3f} | ExplVar: {metrics['explained_variance']:+.3f} | "
-                    f"Std: {metrics['policy_std']:.3f} | AvgRet(20): {avg_ret_str}"
+                    f"Std: {metrics['policy_std']:.3f} | GradNorm: {metrics['grad_norm']:.3f} | "
+                    f"AvgRet(20): {avg_ret_str} | MedRet(100): {med_ret_100_str} | "
+                    f"NetPnL(100): {net_pnl_100_str} | Cost(100): {cost_100_str} | "
+                    f"Win(100): {win_100_str} | Trades(100): {trades_100_str} | "
+                    f"Avg|Pos|(100): {avg_pos_100_str}"
                 )
 
                 # 5. Checkpoint Saving

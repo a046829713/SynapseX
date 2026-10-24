@@ -81,6 +81,7 @@ class PPO2Engine:
         self.vol_window = int(self.cfg.VOL_WINDOW)
         self.risk_lambda = float(self.cfg.RISK_LAMBDA)
         self.reward_clip = float(self.cfg.REWARD_CLIP)
+        self.min_sigma = float(getattr(self.cfg, "MIN_ASSET_SIGMA", 1e-3))
         self.episode_steps = int(self.cfg.EPISODE_STEPS)
 
         self.model_paths: List[str] = []
@@ -190,6 +191,7 @@ class PPO2Engine:
             vol_window=self.vol_window,
             risk_lambda=self.risk_lambda,
             reward_clip=self.reward_clip,
+            min_sigma=self.min_sigma,
         )
         ob_space = spaces.Dict({
             "states": spaces.Box(
@@ -307,6 +309,7 @@ class PPO2Engine:
                 vol_window=self.vol_window,
                 risk_lambda=self.risk_lambda,
                 reward_clip=self.reward_clip,
+                min_sigma=self.min_sigma,
                 episode_steps=self.episode_steps,
             )
 
@@ -467,6 +470,7 @@ class PPO2Engine:
             vol_window=self.vol_window,
             risk_lambda=self.risk_lambda,
             reward_clip=self.reward_clip,
+            min_sigma=self.min_sigma,
             episode_steps=self.episode_steps,
         )
 

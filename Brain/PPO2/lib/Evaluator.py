@@ -28,6 +28,7 @@ class PPO2Evaluator:
         vol_window: int = 96,
         risk_lambda: float = 0.5,
         reward_clip: float = 5.0,
+        min_sigma: float = 1e-3,
         episode_steps: int = 500,
     ):
         self.agent = agent
@@ -41,6 +42,7 @@ class PPO2Evaluator:
         self.vol_window = vol_window
         self.risk_lambda = risk_lambda
         self.reward_clip = reward_clip
+        self.min_sigma = min_sigma
         self.episode_steps = episode_steps
 
         # Force evaluation mode (deterministic inference)
@@ -87,6 +89,7 @@ class PPO2Evaluator:
             vol_window=self.vol_window,
             risk_lambda=self.risk_lambda,
             reward_clip=self.reward_clip,
+            min_sigma=self.min_sigma,
         )
         env = ProductionEnv(prices_data={symbol: prices}, state=state)
         obs = env.reset(symbol=symbol)

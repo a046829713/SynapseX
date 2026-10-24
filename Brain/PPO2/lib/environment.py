@@ -23,6 +23,7 @@ class State_time_step(State_time_step_template):
         vol_window: int = 96,
         risk_lambda: float = 0.5,
         reward_clip: float = 5.0,
+        min_sigma: float = 1e-3,
         **kwargs,
     ):
         super().__init__(
@@ -47,10 +48,20 @@ class State_time_step(State_time_step_template):
         self.game_steps = 0
         self._prev_close = 0.0
 
+        # Per-step diagnostic accounting attributes
+        self.last_step_return = 0.0
+        self.last_gross_return = 0.0
+        self.last_cost = 0.0
+        self.last_turnover = 0.0
+        self.last_traded = False
+
+        assert min_sigma > 0.0, "min_sigma must be positive"
         self.vol_window = int(vol_window)
+        self.min_sigma = float(min_sigma)
         self.reward_fn = DownsidePenaltyReward(
             risk_lambda=risk_lambda,
             clip=reward_clip,
+            min_sigma=self.min_sigma,
         )
 
     def reset(self, prices: Prices, offset: int):
@@ -62,6 +73,11 @@ class State_time_step(State_time_step_template):
         self.trade_bar = 0
         self.game_steps = 0
         self._prev_close = float(self._prices.close[self._offset - 1])
+        self.last_step_return = 0.0
+        self.last_gross_return = 0.0
+        self.last_cost = 0.0
+        self.last_turnover = 0.0
+        self.last_traded = False
 
     def calculate_asset_sigma(self) -> float:
         """
@@ -75,10 +91,10 @@ class State_time_step(State_time_step_template):
         )
 
         if closes.shape[0] < 3:
-            return 1e-2
+            return max(1e-2, self.min_sigma)
 
         sigma = float(np.std(np.diff(np.log(closes))))
-        return max(sigma, 1e-5)
+        return max(sigma, self.min_sigma)
     
     def step(self, action: float):
         """
@@ -162,9 +178,16 @@ class State_time_step(State_time_step_template):
         gap_log_return = float(np.log(safe_curr_open / safe_prev_close))
         bar_log_return = float(np.log(safe_curr_close / safe_curr_open))
 
-        current_p_return = float(
-            prev_pos * gap_log_return + target_pos * bar_log_return - cost_t
+        gross_p_return = float(
+            prev_pos * gap_log_return + target_pos * bar_log_return
         )
+        current_p_return = float(gross_p_return - cost_t)
+
+        self.last_step_return = current_p_return
+        self.last_gross_return = gross_p_return
+        self.last_cost = float(cost_t)
+        self.last_turnover = float(abs(delta_p))
+        self.last_traded = bool(abs(delta_p) > 1e-8)
 
         self._prev_close = close_price
 
@@ -272,6 +295,11 @@ class BaseTradingEnv(gym.Env, ABC):
             "instrument": self._instrument,
             "offset": self._state._offset,
             "position": float(self._state.position),
+            "step_return": float(self._state.last_step_return),
+            "gross_return": float(self._state.last_gross_return),
+            "cost": float(self._state.last_cost),
+            "turnover": float(self._state.last_turnover),
+            "traded": bool(self._state.last_traded),
         }
 
         return obs, reward, terminated, truncated, info
@@ -311,6 +339,7 @@ class TrainingEnv(BaseTradingEnv):
             "vol_window": getattr(cfg_training, "VOL_WINDOW", 96),
             "risk_lambda": getattr(cfg_training, "RISK_LAMBDA", 0.5),
             "reward_clip": getattr(cfg_training, "REWARD_CLIP", 5.0),
+            "min_sigma": getattr(cfg_training, "MIN_ASSET_SIGMA", 1e-3),
         }
 
         super().__init__(state=State_time_step(**state_params))
