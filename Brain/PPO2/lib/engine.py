@@ -4,7 +4,7 @@ import re
 import glob
 import json
 from pathlib import Path
-from typing import Optional, List, Dict, Any, Union
+from typing import Optional, List, Dict, Any, Union, Tuple
 import numpy as np
 import pandas as pd
 import torch
@@ -13,7 +13,7 @@ from gymnasium import spaces
 
 from Brain.Common.DataFeature import OriginalDataFeature, Prices
 from Brain.PPO2.lib.Agent import PPO2Agent
-from Brain.PPO2.lib.environment import State_time_step
+from Brain.PPO2.lib.environment import State_time_step, STATIONARY_TIME_FEATURES
 from Brain.PPO2.lib.Evaluator import PPO2Evaluator
 
 
@@ -38,6 +38,8 @@ class PPO2Engine:
         config: Optional[Union[DictConfig, str]] = None,
         device: Optional[torch.device] = None,
         base_data_dir: str = "Brain/simulation/test_data",
+        test_start_date: Optional[str] = None,
+        test_end_date: Optional[str] = None,
     ):
         self.formal = formal
         self.base_data_dir = base_data_dir
@@ -83,6 +85,15 @@ class PPO2Engine:
         self.reward_clip = float(self.cfg.REWARD_CLIP)
         self.min_sigma = float(getattr(self.cfg, "MIN_ASSET_SIGMA", 1e-3))
         self.episode_steps = int(self.cfg.EPISODE_STEPS)
+
+        cfg_test_start = getattr(self.cfg, "TEST_START_DATE", None)
+        cfg_test_end = getattr(self.cfg, "TEST_END_DATE", None)
+        self.test_start_date = (
+            test_start_date if test_start_date is not None else cfg_test_start
+        )
+        self.test_end_date = (
+            test_end_date if test_end_date is not None else cfg_test_end
+        )
 
         self.model_paths: List[str] = []
         self.target_symbols: List[str] = []
@@ -201,7 +212,7 @@ class PPO2Engine:
                 low=-np.inf, high=np.inf, shape=dummy_state.getTimeShape(), dtype=np.float32
             ),
         })
-        ac_space = spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32)
+        ac_space = spaces.Box(low=0.0, high=1.0, shape=(1,), dtype=np.float32)
 
         ssm_cfg = None
         if hasattr(self.cfg, "SSM_CFG") and self.cfg.SSM_CFG is not None:
@@ -238,11 +249,27 @@ class PPO2Engine:
         agent.model.eval()
 
     def _extract_latest_obs(
-        self, prices: Prices, current_position: float = 0.0
+        self,
+        prices: Prices,
+        position: float = 0.0,
+        open_price: float = 0.0,
+        trade_bar: int = 0,
+        portfolio_state: Optional[Dict[str, Any]] = None,
+        current_position: Optional[float] = None,
     ) -> Dict[str, np.ndarray]:
         """
-        Extracts the latest observation window of length self.bars_count for formal live mode.
+        Extracts the latest observation window of length self.bars_count for formal live mode,
+        matching State_time_step.encode() bit-for-bit across market, portfolio, and 6-dim time features.
         """
+        if portfolio_state is not None:
+            position = float(portfolio_state.get("position", position))
+            open_price = float(portfolio_state.get("open_price", open_price))
+            trade_bar = int(portfolio_state.get("trade_bar", trade_bar))
+        elif current_position is not None:
+            position = float(current_position)
+
+        pos = float(np.clip(position, 0.0, 1.0))
+
         N = len(prices.close)
         if N < self.bars_count:
             raise ValueError(
@@ -257,11 +284,7 @@ class PPO2Engine:
             "log_quote_av", "log_trades", "log_tb_base_av", "log_tb_quote_av",
             "log_ma_30", "log_ma_60", "log_ma_120", "log_ma_240", "log_ma_360",
         ]
-        timelist = [
-            "age_log_minutes", "age_years", "month_sin", "month_cos",
-            "day_sin", "day_cos", "hour_sin", "hour_cos", "minute_sin",
-            "minute_cos", "dayofweek_sin", "dayofweek_cos", "week_sin", "week_cos",
-        ]
+        timelist = list(STATIONARY_TIME_FEATURES)
 
         data_res = np.zeros(shape=(self.bars_count, len(info_list) + 3), dtype=np.float32)
         time_res = np.zeros(shape=(self.bars_count, len(timelist)), dtype=np.float32)
@@ -269,23 +292,88 @@ class PPO2Engine:
         for idx, field in enumerate(info_list):
             data_res[:, idx] = getattr(prices, field)[start:end]
 
-        data_res[:, len(info_list)] = current_position
-        data_res[:, len(info_list) + 1] = 0.0
-        data_res[:, len(info_list) + 2] = 0.0
+        data_res[:, len(info_list)] = pos
+
+        if pos > 0.0 and open_price > 0.0:
+            prev_close = max(float(prices.close[end - 1]), 1e-8)
+            safe_open = max(float(open_price), 1e-8)
+            raw_equity_ratio = 1.0 + pos * ((prev_close - safe_open) / safe_open)
+            data_res[:, len(info_list) + 1] = float(np.log(max(raw_equity_ratio, 1e-8)))
+            data_res[:, len(info_list) + 2] = float(trade_bar) / 48.0
+        else:
+            data_res[:, len(info_list) + 1] = 0.0
+            data_res[:, len(info_list) + 2] = 0.0
 
         for idx, field in enumerate(timelist):
             time_res[:, idx] = getattr(prices, field)[start:end]
 
         return {"states": data_res, "time_states": time_res}
 
-    def run_test(self, output_dir: str = "results/ppo2_orders") -> pd.DataFrame:
+    def _resolve_symbol_portfolio_state(
+        self,
+        symbol: str,
+        portfolio_state: Optional[Dict[str, Any]],
+    ) -> Tuple[float, float, int]:
+        """
+        Extracts (position, open_price, trade_bar) for a symbol from portfolio_state.
+        """
+        if not portfolio_state:
+            return 0.0, 0.0, 0
+
+        entry = None
+        if symbol in portfolio_state:
+            entry = portfolio_state[symbol]
+        elif any(k in portfolio_state for k in ("position", "open_price", "trade_bar")):
+            entry = portfolio_state
+
+        if entry is None:
+            return 0.0, 0.0, 0
+        if isinstance(entry, dict):
+            pos = float(np.clip(float(entry.get("position", 0.0)), 0.0, 1.0))
+            open_p = float(entry.get("open_price", 0.0))
+            t_bar = int(entry.get("trade_bar", 0))
+            return pos, open_p, t_bar
+        if isinstance(entry, (tuple, list)):
+            pos = float(np.clip(float(entry[0]) if len(entry) > 0 else 0.0, 0.0, 1.0))
+            open_p = float(entry[1]) if len(entry) > 1 else 0.0
+            t_bar = int(entry[2]) if len(entry) > 2 else 0
+            return pos, open_p, t_bar
+        if isinstance(entry, (int, float, np.floating, np.integer)):
+            pos = float(np.clip(float(entry), 0.0, 1.0))
+            return pos, 0.0, 0
+        return 0.0, 0.0, 0
+
+    def run_test(
+        self,
+        output_dir: str = "results/ppo2_orders",
+        test_start_date: Optional[str] = None,
+        test_end_date: Optional[str] = None,
+    ) -> pd.DataFrame:
         """
         Executes streaming batch evaluation across models and symbols with O(1) memory footprint.
         Exports per-symbol CSV orders, per-model manifest.json, and consolidated multi_model_test_manifest.csv.
         """
+        manifest_columns = [
+            "model_name",
+            "symbol",
+            "total_bars",
+            "mean_action",
+            "std_action",
+            "long_ratio",
+            "short_ratio",
+            "flat_ratio",
+            "order_file",
+        ]
         if not self.model_paths:
             print("[PPO2Engine] Warning: No models to test. Please provide model_paths or model_dir.")
-            return pd.DataFrame()
+            return pd.DataFrame(columns=manifest_columns)
+
+        effective_start = (
+            test_start_date if test_start_date is not None else self.test_start_date
+        )
+        effective_end = (
+            test_end_date if test_end_date is not None else self.test_end_date
+        )
 
         os.makedirs(output_dir, exist_ok=True)
         manifest_rows: List[Dict[str, Any]] = []
@@ -296,7 +384,18 @@ class PPO2Engine:
             print(f"\n[{model_idx + 1}/{len(self.model_paths)}] Testing Model: {model_name} ({model_path})")
 
             agent = self.build_agent()
-            self.load_checkpoint(agent, model_path)
+            try:
+                self.load_checkpoint(agent, model_path)
+            except (RuntimeError, ValueError, KeyError) as exc:
+                print(
+                    f"[PPO2Engine] Warning: Skipping incompatible checkpoint '{model_path}': {exc}"
+                )
+                del agent
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                continue
+
             evaluator = PPO2Evaluator(
                 agent=agent,
                 bars_count=self.bars_count,
@@ -311,6 +410,8 @@ class PPO2Engine:
                 reward_clip=self.reward_clip,
                 min_sigma=self.min_sigma,
                 episode_steps=self.episode_steps,
+                test_start_date=effective_start,
+                test_end_date=effective_end,
             )
 
             model_output_dir = os.path.join(output_dir, model_name)
@@ -329,6 +430,9 @@ class PPO2Engine:
                     continue
 
                 df = pd.read_csv(symbol_path)
+                if len(df) <= 360:
+                    continue
+
                 prices = self._process_df_to_prices(feature_loader, df)
                 raw_df = feature_loader.df
 
@@ -338,7 +442,14 @@ class PPO2Engine:
                     raw_df=raw_df,
                     prices=prices,
                     output_csv_path=out_csv,
+                    test_start_date=effective_start,
+                    test_end_date=effective_end,
                 )
+
+                if order_df.empty:
+                    del prices, raw_df, order_df
+                    gc.collect()
+                    continue
 
                 actions = order_df["Action"].values
                 positions = order_df["Position"].values
@@ -392,7 +503,11 @@ class PPO2Engine:
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
 
-        manifest_df = pd.DataFrame(manifest_rows)
+        manifest_df = (
+            pd.DataFrame(manifest_rows, columns=manifest_columns)
+            if manifest_rows
+            else pd.DataFrame(columns=manifest_columns)
+        )
         consolidated_manifest_path = os.path.join(output_dir, "multi_model_test_manifest.csv")
         manifest_df.to_csv(consolidated_manifest_path, index=False)
         print(f"\n[PPO2Engine] Consolidated manifest saved to: {consolidated_manifest_path}")
@@ -403,13 +518,28 @@ class PPO2Engine:
         self, feature_loader: OriginalDataFeature, df: pd.DataFrame
     ) -> Prices:
         df_copy = df.copy()
+        if "Datetime" not in df_copy.columns:
+            for dt_col in ["date", "Date", "datetime", "timestamp", "Timestamp"]:
+                if dt_col in df_copy.columns:
+                    df_copy.rename(columns={dt_col: "Datetime"}, inplace=True)
+                    break
         if "Datetime" in df_copy.columns:
             df_copy.set_index("Datetime", inplace=True)
+
+        ohlcv_rename = {
+            "open": "Open",
+            "high": "High",
+            "low": "Low",
+            "close": "Close",
+            "volume": "Volume",
+        }
+        for low_col, cap_col in ohlcv_rename.items():
+            if cap_col not in df_copy.columns and low_col in df_copy.columns:
+                df_copy[cap_col] = df_copy[low_col]
+
         cleaned = feature_loader.cleanData(df_copy)
 
         # Defensive handling for missing volume auxiliary columns
-        if "Volume" not in cleaned.columns and "volume" in cleaned.columns:
-            cleaned["Volume"] = cleaned["volume"]
         if "quote_av" not in cleaned.columns:
             cleaned["quote_av"] = cleaned.get("Volume", 1.0) * cleaned.get("Close", 1.0)
         if "trades" not in cleaned.columns:
@@ -425,7 +555,7 @@ class PPO2Engine:
             if f"log_ma_{p}" not in cleaned.columns:
                 cleaned[f"log_ma_{p}"] = 0.0
 
-        if "age_log_minutes" not in cleaned.columns:
+        if "age_log_minutes" not in cleaned.columns and len(cleaned) > 0:
             cleaned = feature_loader.add_time_feature(cleaned)
         for t_col in [
             "age_log_minutes", "age_years", "month_sin", "month_cos",
@@ -442,9 +572,12 @@ class PPO2Engine:
         self,
         data_source: Optional[Union[pd.DataFrame, Dict[str, pd.DataFrame]]] = None,
         output_path: str = "results/ppo2_orders/formal_if_order_map.json",
+        portfolio_state: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, float]:
         """
-        Formal Live Mode: Generates target order map {symbol: action} for immediate live execution by TradingSysteam.py.
+        Formal Live Mode: Generates target order map {symbol: action} in [0.0, 1.0]
+        for immediate live execution by TradingSysteam.py, preserving stateful portfolio features
+        and rebalance_threshold parity with ProductionEnv.
         """
         # Ensure agent is instantiated and weights are loaded
         if self.agent is None:
@@ -486,8 +619,15 @@ class PPO2Engine:
                     continue
                 df = pd.read_csv(symbol_path)
                 prices = self._process_df_to_prices(feature_loader, df)
-                obs = self._extract_latest_obs(prices)
-                action_val = evaluator.evaluate_single_step(obs, apply_deadzone=True)
+                pos, open_p, t_bar = self._resolve_symbol_portfolio_state(
+                    symbol, portfolio_state
+                )
+                obs = self._extract_latest_obs(
+                    prices, position=pos, open_price=open_p, trade_bar=t_bar
+                )
+                action_val = evaluator.evaluate_single_step(
+                    obs, apply_deadzone=True, prev_position=pos
+                )
                 if_order_map[symbol] = round(action_val, 4)
 
         elif isinstance(data_source, pd.DataFrame):
@@ -501,25 +641,48 @@ class PPO2Engine:
             if sym_col is not None:
                 symbols = data_source[sym_col].unique()
                 for sym in symbols:
+                    sym_str = str(sym)
                     sym_df = data_source[data_source[sym_col] == sym]
                     prices = self._process_df_to_prices(feature_loader, sym_df)
-                    obs = self._extract_latest_obs(prices)
-                    action_val = evaluator.evaluate_single_step(obs, apply_deadzone=True)
-                    if_order_map[str(sym)] = round(action_val, 4)
+                    pos, open_p, t_bar = self._resolve_symbol_portfolio_state(
+                        sym_str, portfolio_state
+                    )
+                    obs = self._extract_latest_obs(
+                        prices, position=pos, open_price=open_p, trade_bar=t_bar
+                    )
+                    action_val = evaluator.evaluate_single_step(
+                        obs, apply_deadzone=True, prev_position=pos
+                    )
+                    if_order_map[sym_str] = round(action_val, 4)
             else:
                 # Single symbol dataframe
                 sym_name = self.target_symbols[0] if self.target_symbols else "DEFAULT"
                 prices = self._process_df_to_prices(feature_loader, data_source)
-                obs = self._extract_latest_obs(prices)
-                action_val = evaluator.evaluate_single_step(obs, apply_deadzone=True)
+                pos, open_p, t_bar = self._resolve_symbol_portfolio_state(
+                    sym_name, portfolio_state
+                )
+                obs = self._extract_latest_obs(
+                    prices, position=pos, open_price=open_p, trade_bar=t_bar
+                )
+                action_val = evaluator.evaluate_single_step(
+                    obs, apply_deadzone=True, prev_position=pos
+                )
                 if_order_map[sym_name] = round(action_val, 4)
 
         elif isinstance(data_source, dict):
             for sym, sym_df in data_source.items():
+                sym_str = str(sym)
                 prices = self._process_df_to_prices(feature_loader, sym_df)
-                obs = self._extract_latest_obs(prices)
-                action_val = evaluator.evaluate_single_step(obs, apply_deadzone=True)
-                if_order_map[sym] = round(action_val, 4)
+                pos, open_p, t_bar = self._resolve_symbol_portfolio_state(
+                    sym_str, portfolio_state
+                )
+                obs = self._extract_latest_obs(
+                    prices, position=pos, open_price=open_p, trade_bar=t_bar
+                )
+                action_val = evaluator.evaluate_single_step(
+                    obs, apply_deadzone=True, prev_position=pos
+                )
+                if_order_map[sym_str] = round(action_val, 4)
 
         os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
         with open(output_path, "w", encoding="utf-8") as f:

@@ -1,3 +1,4 @@
+from typing import Optional
 import pandas as pd
 import collections
 import time
@@ -75,22 +76,37 @@ class OriginalDataFeature:
         return out_dict
 
     def get_train_net_work_data_by_path(
-        self, symbolNames: list, typeName="train_data"
+        self,
+        symbolNames: list,
+        typeName: str = "train_data",
+        end_date: Optional[str] = None,
+        min_bars: int = 0,
     ) -> dict:
         """
-        用來取得類神經網絡所需要的資料
+        Loads market CSV data for symbolNames, optionally truncating timestamps at end_date
+        and skipping instruments with insufficient usable rows.
         """
         out_dict = {}
+        cutoff_ts = (
+            pd.to_datetime(end_date)
+            if end_date is not None and str(end_date).strip() != ""
+            else None
+        )
         for symbolName in symbolNames:
             df = pd.read_csv(f"Brain/simulation/{typeName}/{symbolName}.csv")
             df.set_index("Datetime", inplace=True)
+            if cutoff_ts is not None:
+                df = df[pd.to_datetime(df.index) <= cutoff_ts]
+            if len(df) <= 360:
+                continue
             self.df = self.cleanData(df)
             self.df = self.add_average_metric(self.df)
+            if len(self.df) < max(1, int(min_bars)):
+                continue
             self.df = self.add_time_feature(self.df)
             # self.df = self.add_ATR(self.df)
 
-            # 使用 PyTorch Tensor 的方法
-            out_dict.update({symbolName: self.load_relative()})
+            out_dict[symbolName] = self.load_relative()
 
         return out_dict
 

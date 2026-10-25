@@ -44,6 +44,18 @@ def parse_arguments():
         default="configs/training/ppo_v2.yaml",
         help="Path to training/testing YAML configuration file",
     )
+    parser.add_argument(
+        "--test_start_date",
+        type=str,
+        default=None,
+        help="Optional override for evaluation start timestamp (e.g. '2026-01-01 00:00:00')",
+    )
+    parser.add_argument(
+        "--test_end_date",
+        type=str,
+        default=None,
+        help="Optional override for evaluation end timestamp (e.g. '2025-12-31 23:59:59')",
+    )
     return parser.parse_args()
 
 
@@ -58,7 +70,17 @@ def main():
     print("=" * 70)
 
     # 1. Initialize PPO2Engine
-    engine = PPO2Engine(formal=args.formal, config=args.config)
+    engine = PPO2Engine(
+        formal=args.formal,
+        config=args.config,
+        test_start_date=args.test_start_date,
+        test_end_date=args.test_end_date,
+    )
+    if not args.formal:
+        print(
+            f"[PPO2_rl_test] Evaluation Window: "
+            f"[{engine.test_start_date or 'START'} -> {engine.test_end_date or 'END'}]"
+        )
 
     # 2. Prepare symbols and models
     # 【Option 1: Default】Batch test all checkpoints discovered in saves/ across test_data

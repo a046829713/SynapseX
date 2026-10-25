@@ -8,6 +8,15 @@ from Brain.Common.env_components import State_time_step_template
 from Brain.Common.DataFeature import Prices, OriginalDataFeature
 from Brain.PPO2.lib.reward import DownsidePenaltyReward
 
+STATIONARY_TIME_FEATURES = [
+    "hour_sin",
+    "hour_cos",
+    "minute_sin",
+    "minute_cos",
+    "dayofweek_sin",
+    "dayofweek_cos",
+]
+
 
 class State_time_step(State_time_step_template):
     def __init__(
@@ -33,6 +42,7 @@ class State_time_step(State_time_step_template):
             default_slippage=default_slippage,
             N_steps=N_steps,
         )
+        self.timelist = list(STATIONARY_TIME_FEATURES)
 
         self.deadzone_threshold = deadzone_threshold
         self.rebalance_threshold = rebalance_threshold
@@ -98,100 +108,72 @@ class State_time_step(State_time_step_template):
     
     def step(self, action: float):
         """
-        執行單步連續動作撮合、記帳、淨值與獎勵計算（Market-Open 撮合與對數報酬 Option A）
+        Executes a single continuous Long-Only [0.0, 1.0] market-open rebalance step
+        with exact simple-to-log portfolio equity compounding.
         """
-        # 1. 動作死區過濾
-        if abs(action) <= self.deadzone_threshold:
+        clipped_action = float(np.clip(action, 0.0, 1.0))
+        if clipped_action <= self.deadzone_threshold:
             candidate_pos = 0.0
         else:
-            candidate_pos = float(action)
+            candidate_pos = clipped_action
 
-        open_price = float(self._prices.open[self._offset])
-        close_price = float(self._prices.close[self._offset])
-        prev_pos = self.position
+        open_price = max(float(self._prices.open[self._offset]), 1e-8)
+        close_price = max(float(self._prices.close[self._offset]), 1e-8)
+        safe_prev_close = max(float(self._prev_close), 1e-8)
+        prev_pos = float(self.position)
 
-        # 2. 再平衡調倉死區過濾 (抑制微幅抖動所致之手續費磨損)
-        # 規則：
-        # - 若為由空倉建立新部位 (prev == 0.0)、平倉退場 (candidate == 0.0) 或多空反轉翻倉 (candidate * prev < 0.0)，立即執行調倉
-        # - 若為同向持倉調整且部位變化小於 rebalance_threshold，維持前一期部位 (Δp = 0, 0 手續費)
-        if prev_pos == 0.0 or candidate_pos == 0.0 or (candidate_pos * prev_pos < 0.0):
+        # Rebalance deadzone filter for Long-Only [0.0, 1.0]
+        if prev_pos == 0.0 or candidate_pos == 0.0:
             target_pos = candidate_pos
         elif abs(candidate_pos - prev_pos) < self.rebalance_threshold:
             target_pos = prev_pos
         else:
             target_pos = candidate_pos
 
-        # 3. 換倉量與交易摩擦成本 (手續費 + 滑價，在開盤成交時扣除)
         delta_p = target_pos - prev_pos
         friction_rate = self.commission_perc + self.default_slippage
-        cost_t = abs(delta_p) * friction_rate
 
-        # 4. 部位轉移與開倉均價維護 (以 open_price 成交)
-        # Case A: 兩者皆為 0 (無持倉狀態維持)
-        if prev_pos == 0.0 and target_pos == 0.0:
-            self.trade_bar = 0
+        # Long-Only position & weighted-average open_price maintenance
+        if target_pos == 0.0:
             self.open_price = 0.0
-
-        # Case B: 由空倉建立新部位 (做多或放空)
-        elif prev_pos == 0.0 and target_pos != 0.0:
+            self.trade_bar = 0
+        elif prev_pos == 0.0:
             self.open_price = open_price
             self.trade_bar = 1
-
-        # Case C: 反手翻倉 (Flip: 多翻空 或 空翻多)
-        elif prev_pos * target_pos < 0.0:
-            # 以開盤價格建立新方向部位
-            self.open_price = open_price
-            self.trade_bar = 1
-
-        # Case D: 同向持倉調整 (加倉、減倉、完全平倉或維持不變)
         else:
-            prev_size = abs(prev_pos)
-            curr_size = abs(target_pos)
-
-            if curr_size > prev_size:
-                # 同向加倉：加權平均開盤成本
-                added_size = curr_size - prev_size
+            if target_pos > prev_pos:
+                added_size = target_pos - prev_pos
                 self.open_price = (
-                    prev_size * self.open_price + added_size * open_price
-                ) / curr_size
-                self.trade_bar += 1
-            elif curr_size < prev_size:
-                # 同向減倉 或 完全平倉：開倉均價不變
-                if target_pos == 0.0:
-                    # 完全平倉
-                    self.open_price = 0.0
-                    self.trade_bar = 0
-                else:
-                    self.trade_bar += 1
-            else:
-                # 部位比例完全相同，繼續持有
-                self.trade_bar += 1
+                    prev_pos * self.open_price + added_size * open_price
+                ) / target_pos
+            self.trade_bar += 1
 
-        # 更新持倉比例
         self.position = target_pos
 
-        # 5. 單步對數報酬分解 (Mark-to-Market Log Return - Option A)
-        safe_prev_close = max(self._prev_close, 1e-8)
-        safe_curr_open = max(open_price, 1e-8)
-        safe_curr_close = max(close_price, 1e-8)
+        # Exact simple-to-log portfolio equity compounding
+        gap_simple_ret = (open_price - safe_prev_close) / safe_prev_close
+        bar_simple_ret = (close_price - open_price) / open_price
 
-        gap_log_return = float(np.log(safe_curr_open / safe_prev_close))
-        bar_log_return = float(np.log(safe_curr_close / safe_curr_open))
-
-        gross_p_return = float(
-            prev_pos * gap_log_return + target_pos * bar_log_return
+        m_gap = max(1.0 + prev_pos * gap_simple_ret, 1e-8)
+        m_gross = max(m_gap * (1.0 + target_pos * bar_simple_ret), 1e-8)
+        m_net = max(
+            m_gap * (1.0 - abs(delta_p) * friction_rate) * (1.0 + target_pos * bar_simple_ret),
+            1e-8,
         )
-        current_p_return = float(gross_p_return - cost_t)
+
+        gross_p_return = float(np.log(m_gross))
+        current_p_return = float(np.log(m_net))
+        effective_cost = float(max(0.0, gross_p_return - current_p_return))
 
         self.last_step_return = current_p_return
         self.last_gross_return = gross_p_return
-        self.last_cost = float(cost_t)
+        self.last_cost = effective_cost
         self.last_turnover = float(abs(delta_p))
         self.last_traded = bool(abs(delta_p) > 1e-8)
 
         self._prev_close = close_price
 
-        # 6. 下行風險懲罰與總獎勵
+        # Downside risk penalty and total reward
         reward = float(
             self.weights["w1_step_return"]
             * self.reward_fn.step(
@@ -200,7 +182,7 @@ class State_time_step(State_time_step_template):
             )
         )
 
-        # 7. 推進時間步與判斷終止
+        # Advance time offset and check termination/truncation
         self._offset += 1
         self.game_steps += 1
         terminated = bool(self._offset >= self._prices.close.shape[0] - 1)
@@ -210,8 +192,8 @@ class State_time_step(State_time_step_template):
 
     def encode(self):
         """
-        觀測空間編碼覆寫：回傳 Dict 格式 {"states": data_res, "time_states": time_res}
-        採用 NumPy 切片賦值向量化加速，嚴格杜絕 Look-Ahead Bias 未來價格洩漏！
+        Encodes observation dict {"states": data_res, "time_states": time_res}
+        using vectorized NumPy slicing without look-ahead bias.
         """
         data_res = np.zeros(shape=self.getStateShape(), dtype=np.float32)
         time_res = np.zeros(shape=self.getTimeShape(), dtype=np.float32)
@@ -219,24 +201,16 @@ class State_time_step(State_time_step_template):
         start = self._offset - self.bars_count
         end = self._offset
 
-        # 向量化特徵賦值
         for idx, field in enumerate(self.info_list):
             data_res[:, idx] = getattr(self._prices, field)[start:end]
 
-        # 特徵矩陣部位狀態與浮動盈虧編碼
         data_res[:, len(self.info_list)] = self.position
 
-        if abs(self.position) > 0 and self.open_price > 0:
-            prev_close = float(self._prices.close[self._offset - 1])
-            unrealized_return = float(
-                self.position
-                * (
-                    np.log(max(prev_close, 1e-8))
-                    - np.log(max(self.open_price, 1e-8))
-                )
-            )
-            data_res[:, len(self.info_list) + 1] = unrealized_return
-            # 特徵 3: 持倉時間累計 (以日為基準標準化: 48 根 30m K 棒為 1 天)
+        if self.position > 0.0 and self.open_price > 0.0:
+            prev_close = max(float(self._prices.close[self._offset - 1]), 1e-8)
+            safe_open = max(float(self.open_price), 1e-8)
+            raw_equity_ratio = 1.0 + self.position * ((prev_close - safe_open) / safe_open)
+            data_res[:, len(self.info_list) + 1] = float(np.log(max(raw_equity_ratio, 1e-8)))
             data_res[:, len(self.info_list) + 2] = float(self.trade_bar) / 48.0
         else:
             data_res[:, len(self.info_list) + 1] = 0.0
@@ -258,7 +232,7 @@ class BaseTradingEnv(gym.Env, ABC):
         self._state = state
         self._instrument = None
         self.action_space = spaces.Box(
-            low=-1.0, high=1.0, shape=(1,), dtype=np.float32
+            low=0.0, high=1.0, shape=(1,), dtype=np.float32
         )
         self.observation_space = spaces.Dict(
             {
@@ -283,11 +257,10 @@ class BaseTradingEnv(gym.Env, ABC):
 
     def step(self, action):
         """
-        執行一個時間步。
-        支援 scalar, 1D/2D ndarray, tensor, list 輸入，並裁剪至 [-1.0, 1.0]。
+        Executes a single environment step, clamping continuous actions to [0.0, 1.0].
         """
         action_val = float(np.asarray(action).squeeze())
-        action_val = float(np.clip(action_val, -1.0, 1.0))
+        action_val = float(np.clip(action_val, 0.0, 1.0))
         reward, terminated, truncated = self._state.step(action_val)
         obs = self._state.encode()
 
@@ -325,6 +298,10 @@ class TrainingEnv(BaseTradingEnv):
         cfg_training = self.config.training
         self.unique_symbols = cfg_training.UNIQUE_SYMBOLS
         self.data_type_name = "train_data"
+        self.train_end_date = getattr(cfg_training, "TRAIN_END_DATE", None)
+        self.min_bars = (
+            int(cfg_training.BARS_COUNT) + int(cfg_training.EPISODE_STEPS) + 2
+        )
         self._data_cache = preloaded_data if preloaded_data is not None else {}
 
         state_params = {
@@ -347,8 +324,16 @@ class TrainingEnv(BaseTradingEnv):
     def _load_data_for_instrument(self, instrument: str):
         if instrument not in self._data_cache:
             loaded = OriginalDataFeature().get_train_net_work_data_by_path(
-                [instrument], typeName=self.data_type_name
+                [instrument],
+                typeName=self.data_type_name,
+                end_date=self.train_end_date,
+                min_bars=self.min_bars,
             )
+            if instrument not in loaded:
+                raise ValueError(
+                    f"Instrument '{instrument}' has insufficient pre-cutoff data "
+                    f"(end_date={self.train_end_date}, min_bars={self.min_bars})."
+                )
             self._data_cache.update(loaded)
         data = self._data_cache[instrument]
         if isinstance(data, dict) and instrument in data:
@@ -386,12 +371,19 @@ class ProductionEnv(BaseTradingEnv):
         self._prices = prices_data
         self._instrument = list(self._prices.keys())[0]
 
-    def reset(self, symbol: str = None):
+    def reset(self, symbol: str = None, start_offset: Optional[int] = None):
         if symbol is not None:
             assert symbol in self._prices, f"Symbol {symbol} not found in preloaded prices"
             self._instrument = symbol
         prices = self._prices[self._instrument]
-        offset = self._state.bars_count
+        if start_offset is None:
+            offset = self._state.bars_count
+        else:
+            offset = max(self._state.bars_count, int(start_offset))
+        assert offset < prices.close.shape[0], (
+            f"start_offset {offset} out of bounds for symbol {self._instrument} "
+            f"with length {prices.close.shape[0]}"
+        )
 
         print(
             f"[Production] Resetting env with symbol: {self._instrument} at offset: {offset}"

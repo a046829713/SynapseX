@@ -2,6 +2,7 @@ import os
 import time
 from datetime import datetime
 from collections import deque
+from typing import Optional, Dict, Any
 import hydra
 import numpy as np
 import torch
@@ -30,17 +31,60 @@ def explained_variance(y_pred: torch.Tensor, y_true: torch.Tensor) -> float:
 
 class SymbolQueue:
     """
-    全域商品洗牌佇列 (Global Shuffled Round-Robin Queue)。
-    維護訓練集內所有唯一標的，依序取出；當佇列抽空時自動重新洗牌補充，保證 100% 均勻覆蓋。
+    Global Shuffled Weighted Round-Robin Queue.
+    Maintains active training instruments and allocates 1..max_weight slots per cycle
+    proportional to usable history length, preventing short new-listing sampling skew.
     """
 
-    def __init__(self, symbols: list):
+    def __init__(
+        self,
+        symbols: list,
+        symbol_weights: Optional[Dict[str, int]] = None,
+        max_weight: int = 5,
+    ):
+        assert len(symbols) > 0, "SymbolQueue requires at least one symbol"
         self.all_symbols = list(symbols)
+        self.max_weight = max(1, int(max_weight))
+        if symbol_weights is not None:
+            self.symbol_weights = {
+                s: max(1, min(self.max_weight, int(symbol_weights.get(s, 1))))
+                for s in self.all_symbols
+            }
+        else:
+            self.symbol_weights = {s: 1 for s in self.all_symbols}
+
+        self._expanded_pool = []
+        for s in self.all_symbols:
+            self._expanded_pool.extend([s] * self.symbol_weights[s])
+
         self.queue = deque()
         self._refill()
 
+    @staticmethod
+    def compute_bar_weights(
+        preloaded_data: Dict[str, Any],
+        bars_count: int = 0,
+        episode_steps: int = 0,
+        max_weight: int = 5,
+    ) -> Dict[str, int]:
+        if not preloaded_data:
+            return {}
+        max_w = max(1, int(max_weight))
+        usable_map = {
+            sym: max(1, int(len(prices.close)) - int(bars_count) - int(episode_steps))
+            for sym, prices in preloaded_data.items()
+        }
+        max_usable = max(usable_map.values())
+        min_usable = min(usable_map.values())
+        if max_usable <= min_usable:
+            return {sym: 1 for sym in preloaded_data}
+        return {
+            sym: max(1, min(max_w, int(round(max_w * u / max_usable))))
+            for sym, u in usable_map.items()
+        }
+
     def _refill(self):
-        shuffled = list(self.all_symbols)
+        shuffled = list(self._expanded_pool)
         np.random.shuffle(shuffled)
         self.queue.extend(shuffled)
 
@@ -84,33 +128,53 @@ class PPO2:
         exclude_cfg = getattr(self.cfg_training, "EXCLUDE_SYMBOLS", None) or []
         exclude_set = set(str(s) for s in exclude_cfg)
         excluded_found = [s for s in all_symbols if s in exclude_set]
-        unique_symbols = [s for s in all_symbols if s not in exclude_set]
+        candidate_symbols = [s for s in all_symbols if s not in exclude_set]
         assert (
-            len(unique_symbols) > 0
+            len(candidate_symbols) > 0
         ), "No symbols remaining after applying EXCLUDE_SYMBOLS"
 
-        self.cfg_training.UNIQUE_SYMBOLS = unique_symbols
         if excluded_found:
             print(
                 f"--SYMBOLNAMES--: Excluded {len(excluded_found)} symbols: {excluded_found}"
             )
-        print(
-            f"--SYMBOLNAMES--: Total {len(unique_symbols)} active unique symbols found."
+
+        train_end_date = getattr(self.cfg_training, "TRAIN_END_DATE", None)
+        min_bars = (
+            int(self.cfg_training.BARS_COUNT) + int(self.cfg_training.EPISODE_STEPS) + 2
         )
 
-        # 全域商品預載入快取，供所有 Worker 零拷貝共享讀取，徹底杜絕重複讀取 CSV 與記憶體膨脹
+        # Shared memory cache across forked workers with strict temporal cutoff & bar-count filter
         print(
-            f"--PRELOAD--: Preloading {len(unique_symbols)} unique symbols into memory cache..."
+            f"--PRELOAD--: Preloading {len(candidate_symbols)} candidate symbols "
+            f"(TRAIN_END_DATE={train_end_date}, min_bars={min_bars})..."
         )
         t0 = time.time()
         self.preloaded_data = OriginalDataFeature().get_train_net_work_data_by_path(
-            unique_symbols
+            candidate_symbols,
+            end_date=train_end_date,
+            min_bars=min_bars,
         )
+        retained_symbols = sorted(list(self.preloaded_data.keys()))
+        assert len(retained_symbols) > 0, (
+            f"No symbols remaining after temporal cutoff (TRAIN_END_DATE={train_end_date}, "
+            f"min_bars={min_bars})."
+        )
+        self.cfg_training.UNIQUE_SYMBOLS = retained_symbols
+        skipped_count = len(candidate_symbols) - len(retained_symbols)
         print(
-            f"--PRELOAD--: Preloaded {len(self.preloaded_data)} symbols in {time.time() - t0:.2f}s."
+            f"--PRELOAD--: Retained {len(retained_symbols)} active symbols "
+            f"(filtered {skipped_count} post-cutoff/short symbols) in {time.time() - t0:.2f}s."
         )
 
-        self.symbol_queue = SymbolQueue(unique_symbols)
+        symbol_weights = SymbolQueue.compute_bar_weights(
+            self.preloaded_data,
+            bars_count=self.cfg_training.BARS_COUNT,
+            episode_steps=self.cfg_training.EPISODE_STEPS,
+            max_weight=5,
+        )
+        self.symbol_queue = SymbolQueue(
+            retained_symbols, symbol_weights=symbol_weights, max_weight=5
+        )
 
         saves_tag = self.cfg_training.SAVES_TAG
         bars_count = self.cfg_training.BARS_COUNT
@@ -324,11 +388,11 @@ class PPO2:
                 # 1. Rollout sampling across all N workers
                 for _ in range(horizon_steps):
                     out = self.agent.get_action(obs, stochastic=True)
-                    # 傳入環境執行已裁剪動作
+                    # Execute clipped Long-Only [0.0, 1.0] action in environment
                     env_actions_np = (
                         out.clipped_action.cpu().numpy()
                         if out.clipped_action is not None
-                        else np.clip(out.action.cpu().numpy(), -1.0, 1.0)
+                        else np.clip(out.action.cpu().numpy(), 0.0, 1.0)
                     )
                     next_obs, rewards, terminateds, truncateds, infos = (
                         self.vec_env.step(env_actions_np)

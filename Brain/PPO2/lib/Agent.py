@@ -87,11 +87,17 @@ class PPO2Agent:
             else:
                 action = mu
 
-            # 根據 OpenAI Baselines / CleanRL 標準實作：
-            # 1. log_prob 必須基於未裁剪的原始高斯採樣動作計算
-            # 2. clipped_action 供環境 step 執行，確保環境介面在合法範圍內
+            # Standard OpenAI Baselines / CleanRL Gaussian policy:
+            # 1. log_prob is evaluated on unclipped Gaussian samples
+            # 2. clipped_action is dynamically clamped to [ac_space.low, ac_space.high] for env execution
             log_prob = dist.log_prob(action).sum(dim=-1)
-            clipped_action = torch.clamp(action, -1.0, 1.0)
+            action_low = torch.as_tensor(
+                self.ac_space.low, dtype=action.dtype, device=action.device
+            )
+            action_high = torch.as_tensor(
+                self.ac_space.high, dtype=action.dtype, device=action.device
+            )
+            clipped_action = torch.clamp(action, min=action_low, max=action_high)
 
         if is_single:
             return AgentOutput(
