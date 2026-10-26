@@ -25,10 +25,6 @@ class PPO2Evaluator:
         commission_perc: float = 0.00045,
         default_slippage: float = 0.00025,
         w1_step_return: float = 1.0,
-        vol_window: int = 96,
-        risk_lambda: float = 0.5,
-        reward_clip: float = 5.0,
-        min_sigma: float = 1e-3,
         episode_steps: int = 500,
         test_start_date: Optional[str] = None,
         test_end_date: Optional[str] = None,
@@ -41,10 +37,6 @@ class PPO2Evaluator:
         self.commission_perc = commission_perc
         self.default_slippage = default_slippage
         self.w1_step_return = w1_step_return
-        self.vol_window = vol_window
-        self.risk_lambda = risk_lambda
-        self.reward_clip = reward_clip
-        self.min_sigma = min_sigma
         self.episode_steps = episode_steps
         self.test_start_date = test_start_date
         self.test_end_date = test_end_date
@@ -167,10 +159,6 @@ class PPO2Evaluator:
             deadzone_threshold=self.deadzone_threshold,
             rebalance_threshold=self.rebalance_threshold,
             w1_step_return=self.w1_step_return,
-            vol_window=self.vol_window,
-            risk_lambda=self.risk_lambda,
-            reward_clip=self.reward_clip,
-            min_sigma=self.min_sigma,
         )
         env = ProductionEnv(prices_data={symbol: prices}, state=state)
         obs = env.reset(symbol=symbol, start_offset=start_offset)

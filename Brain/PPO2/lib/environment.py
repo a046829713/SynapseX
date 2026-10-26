@@ -6,7 +6,6 @@ from gymnasium import spaces
 from abc import ABC, abstractmethod
 from Brain.Common.env_components import State_time_step_template
 from Brain.Common.DataFeature import Prices, OriginalDataFeature
-from Brain.PPO2.lib.reward import DownsidePenaltyReward
 
 STATIONARY_TIME_FEATURES = [
     "hour_sin",
@@ -29,10 +28,6 @@ class State_time_step(State_time_step_template):
         deadzone_threshold: float = 0.01,
         rebalance_threshold: float = 0.03,
         w1_step_return: float = 1.0,
-        vol_window: int = 96,
-        risk_lambda: float = 0.5,
-        reward_clip: float = 5.0,
-        min_sigma: float = 1e-3,
         **kwargs,
     ):
         super().__init__(
@@ -48,7 +43,7 @@ class State_time_step(State_time_step_template):
         self.rebalance_threshold = rebalance_threshold
 
         self.weights = {
-            "w1_step_return": w1_step_return,  # 單步報酬權重
+            "w1_step_return": float(w1_step_return),
         }
 
         # 狀態變數初始化
@@ -65,15 +60,6 @@ class State_time_step(State_time_step_template):
         self.last_turnover = 0.0
         self.last_traded = False
 
-        assert min_sigma > 0.0, "min_sigma must be positive"
-        self.vol_window = int(vol_window)
-        self.min_sigma = float(min_sigma)
-        self.reward_fn = DownsidePenaltyReward(
-            risk_lambda=risk_lambda,
-            clip=reward_clip,
-            min_sigma=self.min_sigma,
-        )
-
     def reset(self, prices: Prices, offset: int):
         assert offset >= self.bars_count - 1
         self._prices = prices
@@ -89,23 +75,6 @@ class State_time_step(State_time_step_template):
         self.last_turnover = 0.0
         self.last_traded = False
 
-    def calculate_asset_sigma(self) -> float:
-        """
-        Computes ex-ante asset volatility using only completed bars prior to self._offset
-        (close[offset - vol_window - 1 : offset]), strictly preventing look-ahead bias.
-        """
-        start = max(0, self._offset - self.vol_window - 1)
-        closes = np.maximum(
-            np.asarray(self._prices.close[start : self._offset], dtype=np.float64),
-            1e-8,
-        )
-
-        if closes.shape[0] < 3:
-            return max(1e-2, self.min_sigma)
-
-        sigma = float(np.std(np.diff(np.log(closes))))
-        return max(sigma, self.min_sigma)
-    
     def step(self, action: float):
         """
         Executes a single continuous Long-Only [0.0, 1.0] market-open rebalance step
@@ -173,14 +142,8 @@ class State_time_step(State_time_step_template):
 
         self._prev_close = close_price
 
-        # Downside risk penalty and total reward
-        reward = float(
-            self.weights["w1_step_return"]
-            * self.reward_fn.step(
-                step_return=current_p_return,
-                asset_sigma=self.calculate_asset_sigma(),
-            )
-        )
+        # Unbiased single-step net portfolio log-return
+        reward = float(self.weights["w1_step_return"] * current_p_return)
 
         # Advance time offset and check termination/truncation
         self._offset += 1
@@ -313,10 +276,6 @@ class TrainingEnv(BaseTradingEnv):
             "deadzone_threshold": cfg_training.DEADZONE_THRESHOLD,
             "rebalance_threshold": getattr(cfg_training, "REBALANCE_THRESHOLD", 0.03),
             "w1_step_return": cfg_training.W1_STEP_RETURN,
-            "vol_window": getattr(cfg_training, "VOL_WINDOW", 96),
-            "risk_lambda": getattr(cfg_training, "RISK_LAMBDA", 0.5),
-            "reward_clip": getattr(cfg_training, "REWARD_CLIP", 5.0),
-            "min_sigma": getattr(cfg_training, "MIN_ASSET_SIGMA", 1e-3),
         }
 
         super().__init__(state=State_time_step(**state_params))

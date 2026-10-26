@@ -80,10 +80,6 @@ class PPO2Engine:
         self.time_features_out = int(self.cfg.TIME_FEATURES_OUT)
         self.portfolio_dim = int(self.cfg.PORTFOLIO_DIM)
         self.w1_step_return = float(self.cfg.W1_STEP_RETURN)
-        self.vol_window = int(self.cfg.VOL_WINDOW)
-        self.risk_lambda = float(self.cfg.RISK_LAMBDA)
-        self.reward_clip = float(self.cfg.REWARD_CLIP)
-        self.min_sigma = float(getattr(self.cfg, "MIN_ASSET_SIGMA", 1e-3))
         self.episode_steps = int(self.cfg.EPISODE_STEPS)
         self.init_log_std = float(getattr(self.cfg, "INIT_LOG_STD", 0.0))
         self.log_std_min = float(getattr(self.cfg, "LOG_STD_MIN", -5.0))
@@ -202,10 +198,6 @@ class PPO2Engine:
             deadzone_threshold=self.deadzone_threshold,
             rebalance_threshold=self.rebalance_threshold,
             w1_step_return=self.w1_step_return,
-            vol_window=self.vol_window,
-            risk_lambda=self.risk_lambda,
-            reward_clip=self.reward_clip,
-            min_sigma=self.min_sigma,
         )
         ob_space = spaces.Dict({
             "states": spaces.Box(
@@ -411,10 +403,6 @@ class PPO2Engine:
                 commission_perc=self.commission_perc,
                 default_slippage=self.default_slippage,
                 w1_step_return=self.w1_step_return,
-                vol_window=self.vol_window,
-                risk_lambda=self.risk_lambda,
-                reward_clip=self.reward_clip,
-                min_sigma=self.min_sigma,
                 episode_steps=self.episode_steps,
                 test_start_date=effective_start,
                 test_end_date=effective_end,
@@ -606,10 +594,6 @@ class PPO2Engine:
             commission_perc=self.commission_perc,
             default_slippage=self.default_slippage,
             w1_step_return=self.w1_step_return,
-            vol_window=self.vol_window,
-            risk_lambda=self.risk_lambda,
-            reward_clip=self.reward_clip,
-            min_sigma=self.min_sigma,
             episode_steps=self.episode_steps,
         )
 
