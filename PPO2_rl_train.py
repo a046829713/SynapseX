@@ -203,6 +203,9 @@ class PPO2:
 
     def _prepare_agent(self):
         ssm_cfg = OmegaConf.to_container(self.cfg_training.SSM_CFG, resolve=True)
+        init_log_std = float(getattr(self.cfg_training, "INIT_LOG_STD", 0.0))
+        log_std_min = float(getattr(self.cfg_training, "LOG_STD_MIN", -5.0))
+        log_std_max = float(getattr(self.cfg_training, "LOG_STD_MAX", 1.0))
 
         self.agent = PPO2Agent(
             ob_space=self.vec_env.observation_space,
@@ -212,8 +215,11 @@ class PPO2:
             hidden_size=self.cfg_training.HIDDEN_SIZE,
             nlayers=self.cfg_training.NLAYERS,
             time_features_out=self.cfg_training.TIME_FEATURES_OUT,
+            init_log_std=init_log_std,
             portfolio_dim=self.cfg_training.PORTFOLIO_DIM,
             ssm_cfg=ssm_cfg,
+            log_std_min=log_std_min,
+            log_std_max=log_std_max,
         )
 
         print(f"net create current parameter size:{self.count_parameters(self.agent.model)}")
@@ -243,6 +249,8 @@ class PPO2:
         clipfracs = []
         expl_vars = []
         grad_norms = []
+        mean_actions = []
+        mean_mus = []
 
         for _ in range(ppo_epochs):
             for (
@@ -262,8 +270,8 @@ class PPO2:
                 advantages_b = advantages_b.to(self.device)
                 old_values_b = old_values_b.to(self.device)
 
-                log_probs, entropy, values = self.agent.evaluate_actions(
-                    states_b, time_states_b, actions_b
+                log_probs, entropy, values, stats = self.agent.evaluate_actions(
+                    states_b, time_states_b, actions_b, return_stats=True
                 )
 
                 # Ratio
@@ -319,8 +327,16 @@ class PPO2:
                 value_losses.append(value_loss.item())
                 entropy_losses.append(entropy_loss.item())
                 grad_norms.append(float(grad_norm.item()))
+                mean_actions.append(stats["mean_action"])
+                mean_mus.append(stats["mean_mu"])
 
-        policy_std = float(self.agent.model.log_std.exp().mean().item())
+        with torch.no_grad():
+            clamped_log_std = torch.clamp(
+                self.agent.model.log_std,
+                self.agent.model.log_std_min,
+                self.agent.model.log_std_max,
+            )
+            policy_std = float(clamped_log_std.exp().mean().item())
 
         return {
             "policy_loss": float(np.mean(policy_losses)) if policy_losses else 0.0,
@@ -330,6 +346,8 @@ class PPO2:
             "clipfrac": float(np.mean(clipfracs)) if clipfracs else 0.0,
             "explained_variance": float(np.mean(expl_vars)) if expl_vars else 0.0,
             "policy_std": policy_std,
+            "mean_action": float(np.mean(mean_actions)) if mean_actions else 0.5,
+            "mean_mu": float(np.mean(mean_mus)) if mean_mus else 0.0,
             "grad_norm": float(np.mean(grad_norms)) if grad_norms else 0.0,
         }
 
@@ -528,9 +546,10 @@ class PPO2:
                 print(
                     f"[Iter #{iteration:04d}] Steps: {total_steps:07d} | FPS: {fps:6.1f} | "
                     f"PiLoss: {metrics['policy_loss']:+.4f} | VfLoss: {metrics['value_loss']:.4f} | "
-                    f"Ent: {metrics['entropy']:.4f} | KL: {metrics['approx_kl']:.5f} | "
+                    f"Ent: {metrics['entropy']:+.4f} | KL: {metrics['approx_kl']:.5f} | "
                     f"ClipFrac: {metrics['clipfrac']:.3f} | ExplVar: {metrics['explained_variance']:+.3f} | "
-                    f"Std: {metrics['policy_std']:.3f} | GradNorm: {metrics['grad_norm']:.3f} | "
+                    f"Std: {metrics['policy_std']:.3f} | MeanAct: {metrics['mean_action']:.3f} | "
+                    f"MeanMu: {metrics['mean_mu']:+.3f} | GradNorm: {metrics['grad_norm']:.3f} | "
                     f"AvgRet(20): {avg_ret_str} | MedRet(100): {med_ret_100_str} | "
                     f"NetPnL(100): {net_pnl_100_str} | Cost(100): {cost_100_str} | "
                     f"Win(100): {win_100_str} | Trades(100): {trades_100_str} | "

@@ -319,7 +319,7 @@ class MambaContinuousActorCritic(nn.Module):
         nlayers: int = 2,
         time_features_out: int = 32,
         mode: str = "full",
-        init_log_std: float = -0.5,
+        init_log_std: float = 0.0,
         portfolio_dim: int = 3,
         ssm_cfg: Optional[dict] = None,
         moe_cfg: Optional[dict] = None,
@@ -338,7 +338,14 @@ class MambaContinuousActorCritic(nn.Module):
         self.portfolio_dim = portfolio_dim
         self.market_dim = d_model - self.portfolio_dim
         self.log_std_min = log_std_min
+        self.log_std_min = log_std_min
         self.log_std_max = log_std_max
+        assert self.log_std_min < self.log_std_max, (
+            f"log_std_min ({self.log_std_min}) must be strictly less than log_std_max ({self.log_std_max})"
+        )
+        assert self.log_std_min <= init_log_std <= self.log_std_max, (
+            f"init_log_std ({init_log_std}) must lie within [{self.log_std_min}, {self.log_std_max}]"
+        )
 
         self.time_embedding = SineActivation(
             in_features=time_features_in, out_features=time_features_out
@@ -465,11 +472,11 @@ class MambaContinuousActorCritic(nn.Module):
 
 @dataclass
 class AgentOutput:
-    """Agent在與環境互動時的輸出。"""
+    """Output container for PPO2Agent forward interaction."""
 
-    action: torch.Tensor          # 未裁剪的原始動作 (Unclipped / Raw Action)，用於 Buffer 儲存與策略訓練
-    value: torch.Tensor           # 狀態價值估計 V(s)
-    log_prob: torch.Tensor        # 基於未裁剪動作計算的高斯對數機率 log π(action)
-    clipped_action: Optional[torch.Tensor] = None  # 裁剪至合法邊界 [-1.0, 1.0] 的動作，專供環境執行
+    action: torch.Tensor  # Pre-squash latent Gaussian sample u in R, stored in RolloutBuffer
+    value: torch.Tensor  # State value estimate V(s)
+    log_prob: torch.Tensor  # Exact squashed Change-of-Variables log-density log pi(a | s)
+    clipped_action: Optional[torch.Tensor] = None  # Bounded squashed action a in (low, high) for env execution
 
 

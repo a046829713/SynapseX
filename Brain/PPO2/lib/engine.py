@@ -85,6 +85,9 @@ class PPO2Engine:
         self.reward_clip = float(self.cfg.REWARD_CLIP)
         self.min_sigma = float(getattr(self.cfg, "MIN_ASSET_SIGMA", 1e-3))
         self.episode_steps = int(self.cfg.EPISODE_STEPS)
+        self.init_log_std = float(getattr(self.cfg, "INIT_LOG_STD", 0.0))
+        self.log_std_min = float(getattr(self.cfg, "LOG_STD_MIN", -5.0))
+        self.log_std_max = float(getattr(self.cfg, "LOG_STD_MAX", 1.0))
 
         cfg_test_start = getattr(self.cfg, "TEST_START_DATE", None)
         cfg_test_end = getattr(self.cfg, "TEST_END_DATE", None)
@@ -229,8 +232,11 @@ class PPO2Engine:
             hidden_size=self.hidden_size,
             nlayers=self.nlayers,
             time_features_out=self.time_features_out,
+            init_log_std=self.init_log_std,
             portfolio_dim=self.portfolio_dim,
             ssm_cfg=ssm_cfg,
+            log_std_min=self.log_std_min,
+            log_std_max=self.log_std_max,
         )
         return agent
 
