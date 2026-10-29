@@ -12,6 +12,11 @@ from omegaconf import DictConfig, OmegaConf
 from Brain.Common.DataFeature import OriginalDataFeature
 from Brain.Common.PytorchModelTool import ModelTool
 from Brain.Common.optimization import build_optimizer
+from Brain.Common.grad_diagnostics import (
+    build_param_groups,
+    clip_coef,
+    group_grad_norms,
+)
 from Brain.PPO2.lib.Agent import PPO2Agent
 from Brain.PPO2.lib.environment import TrainingEnv, SubprocVecEnv
 from Brain.PPO2.lib.experience import RolloutBuffer
@@ -224,6 +229,9 @@ class PPO2:
 
         print(f"net create current parameter size:{self.count_parameters(self.agent.model)}")
 
+        # Read-only per-module parameter partition for gradient-norm telemetry
+        self._param_groups = build_param_groups(self.agent.model)
+
     def _prepare_optimizer(self):
         lr = self.cfg_training.LEARNING_RATE
         weight_decay = self.cfg_training.WEIGHT_DECAY
@@ -251,6 +259,8 @@ class PPO2:
         grad_norms = []
         mean_actions = []
         mean_mus = []
+        group_norm_records = []
+        clip_coefs = []
 
         for _ in range(ppo_epochs):
             for (
@@ -309,6 +319,7 @@ class PPO2:
                 vf_loss_clipped = (v_clipped - returns_b).pow(2)
                 value_loss = 0.5 * torch.max(vf_loss_unclipped, vf_loss_clipped).mean()
 
+                
                 # Entropy loss (bonus)
                 entropy_loss = -entropy.mean()
 
@@ -318,10 +329,14 @@ class PPO2:
 
                 self.optimizer.zero_grad()
                 total_loss.backward()
+                # Read-only pre-clip per-module gradient norms (does not touch .grad)
+                group_norms = group_grad_norms(self._param_groups)
                 grad_norm = torch.nn.utils.clip_grad_norm_(
                     self.agent.model.parameters(), max_grad_norm
                 )
                 self.optimizer.step()
+                group_norm_records.append(group_norms)
+                clip_coefs.append(clip_coef(group_norms["total"], max_grad_norm))
 
                 policy_losses.append(policy_loss.item())
                 value_losses.append(value_loss.item())
@@ -338,7 +353,19 @@ class PPO2:
             )
             policy_std = float(clamped_log_std.exp().mean().item())
 
+        def _mean_group(key: str) -> float:
+            if not group_norm_records:
+                return 0.0
+            return float(np.mean([rec[key] for rec in group_norm_records]))
+
         return {
+            "grad_norm_dain": _mean_group("dain"),
+            "grad_norm_rest": _mean_group("rest"),
+            "grad_norm_actor": _mean_group("actor"),
+            "grad_norm_critic": _mean_group("critic"),
+            "grad_norm_backbone": _mean_group("backbone"),
+            "clip_coef_mean": float(np.mean(clip_coefs)) if clip_coefs else 1.0,
+            "clip_coef_min": float(np.min(clip_coefs)) if clip_coefs else 1.0,
             "policy_loss": float(np.mean(policy_losses)) if policy_losses else 0.0,
             "value_loss": float(np.mean(value_losses)) if value_losses else 0.0,
             "entropy": float(-np.mean(entropy_losses)) if entropy_losses else 0.0,
@@ -545,11 +572,15 @@ class PPO2:
 
                 print(
                     f"[Iter #{iteration:04d}] Steps: {total_steps:07d} | FPS: {fps:6.1f} | "
-                    f"PiLoss: {metrics['policy_loss']:+.4f} | VfLoss: {metrics['value_loss']:.4f} | "
-                    f"Ent: {metrics['entropy']:+.4f} | KL: {metrics['approx_kl']:.5f} | "
-                    f"ClipFrac: {metrics['clipfrac']:.3f} | ExplVar: {metrics['explained_variance']:+.3f} | "
+                    f"PiLoss: {metrics['policy_loss']:+.4f} | ValueLoss: {metrics['value_loss']:.4f} | "
+                    f"Entropy: {metrics['entropy']:+.4f} | KL: {metrics['approx_kl']:.5f} | "
+                    f"ClipFrac: {metrics['clipfrac']:.3f} | ExplainedVariance: {metrics['explained_variance']:+.3f} | "
                     f"Std: {metrics['policy_std']:.3f} | MeanAct: {metrics['mean_action']:.3f} | "
                     f"MeanMu: {metrics['mean_mu']:+.3f} | GradNorm: {metrics['grad_norm']:.3f} | "
+                    f"GN[dain/rest/actor/critic/backbone]: {metrics['grad_norm_dain']:.3f}/"
+                    f"{metrics['grad_norm_rest']:.3f}/{metrics['grad_norm_actor']:.3f}/"
+                    f"{metrics['grad_norm_critic']:.3f}/{metrics['grad_norm_backbone']:.3f} | "
+                    f"ClipCoef: {metrics['clip_coef_mean']:.4f} (min {metrics['clip_coef_min']:.4f}) | "
                     f"AvgRet(20): {avg_ret_str} | MedRet(100): {med_ret_100_str} | "
                     f"NetPnL(100): {net_pnl_100_str} | Cost(100): {cost_100_str} | "
                     f"Win(100): {win_100_str} | Trades(100): {trades_100_str} | "
