@@ -13,6 +13,7 @@ from Brain.Common.DataFeature import OriginalDataFeature
 from Brain.Common.PytorchModelTool import ModelTool
 from Brain.Common.optimization import build_optimizer
 from Brain.Common.grad_diagnostics import (
+    DAIN_GROUPS,
     build_param_groups,
     clip_coef,
     group_grad_norms,
@@ -231,6 +232,19 @@ class PPO2:
 
         # Read-only per-module parameter partition for gradient-norm telemetry
         self._param_groups = build_param_groups(self.agent.model)
+        self._rest_params = [
+            p
+            for g, ps in self._param_groups.items()
+            if g not in DAIN_GROUPS
+            for p in ps
+        ]
+        assert len(self._rest_params) > 0, "No non-DAIN parameters found for clipping"
+        n_dain = sum(
+            len(ps) for g, ps in self._param_groups.items() if g in DAIN_GROUPS
+        )
+        assert len(self._rest_params) + n_dain == sum(
+            len(ps) for ps in self._param_groups.values()
+        ), "Mismatch in partitioned parameter counts"
 
     def _prepare_optimizer(self):
         lr = self.cfg_training.LEARNING_RATE
@@ -331,12 +345,13 @@ class PPO2:
                 total_loss.backward()
                 # Read-only pre-clip per-module gradient norms (does not touch .grad)
                 group_norms = group_grad_norms(self._param_groups)
+                # Exclude DAIN from clipping; clip only non-DAIN (rest) parameters
                 grad_norm = torch.nn.utils.clip_grad_norm_(
-                    self.agent.model.parameters(), max_grad_norm
+                    self._rest_params, max_grad_norm
                 )
                 self.optimizer.step()
                 group_norm_records.append(group_norms)
-                clip_coefs.append(clip_coef(group_norms["total"], max_grad_norm))
+                clip_coefs.append(clip_coef(group_norms["rest"], max_grad_norm))
 
                 policy_losses.append(policy_loss.item())
                 value_losses.append(value_loss.item())
