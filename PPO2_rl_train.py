@@ -263,6 +263,7 @@ class PPO2:
         vf_coef: float = 0.5,
         ent_coef: float = 0.01,
         max_grad_norm: float = 0.5,
+        target_kl: Optional[float] = None,
     ):
         policy_losses = []
         value_losses = []
@@ -276,7 +277,14 @@ class PPO2:
         group_norm_records = []
         clip_coefs = []
 
+        n_updates = 0
+        kl_early_stop = False
+        num_batches_per_epoch = max(1, len(self.buffer) // batch_size) if len(self.buffer) > 0 else 1
+        total_expected_updates = ppo_epochs * num_batches_per_epoch
+
         for _ in range(ppo_epochs):
+            if kl_early_stop:
+                break
             for (
                 states_b,
                 time_states_b,
@@ -305,13 +313,25 @@ class PPO2:
                 # Approximate KL divergence & Clip Fraction for monitoring (OpenAI Baselines)
                 with torch.no_grad():
                     approx_kl = ((ratio - 1.0) - log_ratio).mean().item()
-                    approx_kls.append(approx_kl)
                     clipfrac = torch.mean(
                         (torch.abs(ratio - 1.0) > clip_eps).float()
                     ).item()
-                    clipfracs.append(clipfrac)
                     expl_var = explained_variance(values, returns_b)
-                    expl_vars.append(expl_var)
+
+                # Trust-Region Early Stopping Check (before backward/step)
+                # Guarantees at least 1 update has occurred before early stopping
+                if (
+                    target_kl is not None
+                    and target_kl > 0.0
+                    and approx_kl > 1.5 * target_kl
+                    and n_updates > 0
+                ):
+                    kl_early_stop = True
+                    break
+
+                approx_kls.append(approx_kl)
+                clipfracs.append(clipfrac)
+                expl_vars.append(expl_var)
 
                 # Mini-batch Advantage Normalization (OpenAI Baselines / CleanRL Detail #7)
                 mb_advantages = (advantages_b - advantages_b.mean()) / (
@@ -350,6 +370,7 @@ class PPO2:
                     self._rest_params, max_grad_norm
                 )
                 self.optimizer.step()
+                n_updates += 1
                 group_norm_records.append(group_norms)
                 clip_coefs.append(clip_coef(group_norms["rest"], max_grad_norm))
 
@@ -371,7 +392,7 @@ class PPO2:
         def _mean_group(key: str) -> float:
             if not group_norm_records:
                 return 0.0
-            return float(np.mean([rec[key] for rec in group_norm_records]))
+            return float(np.mean([rec.get(key, 0.0) for rec in group_norm_records]))
 
         return {
             "grad_norm_dain": _mean_group("dain"),
@@ -391,6 +412,9 @@ class PPO2:
             "mean_action": float(np.mean(mean_actions)) if mean_actions else 0.5,
             "mean_mu": float(np.mean(mean_mus)) if mean_mus else 0.0,
             "grad_norm": float(np.mean(grad_norms)) if grad_norms else 0.0,
+            "n_updates": n_updates,
+            "total_updates": total_expected_updates,
+            "kl_early_stop": kl_early_stop,
         }
 
     def checkgrad(self, model: nn.Module):
@@ -549,6 +573,7 @@ class PPO2:
                 self.buffer.compute_gae(last_values)
 
                 # 3. PPO Update
+                target_kl = getattr(self.cfg_training, "TARGET_KL", None)
                 metrics = self.update_ppo(
                     ppo_epochs=ppo_epochs,
                     batch_size=batch_size,
@@ -556,6 +581,7 @@ class PPO2:
                     vf_coef=vf_coef,
                     ent_coef=ent_coef,
                     max_grad_norm=max_grad_norm,
+                    target_kl=target_kl,
                 )
 
                 self.buffer.clear()
@@ -585,8 +611,13 @@ class PPO2:
                     trades_100_str = "N/A"
                     avg_pos_100_str = "N/A"
 
+                upd_str = f"Upd: {metrics['n_updates']:02d}/{metrics['total_updates']:02d}"
+                if metrics["kl_early_stop"]:
+                    upd_str += " [KL Stop]"
+
                 print(
                     f"[Iter #{iteration:04d}] Steps: {total_steps:07d} | FPS: {fps:6.1f} | "
+                    f"{upd_str} | "
                     f"PiLoss: {metrics['policy_loss']:+.4f} | ValueLoss: {metrics['value_loss']:.4f} | "
                     f"Entropy: {metrics['entropy']:+.4f} | KL: {metrics['approx_kl']:.5f} | "
                     f"ClipFrac: {metrics['clipfrac']:.3f} | ExplainedVariance: {metrics['explained_variance']:+.3f} | "
