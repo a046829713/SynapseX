@@ -20,7 +20,7 @@ class PPO2Agent:
         time_features_out: int = 32,
         mode: str = "full",
         init_log_std: float = 0.0,
-        portfolio_dim: int = 3,
+        portfolio_dim: int = 2,
         ssm_cfg: Optional[dict] = None,
         moe_cfg: Optional[dict] = None,
         log_std_min: float = -5.0,

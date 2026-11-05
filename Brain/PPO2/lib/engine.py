@@ -251,7 +251,6 @@ class PPO2Engine:
         prices: Prices,
         position: float = 0.0,
         open_price: float = 0.0,
-        trade_bar: int = 0,
         portfolio_state: Optional[Dict[str, Any]] = None,
         current_position: Optional[float] = None,
     ) -> Dict[str, np.ndarray]:
@@ -262,7 +261,6 @@ class PPO2Engine:
         if portfolio_state is not None:
             position = float(portfolio_state.get("position", position))
             open_price = float(portfolio_state.get("open_price", open_price))
-            trade_bar = int(portfolio_state.get("trade_bar", trade_bar))
         elif current_position is not None:
             position = float(current_position)
 
@@ -284,7 +282,7 @@ class PPO2Engine:
         ]
         timelist = list(STATIONARY_TIME_FEATURES)
 
-        data_res = np.zeros(shape=(self.bars_count, len(info_list) + 3), dtype=np.float32)
+        data_res = np.zeros(shape=(self.bars_count, len(info_list) + 2), dtype=np.float32)
         time_res = np.zeros(shape=(self.bars_count, len(timelist)), dtype=np.float32)
 
         for idx, field in enumerate(info_list):
@@ -297,10 +295,8 @@ class PPO2Engine:
             safe_open = max(float(open_price), 1e-8)
             raw_equity_ratio = 1.0 + pos * ((prev_close - safe_open) / safe_open)
             data_res[:, len(info_list) + 1] = float(np.log(max(raw_equity_ratio, 1e-8)))
-            data_res[:, len(info_list) + 2] = float(trade_bar) / 48.0
         else:
             data_res[:, len(info_list) + 1] = 0.0
-            data_res[:, len(info_list) + 2] = 0.0
 
         for idx, field in enumerate(timelist):
             time_res[:, idx] = getattr(prices, field)[start:end]
@@ -311,35 +307,33 @@ class PPO2Engine:
         self,
         symbol: str,
         portfolio_state: Optional[Dict[str, Any]],
-    ) -> Tuple[float, float, int]:
+    ) -> Tuple[float, float]:
         """
-        Extracts (position, open_price, trade_bar) for a symbol from portfolio_state.
+        Extracts (position, open_price) for a symbol from portfolio_state.
         """
         if not portfolio_state:
-            return 0.0, 0.0, 0
+            return 0.0, 0.0
 
         entry = None
         if symbol in portfolio_state:
             entry = portfolio_state[symbol]
-        elif any(k in portfolio_state for k in ("position", "open_price", "trade_bar")):
+        elif any(k in portfolio_state for k in ("position", "open_price")):
             entry = portfolio_state
 
         if entry is None:
-            return 0.0, 0.0, 0
+            return 0.0, 0.0
         if isinstance(entry, dict):
             pos = float(np.clip(float(entry.get("position", 0.0)), 0.0, 1.0))
             open_p = float(entry.get("open_price", 0.0))
-            t_bar = int(entry.get("trade_bar", 0))
-            return pos, open_p, t_bar
+            return pos, open_p
         if isinstance(entry, (tuple, list)):
             pos = float(np.clip(float(entry[0]) if len(entry) > 0 else 0.0, 0.0, 1.0))
             open_p = float(entry[1]) if len(entry) > 1 else 0.0
-            t_bar = int(entry[2]) if len(entry) > 2 else 0
-            return pos, open_p, t_bar
+            return pos, open_p
         if isinstance(entry, (int, float, np.floating, np.integer)):
             pos = float(np.clip(float(entry), 0.0, 1.0))
-            return pos, 0.0, 0
-        return 0.0, 0.0, 0
+            return pos, 0.0
+        return 0.0, 0.0
 
     def run_test(
         self,
@@ -609,11 +603,11 @@ class PPO2Engine:
                     continue
                 df = pd.read_csv(symbol_path)
                 prices = self._process_df_to_prices(feature_loader, df)
-                pos, open_p, t_bar = self._resolve_symbol_portfolio_state(
+                pos, open_p = self._resolve_symbol_portfolio_state(
                     symbol, portfolio_state
                 )
                 obs = self._extract_latest_obs(
-                    prices, position=pos, open_price=open_p, trade_bar=t_bar
+                    prices, position=pos, open_price=open_p
                 )
                 action_val = evaluator.evaluate_single_step(
                     obs, apply_deadzone=True, prev_position=pos
@@ -634,11 +628,11 @@ class PPO2Engine:
                     sym_str = str(sym)
                     sym_df = data_source[data_source[sym_col] == sym]
                     prices = self._process_df_to_prices(feature_loader, sym_df)
-                    pos, open_p, t_bar = self._resolve_symbol_portfolio_state(
+                    pos, open_p = self._resolve_symbol_portfolio_state(
                         sym_str, portfolio_state
                     )
                     obs = self._extract_latest_obs(
-                        prices, position=pos, open_price=open_p, trade_bar=t_bar
+                        prices, position=pos, open_price=open_p
                     )
                     action_val = evaluator.evaluate_single_step(
                         obs, apply_deadzone=True, prev_position=pos
@@ -648,11 +642,11 @@ class PPO2Engine:
                 # Single symbol dataframe
                 sym_name = self.target_symbols[0] if self.target_symbols else "DEFAULT"
                 prices = self._process_df_to_prices(feature_loader, data_source)
-                pos, open_p, t_bar = self._resolve_symbol_portfolio_state(
+                pos, open_p = self._resolve_symbol_portfolio_state(
                     sym_name, portfolio_state
                 )
                 obs = self._extract_latest_obs(
-                    prices, position=pos, open_price=open_p, trade_bar=t_bar
+                    prices, position=pos, open_price=open_p
                 )
                 action_val = evaluator.evaluate_single_step(
                     obs, apply_deadzone=True, prev_position=pos
@@ -663,11 +657,11 @@ class PPO2Engine:
             for sym, sym_df in data_source.items():
                 sym_str = str(sym)
                 prices = self._process_df_to_prices(feature_loader, sym_df)
-                pos, open_p, t_bar = self._resolve_symbol_portfolio_state(
+                pos, open_p = self._resolve_symbol_portfolio_state(
                     sym_str, portfolio_state
                 )
                 obs = self._extract_latest_obs(
-                    prices, position=pos, open_price=open_p, trade_bar=t_bar
+                    prices, position=pos, open_price=open_p
                 )
                 action_val = evaluator.evaluate_single_step(
                     obs, apply_deadzone=True, prev_position=pos

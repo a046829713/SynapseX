@@ -295,7 +295,7 @@ class MambaContinuousActorCritic(nn.Module):
     Mamba2 Continuous Action Actor-Critic Network for Financial Reinforcement Learning:
       - Decoupled Dual-Stream Input:
           * Market stream (first d_model - portfolio_dim features) normalized via DAIN_Layer.
-          * Portfolio stream (last portfolio_dim features: position, unrealized_return, trade_bar/48)
+          * Portfolio stream (last portfolio_dim features: position, unrealized_return)
             bypasses DAIN to preserve real account state signals.
       - Gated Temporal-Market Fusion: SineActivation (Time2Vec) + Sigmoid Gate + GELU embedding.
       - Temporal Backbone: MixerModel (Mamba / Mamba2 SSM, deterministic without dropout).
@@ -320,7 +320,7 @@ class MambaContinuousActorCritic(nn.Module):
         time_features_out: int = 32,
         mode: str = "full",
         init_log_std: float = 0.0,
-        portfolio_dim: int = 3,
+        portfolio_dim: int = 2,
         ssm_cfg: Optional[dict] = None,
         moe_cfg: Optional[dict] = None,
         d_intermediate: Optional[int] = None,
