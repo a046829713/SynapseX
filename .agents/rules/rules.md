@@ -28,13 +28,13 @@ This document defines the strict operational rules and conventions for AI Agents
 
 ## 2. Language & Documentation Standards
 
-### 2.1 English-Only Code Artifacts
-- **Specifications & Specs**: All specifications, design documents, and module specs MUST be written in English.
-- **Code Annotations**: All docstrings, inline code comments, type hints, function descriptions, and variable names inside the codebase MUST be written in English.
-- **Commit & Log Messages**: Git commit messages, change logs, and technical specification files inside `.agents/` or `spec/` MUST be written in English.
+### 2.1 Documentation & Specification Language Standards
+- **Specifications & Specs**: All specifications, design documents, and module specs under `spec/` MUST be written in Traditional Chinese (繁體中文) (code symbols, variable names, formulas, and technical terminology may retain English).
+- **Code Annotations**: Code docstrings, inline comments, type hints, and function descriptions may use Traditional Chinese (繁體中文) or English. Code variable/symbol names should remain standard English.
+- **Commit & Log Messages**: Git commit messages, change logs, and technical documentation may use Traditional Chinese (繁體中文) or English.
 
 ### 2.2 Interactive Communication
-- Chat interactions with the user may use Traditional Chinese or the user's preferred language, but all persistent code files and technical documentation added to the codebase MUST strictly follow the English requirement.
+- Chat interactions with the user must be conducted in Traditional Chinese (繁體中文). All specification documents and technical proposals created for review must be written in Traditional Chinese (繁體中文).
 
 ---
 

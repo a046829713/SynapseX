@@ -100,12 +100,24 @@ class PPO2Evaluator:
         test_end_date: Optional[str] = None,
     ) -> pd.DataFrame:
         """
-        Evaluates chronological steps across the dataset deterministically without PnL or plotting.
+        Evaluates chronological steps across the dataset deterministically.
         Generates and optionally exports tabular CSV with columns:
-        [Datetime, Symbol, Open, Close, Action, Position]
+        [Datetime, Symbol, Open, Close, Action, Position, StepReturn, GrossReturn, Cost, Turnover, MarketReturn]
         """
         self.agent.model.eval()
-        columns = ["Datetime", "Symbol", "Open", "Close", "Action", "Position"]
+        columns = [
+            "Datetime",
+            "Symbol",
+            "Open",
+            "Close",
+            "Action",
+            "Position",
+            "StepReturn",
+            "GrossReturn",
+            "Cost",
+            "Turnover",
+            "MarketReturn",
+        ]
 
         total_len = len(prices.close)
         if total_len <= self.bars_count + 1:
@@ -174,6 +186,8 @@ class PPO2Evaluator:
                 dt = datetime_series[curr_offset]
                 open_val = float(open_series[curr_offset])
                 close_val = float(close_series[curr_offset])
+                prev_close_val = max(float(close_series[curr_offset - 1]), 1e-8)
+                mkt_log_ret = float(np.log(max(close_val, 1e-8) / prev_close_val))
 
                 out = self.agent.get_action(obs, stochastic=False)
                 action_val = float(np.clip(float(out.clipped_action.item()), 0.0, 1.0))
@@ -192,6 +206,11 @@ class PPO2Evaluator:
                     "Close": close_val,
                     "Action": action_val,
                     "Position": pos_val,
+                    "StepReturn": float(info.get("step_return", 0.0)),
+                    "GrossReturn": float(info.get("gross_return", 0.0)),
+                    "Cost": float(info.get("cost", 0.0)),
+                    "Turnover": float(info.get("turnover", 0.0)),
+                    "MarketReturn": mkt_log_ret,
                 })
 
         order_df = pd.DataFrame(records, columns=columns)
@@ -201,3 +220,195 @@ class PPO2Evaluator:
             order_df.to_csv(output_csv_path, index=False)
 
         return order_df
+
+    @staticmethod
+    def _safe_annualized_ratio(
+        daily_series: np.ndarray, annual_factor: float = float(np.sqrt(365.0))
+    ) -> float:
+        if len(daily_series) < 2:
+            return 0.0
+        mean_val = float(np.mean(daily_series))
+        std_val = float(np.std(daily_series, ddof=1))
+        if not np.isfinite(std_val) or std_val < 1e-8:
+            return 0.0
+        val = (mean_val / std_val) * annual_factor
+        return float(np.clip(val, -50.0, 50.0)) if np.isfinite(val) else 0.0
+
+    @staticmethod
+    def _safe_annualized_sortino(
+        daily_series: np.ndarray, annual_factor: float = float(np.sqrt(365.0))
+    ) -> float:
+        if len(daily_series) < 2:
+            return 0.0
+        mean_val = float(np.mean(daily_series))
+        downside = np.minimum(daily_series, 0.0)
+        downside_std = float(np.sqrt(np.mean(downside ** 2)))
+        if not np.isfinite(downside_std) or downside_std < 1e-8:
+            if mean_val > 1e-8:
+                return PPO2Evaluator._safe_annualized_ratio(daily_series, annual_factor)
+            return 0.0
+        val = (mean_val / downside_std) * annual_factor
+        return float(np.clip(val, -50.0, 50.0)) if np.isfinite(val) else 0.0
+
+    @staticmethod
+    def compute_symbol_metrics(
+        order_df: pd.DataFrame,
+        commission_perc: float = 0.0001,
+        default_slippage: float = 0.0001,
+    ) -> Dict[str, Any]:
+        """
+        Computes daily-aggregated risk-adjusted performance metrics and 2x friction stress
+        tests from a symbol's step-by-step evaluation DataFrame.
+        """
+        empty_metrics: Dict[str, Any] = {
+            "total_bars": 0,
+            "eval_days": 0,
+            "mean_action": 0.0,
+            "std_action": 0.0,
+            "long_ratio": 0.0,
+            "short_ratio": 0.0,
+            "flat_ratio": 0.0,
+            "mean_exposure": 0.0,
+            "cum_return_pct": 0.0,
+            "bh_return_pct": 0.0,
+            "sharpe": 0.0,
+            "sortino": 0.0,
+            "ir_1x": 0.0,
+            "ir_2x": 0.0,
+            "max_drawdown_pct": 0.0,
+            "calmar": 0.0,
+            "daily_turnover": 0.0,
+            "trade_count": 0,
+            "daily_returns": {},
+        }
+        if order_df is None or order_df.empty:
+            return empty_metrics
+
+        total_bars = len(order_df)
+        actions = order_df["Action"].to_numpy(dtype=np.float64)
+        positions = order_df["Position"].to_numpy(dtype=np.float64)
+
+        step_ret = (
+            order_df["StepReturn"].to_numpy(dtype=np.float64)
+            if "StepReturn" in order_df.columns
+            else np.zeros(total_bars, dtype=np.float64)
+        )
+        gross_ret = (
+            order_df["GrossReturn"].to_numpy(dtype=np.float64)
+            if "GrossReturn" in order_df.columns
+            else step_ret.copy()
+        )
+        cost_arr = (
+            order_df["Cost"].to_numpy(dtype=np.float64)
+            if "Cost" in order_df.columns
+            else np.maximum(0.0, gross_ret - step_ret)
+        )
+        turnover = (
+            order_df["Turnover"].to_numpy(dtype=np.float64)
+            if "Turnover" in order_df.columns
+            else np.abs(np.diff(np.concatenate([[0.0], positions])))
+        )
+        if "MarketReturn" in order_df.columns:
+            mkt_ret = order_df["MarketReturn"].to_numpy(dtype=np.float64)
+        elif "Close" in order_df.columns:
+            closes = np.maximum(order_df["Close"].to_numpy(dtype=np.float64), 1e-8)
+            mkt_ret = np.concatenate([[0.0], np.log(closes[1:] / closes[:-1])])
+        else:
+            mkt_ret = np.zeros(total_bars, dtype=np.float64)
+
+        friction_rate = max(0.0, float(commission_perc) + float(default_slippage))
+        if friction_rate > 0.0:
+            step_ret_2x = gross_ret + np.log(
+                np.maximum(1.0 - 2.0 * turnover * friction_rate, 1e-8)
+            )
+        else:
+            step_ret_2x = step_ret - cost_arr
+
+        mean_action = float(np.mean(actions))
+        std_action = float(np.std(actions))
+        long_ratio = float(np.mean(positions > 0.0))
+        short_ratio = float(np.mean(positions < 0.0))
+        flat_ratio = float(np.mean(positions == 0.0))
+        mean_exposure = float(np.clip(np.mean(positions), 0.0, 1.0))
+
+        cum_log_ret = float(np.sum(step_ret))
+        bh_log_ret = float(np.sum(mkt_ret))
+        cum_return_pct = float((np.exp(np.clip(cum_log_ret, -50.0, 50.0)) - 1.0) * 100.0)
+        bh_return_pct = float((np.exp(np.clip(bh_log_ret, -50.0, 50.0)) - 1.0) * 100.0)
+
+        # Bar-level compounded equity curve for exact Max Drawdown
+        cum_curve = np.concatenate([[0.0], np.cumsum(step_ret)])
+        equity_curve = np.exp(np.clip(cum_curve, -50.0, 50.0))
+        running_peak = np.maximum.accumulate(equity_curve)
+        drawdowns = 1.0 - (equity_curve / np.maximum(running_peak, 1e-12))
+        max_drawdown_pct = float(np.clip(np.max(drawdowns) * 100.0, 0.0, 100.0))
+
+        # Group by calendar date for daily return aggregation
+        dt_parsed = pd.to_datetime(order_df["Datetime"], errors="coerce")
+        if dt_parsed.isna().all():
+            # Fallback: group every 48 bars (24h of 30m bars) as one synthetic day
+            day_keys = pd.Series(
+                [f"day_{i // 48:04d}" for i in range(total_bars)], dtype=str
+            )
+        else:
+            day_keys = dt_parsed.dt.strftime("%Y-%m-%d").fillna("unknown")
+
+        daily_df = pd.DataFrame({
+            "day": day_keys.values,
+            "ret_1x": step_ret,
+            "ret_2x": step_ret_2x,
+            "mkt_ret": mkt_ret,
+            "turnover": turnover,
+        }).groupby("day", sort=True).sum()
+
+        eval_days = len(daily_df)
+        daily_ret_1x = daily_df["ret_1x"].to_numpy(dtype=np.float64)
+        daily_ret_2x = daily_df["ret_2x"].to_numpy(dtype=np.float64)
+        daily_mkt_ret = daily_df["mkt_ret"].to_numpy(dtype=np.float64)
+        daily_turn_arr = daily_df["turnover"].to_numpy(dtype=np.float64)
+
+        bench_daily = mean_exposure * daily_mkt_ret
+        active_1x = daily_ret_1x - bench_daily
+        active_2x = daily_ret_2x - bench_daily
+
+        sharpe = PPO2Evaluator._safe_annualized_ratio(daily_ret_1x)
+        sortino = PPO2Evaluator._safe_annualized_sortino(daily_ret_1x)
+        ir_1x = PPO2Evaluator._safe_annualized_ratio(active_1x)
+        ir_2x = PPO2Evaluator._safe_annualized_ratio(active_2x)
+
+        ann_log_ret = (cum_log_ret / max(eval_days, 1)) * 365.0
+        mdd_frac = max_drawdown_pct / 100.0
+        if mdd_frac > 1e-4:
+            calmar = float(np.clip(ann_log_ret / mdd_frac, -50.0, 50.0))
+        else:
+            calmar = float(np.clip(ann_log_ret * 10.0, -50.0, 50.0)) if ann_log_ret > 0 else 0.0
+
+        daily_turnover = float(np.mean(daily_turn_arr)) if eval_days > 0 else 0.0
+        trade_count = int(np.sum(turnover > 1e-8))
+
+        daily_returns_dict = {
+            str(k): round(float(v), 6)
+            for k, v in zip(daily_df.index, daily_ret_1x)
+        }
+
+        return {
+            "total_bars": int(total_bars),
+            "eval_days": int(eval_days),
+            "mean_action": round(mean_action, 4),
+            "std_action": round(std_action, 4),
+            "long_ratio": round(long_ratio, 4),
+            "short_ratio": round(short_ratio, 4),
+            "flat_ratio": round(flat_ratio, 4),
+            "mean_exposure": round(mean_exposure, 4),
+            "cum_return_pct": round(cum_return_pct, 4),
+            "bh_return_pct": round(bh_return_pct, 4),
+            "sharpe": round(sharpe, 4),
+            "sortino": round(sortino, 4),
+            "ir_1x": round(ir_1x, 4),
+            "ir_2x": round(ir_2x, 4),
+            "max_drawdown_pct": round(max_drawdown_pct, 4),
+            "calmar": round(calmar, 4),
+            "daily_turnover": round(daily_turnover, 4),
+            "trade_count": int(trade_count),
+            "daily_returns": daily_returns_dict,
+        }

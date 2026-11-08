@@ -97,7 +97,7 @@ Once the 4 phases are aligned during conversation:
 3. **Language Standards (Mandatory Repository Rule)**:
    - According to `.agents/rules/rules.md`:
      - **Interactive Conversation**: Conducted in Traditional Chinese (繁體中文) or user's preferred language.
-     - **Spec File Content**: MUST be written in English (or bilingual with English as primary technical spec).
+     - **Spec File Content**: MUST be written in Traditional Chinese (繁體中文) (technical terms, code symbols, and formulas may retain standard English / bilingual formatting).
      - **Code Links**: All referenced files and code symbols MUST use clickable markdown links (`file:///...`).
 
 ---
