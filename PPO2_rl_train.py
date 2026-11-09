@@ -2,7 +2,7 @@ import os
 import time
 from datetime import datetime
 from collections import deque
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple
 import hydra
 import numpy as np
 import torch
@@ -115,6 +115,39 @@ class PPO2:
             lam=self.cfg_training.GAE_LAMBDA,
         )
         self.model_tool = ModelTool()
+
+    def compute_friction_rates(self, iteration: int) -> Tuple[float, float]:
+        """
+        Computes dynamic commission and slippage rates for curriculum learning friction annealing.
+        """
+        if not getattr(self.cfg_training, "ENABLE_FRICTION_ANNEALING", False):
+            return (
+                float(self.cfg_training.MODEL_DEFAULT_COMMISSION_PERC_TRAING),
+                float(self.cfg_training.DEFAULT_SLIPPAGE),
+            )
+
+        start_iter = int(getattr(self.cfg_training, "FRICTION_ANNEAL_START_ITER", 1500))
+        end_iter = int(getattr(self.cfg_training, "FRICTION_ANNEAL_END_ITER", 6000))
+        comm_start = float(getattr(self.cfg_training, "COMMISSION_START", 0.0001))
+        comm_target = float(getattr(self.cfg_training, "COMMISSION_TARGET", 0.0005))
+        slip_start = float(getattr(self.cfg_training, "SLIPPAGE_START", 0.0001))
+        slip_target = float(getattr(self.cfg_training, "SLIPPAGE_TARGET", 0.0005))
+        sched = str(getattr(self.cfg_training, "FRICTION_SCHEDULE", "cosine")).lower()
+
+        if iteration <= start_iter:
+            prog = 0.0
+        elif iteration >= end_iter:
+            prog = 1.0
+        else:
+            span = max(1, end_iter - start_iter)
+            if sched == "linear":
+                prog = (iteration - start_iter) / span
+            else:  # cosine
+                prog = 0.5 * (1.0 - np.cos(np.pi * (iteration - start_iter) / span))
+
+        cur_comm = float(comm_start + (comm_target - comm_start) * prog)
+        cur_slip = float(slip_start + (slip_target - slip_start) * prog)
+        return cur_comm, cur_slip
 
     def _prepare_device(self):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -460,15 +493,25 @@ class PPO2:
         recent_episode_avg_abs_pos = []
 
         total_rollout_steps = num_workers * horizon_steps
+        current_comm, current_slip = self.compute_friction_rates(iteration)
+        self.vec_env.set_friction(current_comm, current_slip)
+        last_friction = (current_comm, current_slip)
+
         print(f"\n{'=' * 30} Starting Multi-Instrument PPO2 Training {'=' * 30}")
         print(
             f"Workers: {num_workers} | Horizon/Worker: {horizon_steps} | "
             f"Total Rollout Steps: {total_rollout_steps} | Batch Size: {batch_size} | "
-            f"PPO Epochs: {ppo_epochs} | Device: {self.device}"
+            f"PPO Epochs: {ppo_epochs} | Device: {self.device} | "
+            f"Initial Friction: {current_comm * 10000:.1f}/{current_slip * 10000:.1f}bps"
         )
 
         try:
             while True:
+                current_comm, current_slip = self.compute_friction_rates(iteration)
+                if (current_comm, current_slip) != last_friction:
+                    self.vec_env.set_friction(current_comm, current_slip)
+                    last_friction = (current_comm, current_slip)
+
                 # 1. Rollout sampling across all N workers
                 for _ in range(horizon_steps):
                     out = self.agent.get_action(obs, stochastic=True)
@@ -615,9 +658,13 @@ class PPO2:
                 if metrics["kl_early_stop"]:
                     upd_str += " [KL Stop]"
 
+                friction_str = (
+                    f"Friction: {current_comm * 10000:.1f}/{current_slip * 10000:.1f}bps"
+                )
+
                 print(
                     f"[Iter #{iteration:04d}] Steps: {total_steps:07d} | FPS: {fps:6.1f} | "
-                    f"{upd_str} | "
+                    f"{upd_str} | {friction_str} | "
                     f"PiLoss: {metrics['policy_loss']:+.4f} | ValueLoss: {metrics['value_loss']:.4f} | "
                     f"Entropy: {metrics['entropy']:+.4f} | KL: {metrics['approx_kl']:.5f} | "
                     f"ClipFrac: {metrics['clipfrac']:.3f} | ExplainedVariance: {metrics['explained_variance']:+.3f} | "

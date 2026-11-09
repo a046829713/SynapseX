@@ -59,6 +59,13 @@ class State_time_step(State_time_step_template):
         self.last_turnover = 0.0
         self.last_traded = False
 
+    def set_friction(self, commission_perc: float, default_slippage: float):
+        """
+        Dynamically updates commission and slippage rates for curriculum friction annealing.
+        """
+        self.commission_perc = float(commission_perc)
+        self.default_slippage = float(default_slippage)
+
     def getStateShape(self):
         return self.bars_count, len(self.info_list) + 2
 
@@ -245,6 +252,16 @@ class BaseTradingEnv(gym.Env, ABC):
             }
         return {}
 
+    def set_friction(self, commission_perc: float, default_slippage: float):
+        """
+        Forwards dynamic commission and slippage update to underlying state.
+        """
+        if hasattr(self._state, "set_friction"):
+            self._state.set_friction(commission_perc, default_slippage)
+        else:
+            self._state.commission_perc = float(commission_perc)
+            self._state.default_slippage = float(default_slippage)
+
 
 class TrainingEnv(BaseTradingEnv):
     """
@@ -362,6 +379,10 @@ def _subproc_worker(remote, parent_remote, env_fn):
                 remote.send(obs)
             elif cmd == "get_spaces":
                 remote.send((env.observation_space, env.action_space))
+            elif cmd == "set_friction":
+                commission_perc, default_slippage = data
+                env.set_friction(commission_perc, default_slippage)
+                remote.send(True)
             elif cmd == "close":
                 remote.close()
                 break
@@ -462,6 +483,20 @@ class SubprocVecEnv:
             np.array(truncateds, dtype=bool),
             list(infos),
         )
+
+    def set_friction(self, commission_perc: float, default_slippage: float):
+        """
+        Broadcasts dynamic friction parameters (commission and slippage) to all worker processes.
+        """
+        for remote in self.remotes:
+            remote.send(
+                ("set_friction", (float(commission_perc), float(default_slippage)))
+            )
+        results = [remote.recv() for remote in self.remotes]
+        for res in results:
+            if isinstance(res, tuple) and len(res) == 2 and res[0] == "error":
+                raise RuntimeError(f"Error setting friction in env worker: {res[1]}")
+        return results
 
     def close(self):
         if self.closed:
