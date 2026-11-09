@@ -109,6 +109,68 @@ class PPO2DataAdapter:
         feature_loader.df = cleaned
         return feature_loader.load_relative()
 
+    @classmethod
+    def prepare_test_symbol_data(
+        cls,
+        feature_loader: OriginalDataFeature,
+        df: pd.DataFrame,
+        bars_count: int,
+        test_start_date: Optional[str] = None,
+        test_end_date: Optional[str] = None,
+    ) -> Optional[Tuple[Prices, np.ndarray]]:
+        """
+        Enriches raw DataFrame into Prices and slices both Prices and Datetime array
+        to [start_offset - bars_count : end_offset + 1] so evaluation always runs
+        from offset=bars_count until State_time_step naturally terminates.
+        """
+        if len(df) <= 360:
+            return None
+
+        prices = cls.process_df_to_prices(feature_loader, df)
+        raw_df = feature_loader.df
+        total_len = len(prices.close)
+        if total_len <= bars_count + 1:
+            return None
+
+        aligned_df = raw_df.iloc[-total_len:] if len(raw_df) > total_len else raw_df
+        if "Datetime" in aligned_df.columns:
+            datetime_series = aligned_df["Datetime"].astype(str).to_numpy()
+        elif "date" in aligned_df.columns:
+            datetime_series = aligned_df["date"].astype(str).to_numpy()
+        else:
+            datetime_series = aligned_df.index.astype(str).to_numpy()
+
+        datetime_ts = pd.to_datetime(datetime_series)
+        if test_start_date is not None and str(test_start_date).strip() != "":
+            start_idx = int(
+                datetime_ts.searchsorted(pd.to_datetime(test_start_date), side="left")
+            )
+        else:
+            start_idx = bars_count
+
+        if test_end_date is not None and str(test_end_date).strip() != "":
+            end_idx = int(
+                datetime_ts.searchsorted(pd.to_datetime(test_end_date), side="right")
+            )
+        else:
+            end_idx = total_len - 1
+
+        start_offset = max(bars_count, start_idx)
+        end_offset = min(total_len - 1, end_idx)
+        if start_offset >= end_offset:
+            return None
+
+        slice_start = start_offset - bars_count
+        slice_end = end_offset + 1
+        sliced_prices = Prices(
+            *[
+                np.ascontiguousarray(getattr(prices, field)[slice_start:slice_end])
+                for field in prices._fields
+            ]
+        )
+        sliced_dt = np.ascontiguousarray(datetime_series[slice_start:slice_end])
+        return sliced_prices, sliced_dt
+
     @staticmethod
     def extract_latest_obs(
         prices: Prices,

@@ -50,6 +50,7 @@ class PPO2Engine:
         base_data_dir: str = "Brain/simulation/test_data",
         test_start_date: Optional[str] = None,
         test_end_date: Optional[str] = None,
+        eval_batch_size: Optional[int] = None,
     ):
         self.formal = formal
         self.base_data_dir = base_data_dir
@@ -105,6 +106,10 @@ class PPO2Engine:
         )
 
         # 3. Leaderboard & selection configuration
+        cfg_batch_size = int(getattr(self.cfg, "EVAL_BATCH_SIZE", 64))
+        self.eval_batch_size = max(
+            1, int(eval_batch_size) if eval_batch_size is not None else cfg_batch_size
+        )
         self.leaderboard_top_k = int(getattr(self.cfg, "LEADERBOARD_TOP_K", 5))
         self.plateau_window = int(getattr(self.cfg, "PLATEAU_WINDOW", 2))
         self.max_mdd_gate_pct = float(getattr(self.cfg, "MAX_MDD_GATE_PCT", 35.0))
@@ -127,6 +132,8 @@ class PPO2Engine:
         self.evaluator: Optional[PPO2Evaluator] = None
         self.last_leaderboard_df: Optional[pd.DataFrame] = None
         self.last_selection_summary: Optional[Dict[str, Any]] = None
+        self._cached_test_data: Dict[str, Tuple[Prices, np.ndarray]] = {}
+        self._cached_test_key: Optional[Tuple[str, str, Tuple[str, ...]]] = None
 
     # -------------------------------------------------------------------------
     # Delegated & backward-compatible helpers
@@ -372,55 +379,55 @@ class PPO2Engine:
     # -------------------------------------------------------------------------
     # Evaluation Execution Pipeline
     # -------------------------------------------------------------------------
-    def _stream_evaluate_symbol(
+    def _get_or_preload_test_data(
         self,
-        symbol: str,
-        evaluator: PPO2Evaluator,
-        feature_loader: OriginalDataFeature,
-        model_output_dir: str,
         effective_start: Optional[str],
         effective_end: Optional[str],
-    ) -> Optional[Tuple[Dict[str, Any], Dict[str, float]]]:
-        """Evaluates a single symbol and extracts order metrics."""
-        symbol_fname = self.symbol_file_map.get(symbol, f"{symbol}.csv")
-        symbol_path = os.path.join(self.base_data_dir, symbol_fname)
-        if not os.path.exists(symbol_path):
-            return None
-
-        df = pd.read_csv(symbol_path)
-        if len(df) <= 360:
-            return None
-
-        prices = self._process_df_to_prices(feature_loader, df)
-        raw_df = feature_loader.df
-        out_csv = os.path.join(model_output_dir, f"{symbol}_orders.csv")
-
-        order_df = evaluator.evaluate_symbol(
-            symbol=symbol,
-            raw_df=raw_df,
-            prices=prices,
-            output_csv_path=out_csv,
-            test_start_date=effective_start,
-            test_end_date=effective_end,
+        feature_loader: OriginalDataFeature,
+    ) -> Dict[str, Tuple[Prices, np.ndarray]]:
+        """
+        Lazily loads and slices target symbols to their active evaluation window once,
+        reusing the pre-sliced (Prices, datetime_series) across checkpoints.
+        """
+        cache_key = (
+            str(effective_start or ""),
+            str(effective_end or ""),
+            tuple(self.target_symbols),
         )
+        if self._cached_test_key == cache_key and self._cached_test_data:
+            return self._cached_test_data
 
-        del prices, raw_df
-        if order_df.empty:
-            del order_df
-            gc.collect()
-            return None
+        t0 = time.time()
+        loaded_data: Dict[str, Tuple[Prices, np.ndarray]] = {}
+        for symbol in self.target_symbols:
+            symbol_fname = self.symbol_file_map.get(symbol, f"{symbol}.csv")
+            symbol_path = os.path.join(self.base_data_dir, symbol_fname)
+            if not os.path.exists(symbol_path):
+                continue
 
-        metrics = PPO2Evaluator.compute_symbol_metrics(
-            order_df=order_df,
-            commission_perc=self.commission_perc,
-            default_slippage=self.default_slippage,
-        )
-        del order_df
+            df = pd.read_csv(symbol_path)
+            prepared = self.data_adapter.prepare_test_symbol_data(
+                feature_loader=feature_loader,
+                df=df,
+                bars_count=self.bars_count,
+                test_start_date=effective_start,
+                test_end_date=effective_end,
+            )
+            del df
+            if prepared is not None:
+                loaded_data[symbol] = prepared
+
+        if hasattr(feature_loader, "df"):
+            feature_loader.df = None
         gc.collect()
 
-        sym_daily_map = metrics.pop("daily_returns", {})
-        metrics["order_file"] = out_csv
-        return metrics, sym_daily_map
+        self._cached_test_data = loaded_data
+        self._cached_test_key = cache_key
+        print(
+            f"[PPO2Engine] Preloaded & sliced {len(loaded_data)}/{len(self.target_symbols)} "
+            f"test symbols in {time.time() - t0:.2f}s (batch_size={self.eval_batch_size})."
+        )
+        return self._cached_test_data
 
     def _eval_model_checkpoint(
         self,
@@ -435,7 +442,7 @@ class PPO2Engine:
         manifest_rows: List[Dict[str, Any]],
         model_records: List[Dict[str, Any]],
     ):
-        """Processes and evaluates a single model checkpoint."""
+        """Processes and evaluates a single model checkpoint across batched symbols."""
         model_name = Path(model_path).stem
         model_output_dir = os.path.join(output_dir, model_name)
         manifest_json_path = os.path.join(model_output_dir, "manifest.json")
@@ -482,7 +489,7 @@ class PPO2Engine:
 
         print(
             f"\n[{model_idx + 1}/{len(self.model_paths)}] Testing Model: "
-            f"{model_name} ({model_path})"
+            f"{model_name} ({model_path}) [batch_size={self.eval_batch_size}]"
         )
 
         # 3. Model construction & loading with fail-safe guards
@@ -501,6 +508,12 @@ class PPO2Engine:
                 torch.cuda.empty_cache()
             return
 
+        test_data_map = self._get_or_preload_test_data(
+            effective_start=effective_start,
+            effective_end=effective_end,
+            feature_loader=feature_loader,
+        )
+
         evaluator = PPO2Evaluator(
             agent=agent,
             bars_count=self.bars_count,
@@ -513,26 +526,38 @@ class PPO2Engine:
             episode_steps=self.episode_steps,
             test_start_date=effective_start,
             test_end_date=effective_end,
+            eval_batch_size=self.eval_batch_size,
         )
 
         os.makedirs(model_output_dir, exist_ok=True)
+        completed_results: Dict[str, Tuple[Dict[str, Any], Dict[str, float]]] = {}
+
+        def _on_symbol_complete(sym: str, order_df: pd.DataFrame):
+            if order_df.empty:
+                return
+            metrics = PPO2Evaluator.compute_symbol_metrics(
+                order_df=order_df,
+                commission_perc=self.commission_perc,
+                default_slippage=self.default_slippage,
+            )
+            sym_daily_map = metrics.pop("daily_returns", {})
+            metrics["order_file"] = os.path.join(model_output_dir, f"{sym}_orders.csv")
+            completed_results[sym] = (metrics, sym_daily_map)
+
+        evaluator.evaluate_symbols(
+            symbol_data_map=test_data_map,
+            model_output_dir=model_output_dir,
+            on_symbol_complete=_on_symbol_complete,
+        )
+
         model_symbols_dict: Dict[str, Dict[str, Any]] = {}
         daily_sum_by_date: Dict[str, float] = {}
         daily_cnt_by_date: Dict[str, int] = {}
 
         for symbol in self.target_symbols:
-            eval_res = self._stream_evaluate_symbol(
-                symbol=symbol,
-                evaluator=evaluator,
-                feature_loader=feature_loader,
-                model_output_dir=model_output_dir,
-                effective_start=effective_start,
-                effective_end=effective_end,
-            )
-            if eval_res is None:
+            if symbol not in completed_results:
                 continue
-
-            metrics, sym_daily_map = eval_res
+            metrics, sym_daily_map = completed_results[symbol]
             for day_str, day_ret in sym_daily_map.items():
                 daily_sum_by_date[day_str] = daily_sum_by_date.get(day_str, 0.0) + float(day_ret)
                 daily_cnt_by_date[day_str] = daily_cnt_by_date.get(day_str, 0) + 1
@@ -541,9 +566,6 @@ class PPO2Engine:
             manifest_rows.append({
                 "model_name": model_name, "symbol": symbol, **metrics
             })
-
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
 
         portfolio_daily_returns = {
             day: round(daily_sum_by_date[day] / max(daily_cnt_by_date[day], 1), 6)
@@ -774,7 +796,10 @@ class PPO2Engine:
     def _predict_single_model_orders(
         self, symbol_obs_map: Dict[str, Tuple[Dict[str, np.ndarray], float]]
     ) -> Dict[str, float]:
-        """Generates target action orders using a single checkpoint."""
+        """Generates target action orders using a single checkpoint via batched inference."""
+        if not symbol_obs_map:
+            return {}
+
         if self.agent is None:
             self.agent = self.build_agent()
             if self.model_paths:
@@ -799,24 +824,39 @@ class PPO2Engine:
             default_slippage=self.default_slippage,
             w1_step_return=self.w1_step_return,
             episode_steps=self.episode_steps,
+            eval_batch_size=self.eval_batch_size,
         )
 
-        order_map: Dict[str, float] = {}
-        for sym, (obs, pos) in symbol_obs_map.items():
-            action_val = evaluator.evaluate_single_step(
-                obs, apply_deadzone=True, prev_position=pos
-            )
-            order_map[sym] = round(action_val, 4)
-        return order_map
+        symbols = list(symbol_obs_map.keys())
+        batch_obs = {
+            "states": np.stack([symbol_obs_map[s][0]["states"] for s in symbols], axis=0),
+            "time_states": np.stack([symbol_obs_map[s][0]["time_states"] for s in symbols], axis=0),
+        }
+        prev_positions = np.array([symbol_obs_map[s][1] for s in symbols], dtype=np.float64)
+        actions = evaluator.evaluate_batch_step(
+            batch_obs=batch_obs, apply_deadzone=True, prev_positions=prev_positions
+        )
+
+        return {sym: round(float(act), 4) for sym, act in zip(symbols, actions)}
 
     def _predict_ensemble_orders(
         self, symbol_obs_map: Dict[str, Tuple[Dict[str, np.ndarray], float]]
     ) -> Dict[str, float]:
-        """Generates target action orders via continuous Action Ensembling across checkpoints."""
+        """Generates target action orders via batched continuous Action Ensembling across checkpoints."""
         print(
             f"[PPO2Engine] Running Formal Action Ensemble across {len(self.model_paths)} checkpoints..."
         )
-        accum_actions: Dict[str, List[float]] = {sym: [] for sym in symbol_obs_map}
+        if not symbol_obs_map:
+            return {}
+
+        symbols = list(symbol_obs_map.keys())
+        batch_obs = {
+            "states": np.stack([symbol_obs_map[s][0]["states"] for s in symbols], axis=0),
+            "time_states": np.stack([symbol_obs_map[s][0]["time_states"] for s in symbols], axis=0),
+        }
+        prev_positions = np.array([symbol_obs_map[s][1] for s in symbols], dtype=np.float64)
+
+        model_preds: List[np.ndarray] = []
         ensemble_agent = self.build_agent()
 
         for m_path in self.model_paths:
@@ -836,21 +876,24 @@ class PPO2Engine:
                 default_slippage=self.default_slippage,
                 w1_step_return=self.w1_step_return,
                 episode_steps=self.episode_steps,
+                eval_batch_size=self.eval_batch_size,
             )
-            for sym, (obs, pos) in symbol_obs_map.items():
-                raw_act = evaluator.evaluate_single_step(
-                    obs, apply_deadzone=False, prev_position=pos
-                )
-                accum_actions[sym].append(float(raw_act))
+            raw_acts = evaluator.evaluate_batch_step(
+                batch_obs=batch_obs, apply_deadzone=False, prev_positions=prev_positions
+            )
+            model_preds.append(raw_acts)
 
         del ensemble_agent
         gc.collect()
 
         order_map: Dict[str, float] = {}
-        for sym, (obs, pos) in symbol_obs_map.items():
-            preds = accum_actions.get(sym, [])
-            mean_raw = float(np.mean(preds)) if preds else 0.0
-            final_act = self._apply_deadzone_and_rebalance(mean_raw, pos)
+        if model_preds:
+            mean_raw_arr = np.mean(np.stack(model_preds, axis=0), axis=0)
+        else:
+            mean_raw_arr = np.zeros(len(symbols), dtype=np.float64)
+
+        for sym, mean_raw, pos in zip(symbols, mean_raw_arr, prev_positions):
+            final_act = self._apply_deadzone_and_rebalance(float(mean_raw), float(pos))
             order_map[sym] = round(final_act, 4)
         return order_map
 

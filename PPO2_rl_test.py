@@ -80,6 +80,12 @@ def parse_arguments():
         default=False,
         help="Disable incremental manifest.json caching and force full re-evaluation",
     )
+    parser.add_argument(
+        "--batch_size",
+        type=int,
+        default=None,
+        help="Number of symbols to evaluate concurrently in a single GPU batch (default: EVAL_BATCH_SIZE=64 from config)",
+    )
     return parser.parse_args()
 
 
@@ -141,7 +147,9 @@ def main():
         config=args.config,
         test_start_date=args.test_start_date,
         test_end_date=args.test_end_date,
+        eval_batch_size=args.batch_size,
     )
+    print(f"[PPO2_rl_test] Parallel Symbol Batch Size: {engine.eval_batch_size}")
     if not args.formal:
         print(
             f"[PPO2_rl_test] Evaluation Window: "

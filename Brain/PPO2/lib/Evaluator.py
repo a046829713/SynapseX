@@ -1,19 +1,91 @@
 import os
-from typing import Optional, Dict, Any, List, Union
+from collections import deque
+from typing import Optional, Dict, Any, List, Tuple, Callable
 import numpy as np
 import pandas as pd
 import torch
 from Brain.Common.DataFeature import Prices
 from Brain.PPO2.lib.Agent import PPO2Agent
-from Brain.PPO2.lib.environment import State_time_step, ProductionEnv
+from Brain.PPO2.lib.environment import State_time_step
+
+
+class _SymbolEvalSlot:
+    """In-process state container for a single active symbol slot during batched evaluation."""
+
+    def __init__(
+        self,
+        symbol: str,
+        prices: Prices,
+        datetime_series: np.ndarray,
+        state: State_time_step,
+    ):
+        self.symbol = symbol
+        self.prices = prices
+        self.datetime_series = datetime_series
+        self.state = state
+        self.start_offset = state.bars_count
+        self.end_offset = len(prices.close) - 1
+        self.n_steps = max(0, self.end_offset - self.start_offset)
+        self.step_idx = 0
+        self.state.reset(prices, self.start_offset)
+
+        self.actions = np.zeros(self.n_steps, dtype=np.float64)
+        self.positions = np.zeros(self.n_steps, dtype=np.float64)
+        self.step_returns = np.zeros(self.n_steps, dtype=np.float64)
+        self.gross_returns = np.zeros(self.n_steps, dtype=np.float64)
+        self.costs = np.zeros(self.n_steps, dtype=np.float64)
+        self.turnovers = np.zeros(self.n_steps, dtype=np.float64)
+
+    def build_order_df(self, columns: List[str]) -> pd.DataFrame:
+        s = self.start_offset
+        e = self.start_offset + self.step_idx
+        if e <= s:
+            return pd.DataFrame(columns=columns)
+
+        close_slice = self.prices.close[s:e].astype(np.float64)
+        prev_close_slice = np.maximum(
+            self.prices.close[s - 1 : e - 1].astype(np.float64), 1e-8
+        )
+        mkt_log_ret = np.log(np.maximum(close_slice, 1e-8) / prev_close_slice)
+
+        return pd.DataFrame(
+            {
+                "Datetime": self.datetime_series[s:e],
+                "Symbol": self.symbol,
+                "Open": self.prices.open[s:e].astype(np.float64),
+                "Close": close_slice,
+                "Action": self.actions[: self.step_idx],
+                "Position": self.positions[: self.step_idx],
+                "StepReturn": self.step_returns[: self.step_idx],
+                "GrossReturn": self.gross_returns[: self.step_idx],
+                "Cost": self.costs[: self.step_idx],
+                "Turnover": self.turnovers[: self.step_idx],
+                "MarketReturn": mkt_log_ret,
+            },
+            columns=columns,
+        )
 
 
 class PPO2Evaluator:
     """
-    Dedicated lightweight deterministic evaluator for continuous PPO2 policies.
-    Completely decoupled from financial PnL accounting, charts, and plotting libraries.
-    Generates standardized order CSVs (Option B) for external backtesting frameworks.
+    Dedicated lightweight deterministic batched evaluator for continuous PPO2 policies.
+    Supports multi-symbol parallel GPU inference via dynamic slot refilling (covering N >= 1 symbols)
+    and generates standardized order CSVs for external backtesting frameworks.
     """
+
+    ORDER_COLUMNS = [
+        "Datetime",
+        "Symbol",
+        "Open",
+        "Close",
+        "Action",
+        "Position",
+        "StepReturn",
+        "GrossReturn",
+        "Cost",
+        "Turnover",
+        "MarketReturn",
+    ]
 
     def __init__(
         self,
@@ -28,6 +100,7 @@ class PPO2Evaluator:
         episode_steps: int = 500,
         test_start_date: Optional[str] = None,
         test_end_date: Optional[str] = None,
+        eval_batch_size: int = 64,
     ):
         self.agent = agent
         self.bars_count = bars_count
@@ -40,129 +113,14 @@ class PPO2Evaluator:
         self.episode_steps = episode_steps
         self.test_start_date = test_start_date
         self.test_end_date = test_end_date
+        self.eval_batch_size = max(1, int(eval_batch_size))
+        assert self.eval_batch_size >= 1, "eval_batch_size must be >= 1"
 
         # Force evaluation mode (deterministic inference)
         self.agent.model.eval()
 
-    def evaluate_single_step(
-        self,
-        obs: Dict[str, Any],
-        apply_deadzone: bool = True,
-        prev_position: Optional[float] = None,
-    ) -> float:
-        """
-        Evaluates a single observation window for formal live trading mode.
-        Returns continuous deterministic target position in [0.0, 1.0],
-        applying deadzone_threshold and rebalance_threshold for parity with ProductionEnv.
-        """
-        self.agent.model.eval()
-        with torch.no_grad():
-            out = self.agent.get_action(obs, stochastic=False)
-            raw_val = (
-                float(out.clipped_action.item())
-                if out.clipped_action is not None
-                else float(out.action.item())
-            )
-            clipped_action = float(np.clip(raw_val, 0.0, 1.0))
-
-            if not apply_deadzone:
-                return clipped_action
-
-            if clipped_action <= self.deadzone_threshold:
-                candidate_pos = 0.0
-            else:
-                candidate_pos = clipped_action
-
-            if prev_position is not None:
-                prev_pos = float(np.clip(float(prev_position), 0.0, 1.0))
-            elif "states" in obs and np.asarray(obs["states"]).shape[-1] >= 3:
-                states_arr = np.asarray(obs["states"])
-                prev_pos = float(np.clip(float(states_arr[..., -1, -3].item()), 0.0, 1.0))
-            else:
-                prev_pos = 0.0
-
-            if prev_pos == 0.0 or candidate_pos == 0.0:
-                target_pos = candidate_pos
-            elif abs(candidate_pos - prev_pos) < self.rebalance_threshold:
-                target_pos = prev_pos
-            else:
-                target_pos = candidate_pos
-
-            return float(target_pos)
-
-    def evaluate_symbol(
-        self,
-        symbol: str,
-        raw_df: pd.DataFrame,
-        prices: Prices,
-        output_csv_path: Optional[str] = None,
-        test_start_date: Optional[str] = None,
-        test_end_date: Optional[str] = None,
-    ) -> pd.DataFrame:
-        """
-        Evaluates chronological steps across the dataset deterministically.
-        Generates and optionally exports tabular CSV with columns:
-        [Datetime, Symbol, Open, Close, Action, Position, StepReturn, GrossReturn, Cost, Turnover, MarketReturn]
-        """
-        self.agent.model.eval()
-        columns = [
-            "Datetime",
-            "Symbol",
-            "Open",
-            "Close",
-            "Action",
-            "Position",
-            "StepReturn",
-            "GrossReturn",
-            "Cost",
-            "Turnover",
-            "MarketReturn",
-        ]
-
-        total_len = len(prices.close)
-        if total_len <= self.bars_count + 1:
-            return pd.DataFrame(columns=columns)
-
-        # Defensive index alignment: align raw_df with prices if needed
-        aligned_df = raw_df
-        if len(raw_df) > total_len:
-            aligned_df = raw_df.iloc[-total_len:]
-
-        if "Datetime" in aligned_df.columns:
-            datetime_series = aligned_df["Datetime"].astype(str).values
-        elif "date" in aligned_df.columns:
-            datetime_series = aligned_df["date"].astype(str).values
-        else:
-            datetime_series = aligned_df.index.astype(str).values
-
-        effective_start = (
-            test_start_date if test_start_date is not None else self.test_start_date
-        )
-        effective_end = (
-            test_end_date if test_end_date is not None else self.test_end_date
-        )
-
-        datetime_ts = pd.to_datetime(datetime_series)
-
-        if effective_start is not None and str(effective_start).strip() != "":
-            start_ts = pd.to_datetime(effective_start)
-            start_idx = int(datetime_ts.searchsorted(start_ts, side="left"))
-        else:
-            start_idx = self.bars_count
-
-        if effective_end is not None and str(effective_end).strip() != "":
-            end_ts = pd.to_datetime(effective_end)
-            end_idx = int(datetime_ts.searchsorted(end_ts, side="right"))
-        else:
-            end_idx = total_len - 1
-
-        start_offset = max(self.bars_count, start_idx)
-        end_offset = min(total_len - 1, end_idx)
-
-        if start_offset >= end_offset:
-            return pd.DataFrame(columns=columns)
-
-        state = State_time_step(
+    def _make_state(self) -> State_time_step:
+        return State_time_step(
             bars_count=self.bars_count,
             commission_perc=self.commission_perc,
             model_train=False,
@@ -172,54 +130,174 @@ class PPO2Evaluator:
             rebalance_threshold=self.rebalance_threshold,
             w1_step_return=self.w1_step_return,
         )
-        env = ProductionEnv(prices_data={symbol: prices}, state=state)
-        obs = env.reset(symbol=symbol, start_offset=start_offset)
 
-        open_series = prices.open
-        close_series = prices.close
-        records: List[Dict[str, Any]] = []
-        done = False
+    def evaluate_batch_step(
+        self,
+        batch_obs: Dict[str, np.ndarray],
+        apply_deadzone: bool = True,
+        prev_positions: Optional[np.ndarray] = None,
+    ) -> np.ndarray:
+        """
+        Evaluates a batch of observation windows (N >= 1) for formal live trading mode.
+        Returns 1D numpy array of continuous deterministic target positions in [0.0, 1.0],
+        applying deadzone_threshold and rebalance_threshold vectorized across symbols.
+        """
+        states_all = np.asarray(batch_obs["states"], dtype=np.float32)
+        time_states_all = np.asarray(batch_obs["time_states"], dtype=np.float32)
+        if states_all.ndim == 2:
+            states_all = states_all[np.newaxis, ...]
+            time_states_all = time_states_all[np.newaxis, ...]
+
+        n_items = states_all.shape[0]
+        if n_items == 0:
+            return np.zeros(0, dtype=np.float64)
+
+        raw_actions = np.zeros(n_items, dtype=np.float64)
+        self.agent.model.eval()
+        with torch.no_grad():
+            for start_i in range(0, n_items, self.eval_batch_size):
+                end_i = min(n_items, start_i + self.eval_batch_size)
+                chunk_obs = {
+                    "states": states_all[start_i:end_i],
+                    "time_states": time_states_all[start_i:end_i],
+                }
+                out = self.agent.get_action(chunk_obs, stochastic=False)
+                act_tensor = (
+                    out.clipped_action if out.clipped_action is not None else out.action
+                )
+                raw_actions[start_i:end_i] = (
+                    act_tensor.detach().cpu().numpy().reshape(-1)
+                )
+
+        clipped_actions = np.clip(raw_actions, 0.0, 1.0)
+        if not apply_deadzone:
+            return clipped_actions
+
+        candidate_pos = np.where(
+            clipped_actions <= self.deadzone_threshold, 0.0, clipped_actions
+        )
+
+        if prev_positions is not None:
+            prev_pos = np.clip(
+                np.asarray(prev_positions, dtype=np.float64).reshape(-1), 0.0, 1.0
+            )
+        elif states_all.shape[-1] >= 2:
+            prev_pos = np.clip(states_all[:, -1, -2].astype(np.float64), 0.0, 1.0)
+        else:
+            prev_pos = np.zeros(n_items, dtype=np.float64)
+
+        hold_mask = (
+            (prev_pos > 0.0)
+            & (candidate_pos > 0.0)
+            & (np.abs(candidate_pos - prev_pos) < self.rebalance_threshold)
+        )
+        return np.where(hold_mask, prev_pos, candidate_pos)
+
+    def evaluate_symbols(
+        self,
+        symbol_data_map: Dict[str, Tuple[Prices, np.ndarray]],
+        model_output_dir: Optional[str] = None,
+        on_symbol_complete: Optional[Callable[[str, pd.DataFrame], None]] = None,
+    ) -> Dict[str, pd.DataFrame]:
+        """
+        Evaluates chronological steps across N >= 1 symbols concurrently on the GPU
+        using dynamic slot refilling up to self.eval_batch_size.
+        """
+        self.agent.model.eval()
+        columns = self.ORDER_COLUMNS
+        results: Dict[str, pd.DataFrame] = {}
+
+        pending_queue = deque(
+            (sym, data_pair)
+            for sym, data_pair in symbol_data_map.items()
+            if len(data_pair[0].close) > self.bars_count + 1
+        )
+        if not pending_queue:
+            return results
+
+        if model_output_dir:
+            os.makedirs(os.path.abspath(model_output_dir), exist_ok=True)
+
+        max_slots = min(self.eval_batch_size, len(pending_queue))
+        active_slots: List[_SymbolEvalSlot] = []
+        for _ in range(max_slots):
+            sym, (prices, dt_arr) = pending_queue.popleft()
+            active_slots.append(
+                _SymbolEvalSlot(sym, prices, dt_arr, self._make_state())
+            )
+
+        state_shape = active_slots[0].state.getStateShape()
+        time_shape = active_slots[0].state.getTimeShape()
+        batch_states_np = np.zeros((max_slots, *state_shape), dtype=np.float32)
+        batch_time_np = np.zeros((max_slots, *time_shape), dtype=np.float32)
 
         with torch.no_grad():
-            while not done and env._state._offset < end_offset:
-                curr_offset = env._state._offset
-                dt = datetime_series[curr_offset]
-                open_val = float(open_series[curr_offset])
-                close_val = float(close_series[curr_offset])
-                prev_close_val = max(float(close_series[curr_offset - 1]), 1e-8)
-                mkt_log_ret = float(np.log(max(close_val, 1e-8) / prev_close_val))
+            while active_slots:
+                active_count = len(active_slots)
+                for i, slot in enumerate(active_slots):
+                    obs_i = slot.state.encode()
+                    batch_states_np[i] = obs_i["states"]
+                    batch_time_np[i] = obs_i["time_states"]
 
-                out = self.agent.get_action(obs, stochastic=False)
-                action_val = float(np.clip(float(out.clipped_action.item()), 0.0, 1.0))
+                batch_obs = {
+                    "states": batch_states_np[:active_count],
+                    "time_states": batch_time_np[:active_count],
+                }
+                out = self.agent.get_action(batch_obs, stochastic=False)
+                act_tensor = (
+                    out.clipped_action if out.clipped_action is not None else out.action
+                )
+                actions_np = np.clip(
+                    act_tensor.detach().cpu().numpy().reshape(-1), 0.0, 1.0
+                )
 
-                # Step the environment
-                obs, reward, terminated, truncated, info = env.step(action_val)
-                done = bool(terminated or truncated)
+                next_active_slots: List[_SymbolEvalSlot] = []
+                for i, slot in enumerate(active_slots):
+                    action_val = float(actions_np[i])
+                    _, terminated, truncated = slot.state.step(action_val)
 
-                # Post-step position in environment
-                pos_val = float(env._state.position)
+                    k = slot.step_idx
+                    slot.actions[k] = action_val
+                    slot.positions[k] = float(slot.state.position)
+                    slot.step_returns[k] = float(slot.state.last_step_return)
+                    slot.gross_returns[k] = float(slot.state.last_gross_return)
+                    slot.costs[k] = float(slot.state.last_cost)
+                    slot.turnovers[k] = float(slot.state.last_turnover)
+                    slot.step_idx += 1
 
-                records.append({
-                    "Datetime": dt,
-                    "Symbol": symbol,
-                    "Open": open_val,
-                    "Close": close_val,
-                    "Action": action_val,
-                    "Position": pos_val,
-                    "StepReturn": float(info.get("step_return", 0.0)),
-                    "GrossReturn": float(info.get("gross_return", 0.0)),
-                    "Cost": float(info.get("cost", 0.0)),
-                    "Turnover": float(info.get("turnover", 0.0)),
-                    "MarketReturn": mkt_log_ret,
-                })
+                    done = bool(
+                        terminated
+                        or truncated
+                        or slot.state._offset >= slot.end_offset
+                    )
+                    if not done:
+                        next_active_slots.append(slot)
+                        continue
 
-        order_df = pd.DataFrame(records, columns=columns)
+                    order_df = slot.build_order_df(columns)
+                    if model_output_dir and len(order_df) > 0:
+                        out_csv = os.path.join(
+                            model_output_dir, f"{slot.symbol}_orders.csv"
+                        )
+                        order_df.to_csv(out_csv, index=False)
 
-        if output_csv_path and len(order_df) > 0:
-            os.makedirs(os.path.dirname(os.path.abspath(output_csv_path)), exist_ok=True)
-            order_df.to_csv(output_csv_path, index=False)
+                    if on_symbol_complete is not None:
+                        on_symbol_complete(slot.symbol, order_df)
+                        del order_df
+                    else:
+                        results[slot.symbol] = order_df
 
-        return order_df
+                    if pending_queue:
+                        next_sym, (next_prices, next_dt) = pending_queue.popleft()
+                        next_active_slots.append(
+                            _SymbolEvalSlot(
+                                next_sym, next_prices, next_dt, slot.state
+                            )
+                        )
+
+                active_slots = next_active_slots
+
+        return results
 
     @staticmethod
     def _safe_annualized_ratio(
