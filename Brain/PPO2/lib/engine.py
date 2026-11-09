@@ -282,7 +282,6 @@ class PPO2Engine:
         target_symbols: Optional[List[str]] = None,
         model_paths: Optional[List[str]] = None,
         model_dir: Optional[str] = None,
-        stride: int = 1,
     ):
         self.symbol_file_map = self._build_symbol_file_map()
 
@@ -310,18 +309,11 @@ class PPO2Engine:
         else:
             discovered = self._discover_models(model_dir=model_dir)
 
-        stride_val = max(1, int(stride))
-        if stride_val > 1 and len(discovered) > 1:
-            sampled = discovered[::stride_val]
-            if discovered[-1] not in sampled:
-                sampled.append(discovered[-1])
-            self.model_paths = sampled
-        else:
-            self.model_paths = discovered
+        self.model_paths = discovered
 
         print(
             f"[PPO2Engine] Prepared: {len(self.target_symbols)} symbols, "
-            f"{len(self.model_paths)} models (stride={stride_val})."
+            f"{len(self.model_paths)} models."
         )
 
     def build_agent(self) -> PPO2Agent:
@@ -657,7 +649,6 @@ class PPO2Engine:
         model_dir: Optional[str] = None,
         target_symbols: Optional[List[str]] = None,
         poll_interval: float = 30.0,
-        stride: int = 1,
         top_k: Optional[int] = None,
         min_file_age_sec: float = 2.0,
         max_idle_polls: Optional[int] = None,
@@ -671,7 +662,7 @@ class PPO2Engine:
         os.makedirs(output_dir, exist_ok=True)
 
         print("=" * 70)
-        print(f"[PPO2Engine] Starting Sidecar Watcher Mode (poll_interval={poll_sec}s, stride={stride})")
+        print(f"[PPO2Engine] Starting Sidecar Watcher Mode (poll_interval={poll_sec}s)")
         print(f"[PPO2Engine] Output Directory: {output_dir}")
         print("[PPO2Engine] Press Ctrl+C at any time to stop watching cleanly.")
         print("=" * 70)
@@ -679,7 +670,7 @@ class PPO2Engine:
         try:
             while True:
                 active_model_dir = self._resolve_watch_model_dir(model_dir)
-                self.prepare(target_symbols=target_symbols, model_dir=active_model_dir, stride=stride)
+                self.prepare(target_symbols=target_symbols, model_dir=active_model_dir)
 
                 pending_models = []
                 now_ts = time.time()

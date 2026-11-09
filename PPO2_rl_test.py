@@ -57,12 +57,6 @@ def parse_arguments():
         help="Optional override for evaluation end timestamp (e.g. '2025-12-31 23:59:59')",
     )
     parser.add_argument(
-        "--stride",
-        type=int,
-        default=1,
-        help="Stride interval for sampling checkpoints during screening (e.g. --stride 10)",
-    )
-    parser.add_argument(
         "--top_k",
         type=int,
         default=5,
@@ -160,7 +154,6 @@ def main():
             model_dir=args.model_dir,
             target_symbols=args.symbols,
             poll_interval=args.poll_interval,
-            stride=args.stride,
             top_k=args.top_k,
         )
         _print_leaderboard_summary(engine, top_k=args.top_k)
@@ -174,7 +167,6 @@ def main():
         target_symbols=args.symbols,
         model_paths=args.models,
         model_dir=args.model_dir,
-        stride=args.stride,
     )
 
     if args.formal:
