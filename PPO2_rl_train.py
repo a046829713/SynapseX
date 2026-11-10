@@ -126,13 +126,13 @@ class PPO2:
                 float(self.cfg_training.DEFAULT_SLIPPAGE),
             )
 
-        start_iter = int(getattr(self.cfg_training, "FRICTION_ANNEAL_START_ITER", 1500))
-        end_iter = int(getattr(self.cfg_training, "FRICTION_ANNEAL_END_ITER", 6000))
-        comm_start = float(getattr(self.cfg_training, "COMMISSION_START", 0.0001))
-        comm_target = float(getattr(self.cfg_training, "COMMISSION_TARGET", 0.0005))
-        slip_start = float(getattr(self.cfg_training, "SLIPPAGE_START", 0.0001))
-        slip_target = float(getattr(self.cfg_training, "SLIPPAGE_TARGET", 0.0005))
-        sched = str(getattr(self.cfg_training, "FRICTION_SCHEDULE", "cosine")).lower()
+        start_iter = int(self.cfg_training.FRICTION_ANNEAL_START_ITER)
+        end_iter = int(self.cfg_training.FRICTION_ANNEAL_END_ITER)
+        comm_start = float(self.cfg_training.COMMISSION_START)
+        comm_target = float(self.cfg_training.COMMISSION_TARGET)
+        slip_start = float(self.cfg_training.SLIPPAGE_START)
+        slip_target = float(self.cfg_training.SLIPPAGE_TARGET)
+        sched = str(self.cfg_training.FRICTION_SCHEDULE).lower()
 
         if iteration <= start_iter:
             prog = 0.0
@@ -147,6 +147,7 @@ class PPO2:
 
         cur_comm = float(comm_start + (comm_target - comm_start) * prog)
         cur_slip = float(slip_start + (slip_target - slip_start) * prog)
+        
         return cur_comm, cur_slip
 
     def _prepare_device(self):
