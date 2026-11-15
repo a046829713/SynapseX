@@ -7,6 +7,7 @@ from gymnasium import spaces
 from abc import ABC, abstractmethod
 from Brain.Common.env_components import State_time_step_template
 from Brain.Common.DataFeature import Prices, OriginalDataFeature
+import time
 
 STATIONARY_TIME_FEATURES = [
     "hour_sin",
@@ -17,7 +18,6 @@ STATIONARY_TIME_FEATURES = [
     "dayofweek_cos",
 ]
 
-
 class State_time_step(State_time_step_template):
     def __init__(
         self,
@@ -26,11 +26,12 @@ class State_time_step(State_time_step_template):
         model_train: bool,
         default_slippage: float,
         N_steps: int,
-        deadzone_threshold: float = 0.01,
-        rebalance_threshold: float = 0.03,
-        w1_step_return: float = 1.0,
-        downside_window_size: int = 60,
-        w2_downside_ratio: float = 0.5,
+        deadzone_threshold: float,
+        rebalance_threshold: float,
+        w1_step_return: float,
+        downside_window_size: int ,
+        w2_downside_ratio: float,
+        weight_scale:float,
         **kwargs,
     ):
         super().__init__(
@@ -42,6 +43,7 @@ class State_time_step(State_time_step_template):
         )
         assert int(downside_window_size) >= 1, "downside_window_size must be >= 1"
         assert float(w2_downside_ratio) >= 0.0, "w2_downside_ratio must be >= 0.0"
+        assert float(weight_scale) > 0.0, "weight_scale must be > 0.0"
 
         self.timelist = list(STATIONARY_TIME_FEATURES)
 
@@ -51,6 +53,7 @@ class State_time_step(State_time_step_template):
         self.return_history = deque(maxlen=self.downside_window_size)
 
         self.weights = {
+            "weight_scale":float(weight_scale),
             "w1_step_return": float(w1_step_return),
             "w2_downside_ratio": float(w2_downside_ratio),
         }
@@ -132,12 +135,7 @@ class State_time_step(State_time_step_template):
         )
         downside_delta = max(0.0, curr_dr - prev_dr)
 
-        # Combine rolling semi-deviation expansion with direct downside loss sensitivity
-        # so deep consecutive drawdowns do not saturate to zero marginal penalty
-        step_downside_loss = max(0.0, -float(current_p_return))
-        effective_downside = 0.5 * downside_delta + 0.5 * step_downside_loss
-
-        return float(self.weights["w1_step_return"] * w2 * effective_downside)
+        return downside_delta
 
     def step(self, action: float):
         """
@@ -208,8 +206,10 @@ class State_time_step(State_time_step_template):
 
         # Risk-adjusted single-step net portfolio reward
         reward = float(
-            self.weights["w1_step_return"] * current_p_return - downside_penalty
+            self.weights['weight_scale'] *  self.weights["w1_step_return"] * current_p_return - 
+            self.weights['weight_scale'] * self.weights["w2_downside_ratio"] * downside_penalty
         )
+
 
         # Advance time offset and check termination/truncation
         self._offset += 1
@@ -303,6 +303,10 @@ class BaseTradingEnv(gym.Env, ABC):
             "downside_penalty": float(self._state.last_downside_penalty),
         }
 
+        print("目前動作：",action)
+        print(info)
+        print("*"*120)
+        time.sleep(5)
         return obs, reward, terminated, truncated, info
 
     def engine_info(self):
@@ -349,10 +353,11 @@ class TrainingEnv(BaseTradingEnv):
             "default_slippage": cfg_training.DEFAULT_SLIPPAGE,
             "N_steps": cfg_training.EPISODE_STEPS,
             "deadzone_threshold": cfg_training.DEADZONE_THRESHOLD,
-            "rebalance_threshold": getattr(cfg_training, "REBALANCE_THRESHOLD", 0.03),
+            "rebalance_threshold": cfg_training.REBALANCE_THRESHOLD,
             "w1_step_return": cfg_training.W1_STEP_RETURN,
-            "downside_window_size": getattr(cfg_training, "DOWNSIDE_WINDOW_SIZE", 60),
-            "w2_downside_ratio": getattr(cfg_training, "W2_DOWNSIDE_RATIO", 0.5),
+            "downside_window_size": cfg_training.DOWNSIDE_WINDOW_SIZE,
+            "w2_downside_ratio": cfg_training.W2_DOWNSIDE_RATIO,
+            "weight_scale": cfg_training.WEIGHT_SCALE,
         }
 
         super().__init__(state=State_time_step(**state_params))

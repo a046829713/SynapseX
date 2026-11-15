@@ -99,6 +99,7 @@ class PPO2Evaluator:
         w1_step_return: float = 1.0,
         downside_window_size: int = 60,
         w2_downside_ratio: float = 0.5,
+        weight_scale: float = 100.0,
         episode_steps: int = 500,
         test_start_date: Optional[str] = None,
         test_end_date: Optional[str] = None,
@@ -114,6 +115,7 @@ class PPO2Evaluator:
         self.w1_step_return = w1_step_return
         self.downside_window_size = int(downside_window_size)
         self.w2_downside_ratio = float(w2_downside_ratio)
+        self.weight_scale = float(weight_scale)
         self.episode_steps = episode_steps
         self.test_start_date = test_start_date
         self.test_end_date = test_end_date
@@ -135,6 +137,7 @@ class PPO2Evaluator:
             w1_step_return=self.w1_step_return,
             downside_window_size=self.downside_window_size,
             w2_downside_ratio=self.w2_downside_ratio,
+            weight_scale=self.weight_scale,
         )
 
     def evaluate_batch_step(

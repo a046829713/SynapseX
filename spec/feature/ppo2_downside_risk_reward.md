@@ -78,10 +78,10 @@
 ### 2.1 檔案與模組改動矩陣 (File & Module Scope Matrix)
 | 編號 | 目標檔案與行號 | 範圍 (Scope) | 規劃動作 (Planned Action) |
 | :---: | :--- | :---: | :--- |
-| **項目 1** | [`Brain/PPO2/lib/environment.py:L20-L160`](file:///home/b0457812963/Mamba3RL/SynapseX/Brain/PPO2/lib/environment.py#L20-L160), [`L233-L245`](file:///home/b0457812963/Mamba3RL/SynapseX/Brain/PPO2/lib/environment.py#L233-L245), [`L283-L295`](file:///home/b0457812963/Mamba3RL/SynapseX/Brain/PPO2/lib/environment.py#L283-L295) | **In-Scope** | 於 [`State_time_step`](file:///home/b0457812963/Mamba3RL/SynapseX/Brain/PPO2/lib/environment.py#L20-L189) 實作改良版 `calculate_downside_risk_numpy()` 與 `calculate_step_downside_penalty()`，支援 `downside_window_size` 與 `w2_downside_ratio` 參數，並於 [`TrainingEnv`](file:///home/b0457812963/Mamba3RL/SynapseX/Brain/PPO2/lib/environment.py#L266-L332) 綁定配置。 |
-| **項目 2** | [`configs/training/ppo_v2.yaml:L64-L68`](file:///home/b0457812963/Mamba3RL/SynapseX/configs/training/ppo_v2.yaml#L64-L68) | **In-Scope** | 新增 `DOWNSIDE_WINDOW_SIZE` 與 `W2_DOWNSIDE_RATIO` 參數，並檢討調整 `DEADZONE_THRESHOLD`（如由 `0.01` 調升至 `0.03` 或 `0.05`）。 |
-| **項目 3** | [`Brain/PPO2/lib/engine.py:L99-L114`](file:///home/b0457812963/Mamba3RL/SynapseX/Brain/PPO2/lib/engine.py#L99-L114), [`L342-L353`](file:///home/b0457812963/Mamba3RL/SynapseX/Brain/PPO2/lib/engine.py#L342-L353), [`L532-L545`](file:///home/b0457812963/Mamba3RL/SynapseX/Brain/PPO2/lib/engine.py#L532-L545) | **In-Scope** | 讀取 `DOWNSIDE_WINDOW_SIZE` 與 `W2_DOWNSIDE_RATIO`（具備向後相容預設值）並傳遞予 `State_time_step` 與 `PPO2Evaluator`。 |
-| **項目 4** | [`Brain/PPO2/lib/Evaluator.py:L90-L133`](file:///home/b0457812963/Mamba3RL/SynapseX/Brain/PPO2/lib/Evaluator.py#L90-L133) | **In-Scope** | 於 [`PPO2Evaluator.__init__`](file:///home/b0457812963/Mamba3RL/SynapseX/Brain/PPO2/lib/Evaluator.py#L90-L121) 與 [`_make_state`](file:///home/b0457812963/Mamba3RL/SynapseX/Brain/PPO2/lib/Evaluator.py#L122-L133) 轉發 `downside_window_size` 與 `w2_downside_ratio`。 |
+| **項目 1** | [`Brain/PPO2/lib/environment.py:L20-L160`](file:///home/b0457812963/Mamba3RL/SynapseX/Brain/PPO2/lib/environment.py#L20-L160), [`L203-L212`](file:///home/b0457812963/Mamba3RL/SynapseX/Brain/PPO2/lib/environment.py#L203-L212), [`L348-L361`](file:///home/b0457812963/Mamba3RL/SynapseX/Brain/PPO2/lib/environment.py#L348-L361) | **In-Scope** | 於 [`State_time_step`](file:///home/b0457812963/Mamba3RL/SynapseX/Brain/PPO2/lib/environment.py#L21-L249) 實作改良版 `calculate_downside_risk_numpy()` 與 `calculate_step_downside_penalty()`，支援 `downside_window_size`、`w2_downside_ratio` 與 `weight_scale` 參數，並於 [`TrainingEnv`](file:///home/b0457812963/Mamba3RL/SynapseX/Brain/PPO2/lib/environment.py#L331-L399) 綁定配置。 |
+| **項目 2** | [`configs/training/ppo_v2.yaml:L64-L70`](file:///home/b0457812963/Mamba3RL/SynapseX/configs/training/ppo_v2.yaml#L64-L70) | **In-Scope** | 設定 `W1_STEP_RETURN: 1.0`、`DOWNSIDE_WINDOW_SIZE: 60`、`W2_DOWNSIDE_RATIO: 0.5` 與 `WEIGHT_SCALE: 100.0`，並調整 `DEADZONE_THRESHOLD: 0.03`、`REBALANCE_THRESHOLD: 0.05`。 |
+| **項目 3** | [`Brain/PPO2/lib/engine.py:L99-L116`](file:///home/b0457812963/Mamba3RL/SynapseX/Brain/PPO2/lib/engine.py#L99-L116), [`L344-L357`](file:///home/b0457812963/Mamba3RL/SynapseX/Brain/PPO2/lib/engine.py#L344-L357), [`L536-L552`](file:///home/b0457812963/Mamba3RL/SynapseX/Brain/PPO2/lib/engine.py#L536-L552), [`L833-L901`](file:///home/b0457812963/Mamba3RL/SynapseX/Brain/PPO2/lib/engine.py#L833-L901) | **In-Scope** | 讀取 `DOWNSIDE_WINDOW_SIZE`、`W2_DOWNSIDE_RATIO` 與 `WEIGHT_SCALE` 並傳遞予 `State_time_step` 與 `PPO2Evaluator`。 |
+| **項目 4** | [`Brain/PPO2/lib/Evaluator.py:L90-L140`](file:///home/b0457812963/Mamba3RL/SynapseX/Brain/PPO2/lib/Evaluator.py#L90-L140) | **In-Scope** | 於 [`PPO2Evaluator.__init__`](file:///home/b0457812963/Mamba3RL/SynapseX/Brain/PPO2/lib/Evaluator.py#L90-L125) 與 [`_make_state`](file:///home/b0457812963/Mamba3RL/SynapseX/Brain/PPO2/lib/Evaluator.py#L126-L140) 轉發 `downside_window_size`、`w2_downside_ratio` 與 `weight_scale`。 |
 | **項目 5** | `tests/test_ppo2_downside_penalty.py` | **In-Scope [NEW]** | 新增單元測試驗證固定視窗邊際下行風險計算、無遺忘棘輪效應、無冷啟動暴衝及配置綁定。 |
 | **項目 6** | [`Brain/PPO2/lib/model.py`](file:///home/b0457812963/Mamba3RL/SynapseX/Brain/PPO2/lib/model.py), [`Brain/PPO2/lib/Agent.py`](file:///home/b0457812963/Mamba3RL/SynapseX/Brain/PPO2/lib/Agent.py), [`Brain/DQN/lib/environment.py`](file:///home/b0457812963/Mamba3RL/SynapseX/Brain/DQN/lib/environment.py) | **Out-of-Scope** | 明確保留不更動，確保已訓練之權重格式（如 `checkpoint_iter_8200.pt`）100% 向後相容且不影響 DQN 模組。 |
 
@@ -100,22 +100,22 @@
 ### 3.1 步驟清單 (Step-by-Step Task Checklist)
 - [x] **步驟 1: 於 [`Brain/PPO2/lib/environment.py`](file:///home/b0457812963/Mamba3RL/SynapseX/Brain/PPO2/lib/environment.py) 實作改良版下行風險懲罰機制**
   - [x] 引入 `from collections import deque`。
-  - [x] 於 [`State_time_step.__init__`](file:///home/b0457812963/Mamba3RL/SynapseX/Brain/PPO2/lib/environment.py#L21-L61) 加入 `downside_window_size: int = 60` 與 `w2_downside_ratio: float = 0.5`，初始化 `self.return_history = deque(maxlen=downside_window_size)` 與 `self.last_downside_penalty = 0.0`。
-  - [x] 於 [`State_time_step.reset`](file:///home/b0457812963/Mamba3RL/SynapseX/Brain/PPO2/lib/environment.py#L72-L85) 清空 `self.return_history.clear()` 並重置 `self.last_downside_penalty = 0.0`。
-  - [x] 實作固定視窗分母之 `calculate_downside_risk_numpy(self, returns)` 與無遺忘棘輪之 `calculate_step_downside_penalty(self, current_p_return: float) -> float`。
-  - [x] 於 [`State_time_step.step`](file:///home/b0457812963/Mamba3RL/SynapseX/Brain/PPO2/lib/environment.py#L86-L159) 計算 `downside_penalty` 並由單步獎勵中扣除，同時暴露於 [`BaseTradingEnv.step`](file:///home/b0457812963/Mamba3RL/SynapseX/Brain/PPO2/lib/environment.py#L224-L245) 的 `info["downside_penalty"]`。
-  - [x] 於 [`TrainingEnv.__init__`](file:///home/b0457812963/Mamba3RL/SynapseX/Brain/PPO2/lib/environment.py#L272-L295) 綁定 `downside_window_size` 與 `w2_downside_ratio`。
+  - [x] 於 [`State_time_step.__init__`](file:///home/b0457812963/Mamba3RL/SynapseX/Brain/PPO2/lib/environment.py#L21-L61) 加入 `downside_window_size: int`、`w2_downside_ratio: float` 與 `weight_scale: float`，初始化 `self.return_history = deque(maxlen=downside_window_size)` 與 `self.last_downside_penalty = 0.0`。
+  - [x] 於 [`State_time_step.reset`](file:///home/b0457812963/Mamba3RL/SynapseX/Brain/PPO2/lib/environment.py#L84-L99) 清空 `self.return_history.clear()` 並重置 `self.last_downside_penalty = 0.0`。
+  - [x] 實作固定視窗分母之 `calculate_downside_risk_numpy(self, returns)` 與無遺忘棘輪之 `calculate_step_downside_penalty(self, current_p_return: float) -> float`（回傳純邊際擴張量 `downside_delta`）。
+  - [x] 於 [`State_time_step.step`](file:///home/b0457812963/Mamba3RL/SynapseX/Brain/PPO2/lib/environment.py#L139-L220) 計算 `downside_penalty` 並以 `weight_scale * w1_step_return * current_p_return - weight_scale * w2_downside_ratio * downside_penalty` 合成單步獎勵，同時暴露於 [`BaseTradingEnv.step`](file:///home/b0457812963/Mamba3RL/SynapseX/Brain/PPO2/lib/environment.py#L284-L310) 的 `info["downside_penalty"]`。
+  - [x] 於 [`TrainingEnv.__init__`](file:///home/b0457812963/Mamba3RL/SynapseX/Brain/PPO2/lib/environment.py#L337-L363) 綁定 `downside_window_size`、`w2_downside_ratio` 與 `weight_scale`。
 - [x] **步驟 2: 同步更新配置與評估引擎 ([`ppo_v2.yaml`](file:///home/b0457812963/Mamba3RL/SynapseX/configs/training/ppo_v2.yaml), [`engine.py`](file:///home/b0457812963/Mamba3RL/SynapseX/Brain/PPO2/lib/engine.py), [`Evaluator.py`](file:///home/b0457812963/Mamba3RL/SynapseX/Brain/PPO2/lib/Evaluator.py))**
-  - [x] 於 [`configs/training/ppo_v2.yaml`](file:///home/b0457812963/Mamba3RL/SynapseX/configs/training/ppo_v2.yaml) 設定 `DEADZONE_THRESHOLD`、`DOWNSIDE_WINDOW_SIZE` 與 `W2_DOWNSIDE_RATIO`。
+  - [x] 於 [`configs/training/ppo_v2.yaml`](file:///home/b0457812963/Mamba3RL/SynapseX/configs/training/ppo_v2.yaml) 設定 `DEADZONE_THRESHOLD`、`REBALANCE_THRESHOLD`、`W1_STEP_RETURN`、`DOWNSIDE_WINDOW_SIZE`、`W2_DOWNSIDE_RATIO` 與 `WEIGHT_SCALE`。
   - [x] 於 [`PPO2Engine`](file:///home/b0457812963/Mamba3RL/SynapseX/Brain/PPO2/lib/engine.py) 與 [`PPO2Evaluator`](file:///home/b0457812963/Mamba3RL/SynapseX/Brain/PPO2/lib/Evaluator.py) 綁定並轉發上述參數。
 - [x] **步驟 3: 代碼防禦與清理 (Clean up & Defensiveness)**
-  - [x] 加入 `assert downside_window_size >= 1` 與 `assert w2_downside_ratio >= 0.0` 防禦性斷言。
+  - [x] 加入 `assert downside_window_size >= 1`、`assert w2_downside_ratio >= 0.0` 與 `assert weight_scale > 0.0` 防禦性斷言。
   - [x] 確保當 `current_p_return >= 0.0` 時，`calculate_step_downside_penalty` 零額外陣列配置、直接快速回傳 `0.0`。
 
 ### 3.2 詳細程式碼修改藍圖 (Detailed Code Modifications Blueprint)
 
 #### 3.2.1 改良版 `calculate_step_downside_penalty` 數學設計 ([`Brain/PPO2/lib/environment.py`](file:///home/b0457812963/Mamba3RL/SynapseX/Brain/PPO2/lib/environment.py))
-為同時解決舊版 DQN `calculate_step_downside_penalty` 的三大缺陷（$N=2$ 冷啟動分母暴衝、60 步視窗遺忘棘輪、以及深套連跌時的 $\sqrt{\cdot}$ 邊際鈍化），設計如下：
+為解決舊版 DQN `calculate_step_downside_penalty` 的 $N=2$ 冷啟動分母暴衝與 60 步視窗遺忘棘輪，並將獎勵倍率 `weight_scale` 與相對權重 `w1_step_return` / `w2_downside_ratio` 清晰解耦，設計如下：
 
 ```python
     def calculate_downside_risk_numpy(self, returns) -> float:
@@ -132,32 +132,30 @@
     def calculate_step_downside_penalty(self, current_p_return: float) -> float:
         """
         Computes the exact single-step marginal downside risk expansion caused by
-        current_p_return over the active rolling window, scaled consistently with w1_step_return.
+        current_p_return over the active rolling window.
         Eliminates sliding-window drop-off ratchet artifacts by comparing the same prior window
         before and after appending current_p_return.
         """
         w2 = self.weights["w2_downside_ratio"]
-        if w2 <= 0.0:
+        if w2 <= 0.0 or current_p_return >= 0.0:
             self.return_history.append(float(current_p_return))
             return 0.0
 
         # Prior window of at most (W - 1) completed step returns
-        prior_slice = list(self.return_history)[-(self.downside_window_size - 1) :] if self.downside_window_size > 1 else []
+        prior_slice = (
+            list(self.return_history)[-(self.downside_window_size - 1) :]
+            if self.downside_window_size > 1
+            else []
+        )
         self.return_history.append(float(current_p_return))
 
-        if current_p_return >= 0.0:
-            return 0.0
-
         prev_dr = self.calculate_downside_risk_numpy(prior_slice)
-        curr_dr = self.calculate_downside_risk_numpy(prior_slice + [float(current_p_return)])
+        curr_dr = self.calculate_downside_risk_numpy(
+            prior_slice + [float(current_p_return)]
+        )
         downside_delta = max(0.0, curr_dr - prev_dr)
 
-        # Combine rolling semi-deviation expansion with direct downside loss sensitivity
-        # so deep consecutive drawdowns do not saturate to zero marginal penalty
-        step_downside_loss = max(0.0, -float(current_p_return))
-        effective_downside = 0.5 * downside_delta + 0.5 * step_downside_loss
-
-        return float(self.weights["w1_step_return"] * w2 * effective_downside)
+        return downside_delta
 ```
 
 並且於 `State_time_step.step()` 中：
@@ -167,7 +165,8 @@
 
         # Risk-adjusted single-step net portfolio reward
         reward = float(
-            self.weights["w1_step_return"] * current_p_return - downside_penalty
+            self.weights["weight_scale"] * self.weights["w1_step_return"] * current_p_return
+            - self.weights["weight_scale"] * self.weights["w2_downside_ratio"] * downside_penalty
         )
 ```
 
