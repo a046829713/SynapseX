@@ -191,6 +191,7 @@ class State_time_step(State_time_step_template):
 
         gross_p_return = float(np.log(m_gross))
         current_p_return = float(np.log(m_net))
+
         effective_cost = float(max(0.0, gross_p_return - current_p_return))
 
         self.last_step_return = current_p_return
@@ -200,7 +201,6 @@ class State_time_step(State_time_step_template):
         self.last_traded = bool(abs(delta_p) > 1e-8)
 
         self._prev_close = close_price
-
         downside_penalty = self.calculate_step_downside_penalty(current_p_return)
         self.last_downside_penalty = downside_penalty
 
@@ -303,10 +303,6 @@ class BaseTradingEnv(gym.Env, ABC):
             "downside_penalty": float(self._state.last_downside_penalty),
         }
 
-        print("目前動作：",action)
-        print(info)
-        print("*"*120)
-        time.sleep(5)
         return obs, reward, terminated, truncated, info
 
     def engine_info(self):
