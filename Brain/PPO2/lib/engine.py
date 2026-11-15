@@ -35,6 +35,22 @@ from Brain.PPO2.lib.data_adapter import PPO2DataAdapter, PortfolioState
 from Brain.PPO2.lib.leaderboard import LeaderboardManager, GateConfig
 
 
+MANIFEST = [
+    "model_name", "symbol", "total_bars", "mean_action", "std_action",
+    "long_ratio", "short_ratio", "flat_ratio", "order_file", "sharpe",
+    "sortino", "ir_1x", "ir_2x", "max_drawdown_pct", "cum_return_pct",
+    "bh_return_pct", "daily_turnover",
+]
+
+
+
+
+
+
+
+
+
+
 class PPO2Engine:
     """
     PPO2 Evaluation and Order Export Engine.
@@ -91,6 +107,8 @@ class PPO2Engine:
         self.time_features_out = int(self.cfg.TIME_FEATURES_OUT)
         self.portfolio_dim = int(self.cfg.PORTFOLIO_DIM)
         self.w1_step_return = float(self.cfg.W1_STEP_RETURN)
+        self.downside_window_size = int(getattr(self.cfg, "DOWNSIDE_WINDOW_SIZE", 60))
+        self.w2_downside_ratio = float(getattr(self.cfg, "W2_DOWNSIDE_RATIO", 0.5))
         self.episode_steps = int(self.cfg.EPISODE_STEPS)
         self.init_log_std = float(getattr(self.cfg, "INIT_LOG_STD", 0.0))
         self.log_std_min = float(getattr(self.cfg, "LOG_STD_MIN", -5.0))
@@ -333,6 +351,8 @@ class PPO2Engine:
             deadzone_threshold=self.deadzone_threshold,
             rebalance_threshold=self.rebalance_threshold,
             w1_step_return=self.w1_step_return,
+            downside_window_size=self.downside_window_size,
+            w2_downside_ratio=self.w2_downside_ratio,
         )
         ob_space = spaces.Dict({
             "states": spaces.Box(
@@ -471,7 +491,6 @@ class PPO2Engine:
                     )
                 )
                 return
-
         # 2. File age guard
         if not os.path.exists(model_path):
             return
@@ -523,6 +542,8 @@ class PPO2Engine:
             commission_perc=self.commission_perc,
             default_slippage=self.default_slippage,
             w1_step_return=self.w1_step_return,
+            downside_window_size=self.downside_window_size,
+            w2_downside_ratio=self.w2_downside_ratio,
             episode_steps=self.episode_steps,
             test_start_date=effective_start,
             test_end_date=effective_end,
@@ -612,17 +633,12 @@ class PPO2Engine:
         min_file_age_sec: float = 0.0,
     ) -> pd.DataFrame:
         """
-        Streaming multi-model batch test execution with O(1) memory footprint.
+            Streaming multi-model batch test execution with O(1) memory footprint.
         """
-        manifest_columns = [
-            "model_name", "symbol", "total_bars", "mean_action", "std_action",
-            "long_ratio", "short_ratio", "flat_ratio", "order_file", "sharpe",
-            "sortino", "ir_1x", "ir_2x", "max_drawdown_pct", "cum_return_pct",
-            "bh_return_pct", "daily_turnover",
-        ]
+
         if not self.model_paths:
             print("[PPO2Engine] Warning: No models to test. Please provide model_paths or model_dir.")
-            return pd.DataFrame(columns=manifest_columns)
+            return pd.DataFrame(columns=MANIFEST)
 
         effective_start = test_start_date if test_start_date is not None else self.test_start_date
         effective_end = test_end_date if test_end_date is not None else self.test_end_date
@@ -648,10 +664,10 @@ class PPO2Engine:
             )
 
         manifest_df = (
-            pd.DataFrame(manifest_rows) if manifest_rows else pd.DataFrame(columns=manifest_columns)
+            pd.DataFrame(manifest_rows) if manifest_rows else pd.DataFrame(columns=MANIFEST)
         )
-        # Ensure only manifest_columns are exported to consolidated CSV
-        exported_cols = [c for c in manifest_columns if c in manifest_df.columns]
+        # Ensure only MANIFEST are exported to consolidated CSV
+        exported_cols = [c for c in MANIFEST if c in manifest_df.columns]
         manifest_df = manifest_df[exported_cols]
         consolidated_path = os.path.join(output_dir, "multi_model_test_manifest.csv")
         self._atomic_write_csv(manifest_df, consolidated_path)
@@ -823,6 +839,8 @@ class PPO2Engine:
             commission_perc=self.commission_perc,
             default_slippage=self.default_slippage,
             w1_step_return=self.w1_step_return,
+            downside_window_size=self.downside_window_size,
+            w2_downside_ratio=self.w2_downside_ratio,
             episode_steps=self.episode_steps,
             eval_batch_size=self.eval_batch_size,
         )
@@ -875,6 +893,8 @@ class PPO2Engine:
                 commission_perc=self.commission_perc,
                 default_slippage=self.default_slippage,
                 w1_step_return=self.w1_step_return,
+                downside_window_size=self.downside_window_size,
+                w2_downside_ratio=self.w2_downside_ratio,
                 episode_steps=self.episode_steps,
                 eval_batch_size=self.eval_batch_size,
             )

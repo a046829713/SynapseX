@@ -1,4 +1,5 @@
 import multiprocessing as mp
+from collections import deque
 from typing import Optional, List, Dict, Callable
 import numpy as np
 import gymnasium as gym
@@ -28,6 +29,8 @@ class State_time_step(State_time_step_template):
         deadzone_threshold: float = 0.01,
         rebalance_threshold: float = 0.03,
         w1_step_return: float = 1.0,
+        downside_window_size: int = 60,
+        w2_downside_ratio: float = 0.5,
         **kwargs,
     ):
         super().__init__(
@@ -37,13 +40,19 @@ class State_time_step(State_time_step_template):
             default_slippage=default_slippage,
             N_steps=N_steps,
         )
+        assert int(downside_window_size) >= 1, "downside_window_size must be >= 1"
+        assert float(w2_downside_ratio) >= 0.0, "w2_downside_ratio must be >= 0.0"
+
         self.timelist = list(STATIONARY_TIME_FEATURES)
 
         self.deadzone_threshold = deadzone_threshold
         self.rebalance_threshold = rebalance_threshold
+        self.downside_window_size = int(downside_window_size)
+        self.return_history = deque(maxlen=self.downside_window_size)
 
         self.weights = {
             "w1_step_return": float(w1_step_return),
+            "w2_downside_ratio": float(w2_downside_ratio),
         }
 
         # 狀態變數初始化
@@ -58,6 +67,7 @@ class State_time_step(State_time_step_template):
         self.last_cost = 0.0
         self.last_turnover = 0.0
         self.last_traded = False
+        self.last_downside_penalty = 0.0
 
     def set_friction(self, commission_perc: float, default_slippage: float):
         """
@@ -77,11 +87,57 @@ class State_time_step(State_time_step_template):
         self.open_price = 0.0
         self.game_steps = 0
         self._prev_close = float(self._prices.close[self._offset - 1])
+        self.return_history.clear()
         self.last_step_return = 0.0
         self.last_gross_return = 0.0
         self.last_cost = 0.0
         self.last_turnover = 0.0
         self.last_traded = False
+        self.last_downside_penalty = 0.0
+
+    def calculate_downside_risk_numpy(self, returns) -> float:
+        """
+        Computes fixed-window semi-deviation (downside risk) normalized by
+        self.downside_window_size to eliminate early-episode small-N denominator spikes.
+        """
+        if len(returns) == 0:
+            return 0.0
+        downside_diff = np.maximum(0.0, -np.asarray(returns, dtype=np.float64))
+        squared_downside = downside_diff ** 2
+        return float(np.sqrt(np.sum(squared_downside) / float(self.downside_window_size)))
+
+    def calculate_step_downside_penalty(self, current_p_return: float) -> float:
+        """
+        Computes the exact single-step marginal downside risk expansion caused by
+        current_p_return over the active rolling window, scaled consistently with w1_step_return.
+        Eliminates sliding-window drop-off ratchet artifacts by comparing the same prior window
+        before and after appending current_p_return.
+        """
+        w2 = self.weights["w2_downside_ratio"]
+        if w2 <= 0.0 or current_p_return >= 0.0:
+            self.return_history.append(float(current_p_return))
+            return 0.0
+
+        # Prior window of at most (W - 1) completed step returns
+        prior_slice = (
+            list(self.return_history)[-(self.downside_window_size - 1) :]
+            if self.downside_window_size > 1
+            else []
+        )
+        self.return_history.append(float(current_p_return))
+
+        prev_dr = self.calculate_downside_risk_numpy(prior_slice)
+        curr_dr = self.calculate_downside_risk_numpy(
+            prior_slice + [float(current_p_return)]
+        )
+        downside_delta = max(0.0, curr_dr - prev_dr)
+
+        # Combine rolling semi-deviation expansion with direct downside loss sensitivity
+        # so deep consecutive drawdowns do not saturate to zero marginal penalty
+        step_downside_loss = max(0.0, -float(current_p_return))
+        effective_downside = 0.5 * downside_delta + 0.5 * step_downside_loss
+
+        return float(self.weights["w1_step_return"] * w2 * effective_downside)
 
     def step(self, action: float):
         """
@@ -147,8 +203,13 @@ class State_time_step(State_time_step_template):
 
         self._prev_close = close_price
 
-        # Unbiased single-step net portfolio log-return
-        reward = float(self.weights["w1_step_return"] * current_p_return)
+        downside_penalty = self.calculate_step_downside_penalty(current_p_return)
+        self.last_downside_penalty = downside_penalty
+
+        # Risk-adjusted single-step net portfolio reward
+        reward = float(
+            self.weights["w1_step_return"] * current_p_return - downside_penalty
+        )
 
         # Advance time offset and check termination/truncation
         self._offset += 1
@@ -239,6 +300,7 @@ class BaseTradingEnv(gym.Env, ABC):
             "cost": float(self._state.last_cost),
             "turnover": float(self._state.last_turnover),
             "traded": bool(self._state.last_traded),
+            "downside_penalty": float(self._state.last_downside_penalty),
         }
 
         return obs, reward, terminated, truncated, info
@@ -289,6 +351,8 @@ class TrainingEnv(BaseTradingEnv):
             "deadzone_threshold": cfg_training.DEADZONE_THRESHOLD,
             "rebalance_threshold": getattr(cfg_training, "REBALANCE_THRESHOLD", 0.03),
             "w1_step_return": cfg_training.W1_STEP_RETURN,
+            "downside_window_size": getattr(cfg_training, "DOWNSIDE_WINDOW_SIZE", 60),
+            "w2_downside_ratio": getattr(cfg_training, "W2_DOWNSIDE_RATIO", 0.5),
         }
 
         super().__init__(state=State_time_step(**state_params))
