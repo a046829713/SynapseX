@@ -64,13 +64,16 @@ class State_time_step(State_time_step_template):
         self.game_steps = 0
         self._prev_close = 0.0
 
-        # Per-step diagnostic accounting attributes
+        # Per-step & episode diagnostic accounting attributes
         self.last_step_return = 0.0
         self.last_gross_return = 0.0
         self.last_cost = 0.0
         self.last_turnover = 0.0
         self.last_traded = False
         self.last_downside_penalty = 0.0
+        self.cum_log_return = 0.0
+        self.equity = 1.0
+        self.net_pnl_pct = 0.0
 
     def set_friction(self, commission_perc: float, default_slippage: float):
         """
@@ -97,6 +100,9 @@ class State_time_step(State_time_step_template):
         self.last_turnover = 0.0
         self.last_traded = False
         self.last_downside_penalty = 0.0
+        self.cum_log_return = 0.0
+        self.equity = 1.0
+        self.net_pnl_pct = 0.0
 
     def calculate_downside_risk_numpy(self, returns) -> float:
         """
@@ -199,6 +205,9 @@ class State_time_step(State_time_step_template):
         self.last_cost = effective_cost
         self.last_turnover = float(abs(delta_p))
         self.last_traded = bool(abs(delta_p) > 1e-8)
+        self.cum_log_return += current_p_return
+        self.equity = float(np.exp(self.cum_log_return))
+        self.net_pnl_pct = float((self.equity - 1.0) * 100.0)
 
         self._prev_close = close_price
         downside_penalty = self.calculate_step_downside_penalty(current_p_return)
@@ -210,7 +219,9 @@ class State_time_step(State_time_step_template):
             self.weights['weight_scale'] * self.weights["w2_downside_ratio"] * downside_penalty
         )
 
-
+        print("w1_step_return:",self.weights["w1_step_return"] * current_p_return)
+        print("w2_downside_ratio:",self.weights["w2_downside_ratio"] * downside_penalty)
+        print("*"*120)
         # Advance time offset and check termination/truncation
         self._offset += 1
         self.game_steps += 1
@@ -301,6 +312,8 @@ class BaseTradingEnv(gym.Env, ABC):
             "turnover": float(self._state.last_turnover),
             "traded": bool(self._state.last_traded),
             "downside_penalty": float(self._state.last_downside_penalty),
+            "equity": float(self._state.equity),
+            "net_pnl_pct": float(self._state.net_pnl_pct),
         }
 
         return obs, reward, terminated, truncated, info

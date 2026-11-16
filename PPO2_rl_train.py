@@ -475,7 +475,6 @@ class PPO2:
         current_symbols = list(initial_symbols)
 
         episode_rewards = np.zeros(num_workers, dtype=np.float64)
-        episode_net_pnl = np.zeros(num_workers, dtype=np.float64)
         episode_cost = np.zeros(num_workers, dtype=np.float64)
         episode_trades = np.zeros(num_workers, dtype=np.int64)
         episode_turnover = np.zeros(num_workers, dtype=np.float64)
@@ -557,7 +556,6 @@ class PPO2:
                     )
                     episode_rewards += rewards
                     for w_idx, info_w in enumerate(infos):
-                        episode_net_pnl[w_idx] += float(info_w.get("step_return", 0.0))
                         episode_cost[w_idx] += float(info_w.get("cost", 0.0))
                         episode_trades[w_idx] += int(bool(info_w.get("traded", False)))
                         episode_turnover[w_idx] += float(info_w.get("turnover", 0.0))
@@ -573,7 +571,7 @@ class PPO2:
                             episode_count += 1
                             steps_i = int(max(episode_steps[i], 1))
                             ret_i = float(episode_rewards[i])
-                            net_pnl_pct_i = float(episode_net_pnl[i] * 100.0)
+                            net_pnl_pct_i = float(infos[i].get("net_pnl_pct", 0.0))
                             cost_pct_i = float(episode_cost[i] * 100.0)
                             trades_i = int(episode_trades[i])
                             turnover_i = float(episode_turnover[i])
@@ -602,7 +600,6 @@ class PPO2:
                             obs["states"][i] = new_obs_i["states"]
                             obs["time_states"][i] = new_obs_i["time_states"]
                             episode_rewards[i] = 0.0
-                            episode_net_pnl[i] = 0.0
                             episode_cost[i] = 0.0
                             episode_trades[i] = 0
                             episode_turnover[i] = 0.0

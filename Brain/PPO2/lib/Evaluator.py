@@ -319,7 +319,7 @@ class PPO2Evaluator:
         if not np.isfinite(std_val) or std_val < 1e-8:
             return 0.0
         val = (mean_val / std_val) * annual_factor
-        return float(np.clip(val, -50.0, 50.0)) if np.isfinite(val) else 0.0
+        return float(val) if np.isfinite(val) else 0.0
 
     @staticmethod
     def _safe_annualized_sortino(
@@ -335,7 +335,7 @@ class PPO2Evaluator:
                 return PPO2Evaluator._safe_annualized_ratio(daily_series, annual_factor)
             return 0.0
         val = (mean_val / downside_std) * annual_factor
-        return float(np.clip(val, -50.0, 50.0)) if np.isfinite(val) else 0.0
+        return float(val) if np.isfinite(val) else 0.0
 
     @staticmethod
     def compute_symbol_metrics(
@@ -416,19 +416,19 @@ class PPO2Evaluator:
         long_ratio = float(np.mean(positions > 0.0))
         short_ratio = float(np.mean(positions < 0.0))
         flat_ratio = float(np.mean(positions == 0.0))
-        mean_exposure = float(np.clip(np.mean(positions), 0.0, 1.0))
+        mean_exposure = float(np.mean(positions))
 
         cum_log_ret = float(np.sum(step_ret))
         bh_log_ret = float(np.sum(mkt_ret))
-        cum_return_pct = float((np.exp(np.clip(cum_log_ret, -50.0, 50.0)) - 1.0) * 100.0)
-        bh_return_pct = float((np.exp(np.clip(bh_log_ret, -50.0, 50.0)) - 1.0) * 100.0)
+        cum_return_pct = float((np.exp(cum_log_ret) - 1.0) * 100.0)
+        bh_return_pct = float((np.exp(bh_log_ret) - 1.0) * 100.0)
 
         # Bar-level compounded equity curve for exact Max Drawdown
         cum_curve = np.concatenate([[0.0], np.cumsum(step_ret)])
-        equity_curve = np.exp(np.clip(cum_curve, -50.0, 50.0))
+        equity_curve = np.exp(cum_curve)
         running_peak = np.maximum.accumulate(equity_curve)
         drawdowns = 1.0 - (equity_curve / np.maximum(running_peak, 1e-12))
-        max_drawdown_pct = float(np.clip(np.max(drawdowns) * 100.0, 0.0, 100.0))
+        max_drawdown_pct = float(np.max(drawdowns) * 100.0)
 
         # Group by calendar date for daily return aggregation
         dt_parsed = pd.to_datetime(order_df["Datetime"], errors="coerce")
@@ -466,9 +466,9 @@ class PPO2Evaluator:
         ann_log_ret = (cum_log_ret / max(eval_days, 1)) * 365.0
         mdd_frac = max_drawdown_pct / 100.0
         if mdd_frac > 1e-4:
-            calmar = float(np.clip(ann_log_ret / mdd_frac, -50.0, 50.0))
+            calmar = float(ann_log_ret / mdd_frac)
         else:
-            calmar = float(np.clip(ann_log_ret * 10.0, -50.0, 50.0)) if ann_log_ret > 0 else 0.0
+            calmar = float(ann_log_ret * 10.0) if ann_log_ret > 0 else 0.0
 
         daily_turnover = float(np.mean(daily_turn_arr)) if eval_days > 0 else 0.0
         trade_count = int(np.sum(turnover > 1e-8))
