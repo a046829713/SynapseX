@@ -60,7 +60,6 @@ class State_time_step(State_time_step_template):
 
         # 狀態變數初始化
         self.position = 0.0
-        self.open_price = 0.0
         self.game_steps = 0
         self._prev_close = 0.0
 
@@ -83,14 +82,13 @@ class State_time_step(State_time_step_template):
         self.default_slippage = float(default_slippage)
 
     def getStateShape(self):
-        return self.bars_count, len(self.info_list) + 2
+        return self.bars_count, len(self.info_list) + 1
 
     def reset(self, prices: Prices, offset: int):
         assert offset >= self.bars_count - 1
         self._prices = prices
         self._offset = offset
         self.position = 0.0
-        self.open_price = 0.0
         self.game_steps = 0
         self._prev_close = float(self._prices.close[self._offset - 1])
         self.return_history.clear()
@@ -170,18 +168,6 @@ class State_time_step(State_time_step_template):
         delta_p = target_pos - prev_pos
         friction_rate = self.commission_perc + self.default_slippage
 
-        # Long-Only position & weighted-average open_price maintenance
-        if target_pos == 0.0:
-            self.open_price = 0.0
-        elif prev_pos == 0.0:
-            self.open_price = open_price
-        else:
-            if target_pos > prev_pos:
-                added_size = target_pos - prev_pos
-                self.open_price = (
-                    prev_pos * self.open_price + added_size * open_price
-                ) / target_pos
-
         self.position = target_pos
 
         # Exact simple-to-log portfolio equity compounding
@@ -219,9 +205,6 @@ class State_time_step(State_time_step_template):
             self.weights['weight_scale'] * self.weights["w2_downside_ratio"] * downside_penalty
         )
 
-        print("w1_step_return:",self.weights["w1_step_return"] * current_p_return)
-        print("w2_downside_ratio:",self.weights["w2_downside_ratio"] * downside_penalty)
-        print("*"*120)
         # Advance time offset and check termination/truncation
         self._offset += 1
         self.game_steps += 1
@@ -245,14 +228,6 @@ class State_time_step(State_time_step_template):
             data_res[:, idx] = getattr(self._prices, field)[start:end]
 
         data_res[:, len(self.info_list)] = self.position
-
-        if self.position > 0.0 and self.open_price > 0.0:
-            prev_close = max(float(self._prices.close[self._offset - 1]), 1e-8)
-            safe_open = max(float(self.open_price), 1e-8)
-            raw_equity_ratio = 1.0 + self.position * ((prev_close - safe_open) / safe_open)
-            data_res[:, len(self.info_list) + 1] = float(np.log(max(raw_equity_ratio, 1e-8)))
-        else:
-            data_res[:, len(self.info_list) + 1] = 0.0
 
         for idx, field in enumerate(self.timelist):
             time_res[:, idx] = getattr(self._prices, field)[start:end]

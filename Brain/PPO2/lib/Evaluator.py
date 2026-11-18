@@ -190,8 +190,8 @@ class PPO2Evaluator:
             prev_pos = np.clip(
                 np.asarray(prev_positions, dtype=np.float64).reshape(-1), 0.0, 1.0
             )
-        elif states_all.shape[-1] >= 2:
-            prev_pos = np.clip(states_all[:, -1, -2].astype(np.float64), 0.0, 1.0)
+        elif states_all.shape[-1] >= 1:
+            prev_pos = np.clip(states_all[:, -1, -1].astype(np.float64), 0.0, 1.0)
         else:
             prev_pos = np.zeros(n_items, dtype=np.float64)
 

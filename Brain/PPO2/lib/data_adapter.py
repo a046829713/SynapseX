@@ -8,9 +8,8 @@ from Brain.PPO2.lib.environment import STATIONARY_TIME_FEATURES
 
 @dataclass
 class PortfolioState:
-    """Dataclass representing portfolio position and entry price for a symbol."""
+    """Dataclass representing portfolio position for a symbol."""
     position: float = 0.0
-    open_price: float = 0.0
 
 
 class PPO2DataAdapter:
@@ -24,31 +23,29 @@ class PPO2DataAdapter:
         symbol: str, portfolio_state: Optional[Dict[str, Any]]
     ) -> PortfolioState:
         """
-        Resolves (position, open_price) for a given symbol from portfolio_state dictionary.
+        Resolves position for a given symbol from portfolio_state dictionary.
         """
         if not portfolio_state:
-            return PortfolioState(0.0, 0.0)
+            return PortfolioState(0.0)
 
         entry = None
         if symbol in portfolio_state:
             entry = portfolio_state[symbol]
-        elif any(k in portfolio_state for k in ("position", "open_price")):
+        elif "position" in portfolio_state:
             entry = portfolio_state
 
         if entry is None:
-            return PortfolioState(0.0, 0.0)
+            return PortfolioState(0.0)
         if isinstance(entry, dict):
             pos = float(np.clip(float(entry.get("position", 0.0)), 0.0, 1.0))
-            open_p = float(entry.get("open_price", 0.0))
-            return PortfolioState(pos, open_p)
+            return PortfolioState(pos)
         if isinstance(entry, (tuple, list)):
             pos = float(np.clip(float(entry[0]) if len(entry) > 0 else 0.0, 0.0, 1.0))
-            open_p = float(entry[1]) if len(entry) > 1 else 0.0
-            return PortfolioState(pos, open_p)
+            return PortfolioState(pos)
         if isinstance(entry, (int, float, np.floating, np.integer)):
             pos = float(np.clip(float(entry), 0.0, 1.0))
-            return PortfolioState(pos, 0.0)
-        return PortfolioState(0.0, 0.0)
+            return PortfolioState(pos)
+        return PortfolioState(0.0)
 
     @staticmethod
     def process_df_to_prices(
@@ -176,7 +173,6 @@ class PPO2DataAdapter:
         prices: Prices,
         bars_count: int,
         position: float = 0.0,
-        open_price: float = 0.0,
         portfolio_state: Optional[Dict[str, Any]] = None,
         current_position: Optional[float] = None,
     ) -> Dict[str, np.ndarray]:
@@ -186,7 +182,6 @@ class PPO2DataAdapter:
         """
         if portfolio_state is not None:
             position = float(portfolio_state.get("position", position))
-            open_price = float(portfolio_state.get("open_price", open_price))
         elif current_position is not None:
             position = float(current_position)
 
@@ -208,21 +203,13 @@ class PPO2DataAdapter:
         ]
         timelist = list(STATIONARY_TIME_FEATURES)
 
-        data_res = np.zeros(shape=(bars_count, len(info_list) + 2), dtype=np.float32)
+        data_res = np.zeros(shape=(bars_count, len(info_list) + 1), dtype=np.float32)
         time_res = np.zeros(shape=(bars_count, len(timelist)), dtype=np.float32)
 
         for idx, field in enumerate(info_list):
             data_res[:, idx] = getattr(prices, field)[start:end]
 
         data_res[:, len(info_list)] = pos
-
-        if pos > 0.0 and open_price > 0.0:
-            prev_close = max(float(prices.close[end - 1]), 1e-8)
-            safe_open = max(float(open_price), 1e-8)
-            raw_equity_ratio = 1.0 + pos * ((prev_close - safe_open) / safe_open)
-            data_res[:, len(info_list) + 1] = float(np.log(max(raw_equity_ratio, 1e-8)))
-        else:
-            data_res[:, len(info_list) + 1] = 0.0
 
         for idx, field in enumerate(timelist):
             time_res[:, idx] = getattr(prices, field)[start:end]

@@ -222,7 +222,6 @@ class PPO2Engine:
         self,
         prices: Prices,
         position: float = 0.0,
-        open_price: float = 0.0,
         portfolio_state: Optional[Dict[str, Any]] = None,
         current_position: Optional[float] = None,
     ) -> Dict[str, np.ndarray]:
@@ -230,7 +229,6 @@ class PPO2Engine:
             prices=prices,
             bars_count=self.bars_count,
             position=position,
-            open_price=open_price,
             portfolio_state=portfolio_state,
             current_position=current_position,
         )
@@ -239,9 +237,9 @@ class PPO2Engine:
         self,
         symbol: str,
         portfolio_state: Optional[Dict[str, Any]],
-    ) -> Tuple[float, float]:
+    ) -> float:
         state = self.data_adapter.resolve_portfolio_state(symbol, portfolio_state)
-        return state.position, state.open_price
+        return state.position
 
     def _apply_deadzone_and_rebalance(
         self, raw_action: float, prev_position: float
@@ -781,8 +779,8 @@ class PPO2Engine:
                     continue
                 df = pd.read_csv(symbol_path)
                 prices = self._process_df_to_prices(feature_loader, df)
-                pos, open_p = self._resolve_symbol_portfolio_state(symbol, portfolio_state)
-                obs = self._extract_latest_obs(prices, position=pos, open_price=open_p)
+                pos = self._resolve_symbol_portfolio_state(symbol, portfolio_state)
+                obs = self._extract_latest_obs(prices, position=pos)
                 symbol_obs_map[symbol] = (obs, pos)
 
         elif isinstance(data_source, pd.DataFrame):
@@ -792,22 +790,22 @@ class PPO2Engine:
                     sym_str = str(sym)
                     sym_df = data_source[data_source[sym_col] == sym]
                     prices = self._process_df_to_prices(feature_loader, sym_df)
-                    pos, open_p = self._resolve_symbol_portfolio_state(sym_str, portfolio_state)
-                    obs = self._extract_latest_obs(prices, position=pos, open_price=open_p)
+                    pos = self._resolve_symbol_portfolio_state(sym_str, portfolio_state)
+                    obs = self._extract_latest_obs(prices, position=pos)
                     symbol_obs_map[sym_str] = (obs, pos)
             else:
                 sym_name = self.target_symbols[0] if self.target_symbols else "DEFAULT"
                 prices = self._process_df_to_prices(feature_loader, data_source)
-                pos, open_p = self._resolve_symbol_portfolio_state(sym_name, portfolio_state)
-                obs = self._extract_latest_obs(prices, position=pos, open_price=open_p)
+                pos = self._resolve_symbol_portfolio_state(sym_name, portfolio_state)
+                obs = self._extract_latest_obs(prices, position=pos)
                 symbol_obs_map[sym_name] = (obs, pos)
 
         elif isinstance(data_source, dict):
             for sym, sym_df in data_source.items():
                 sym_str = str(sym)
                 prices = self._process_df_to_prices(feature_loader, sym_df)
-                pos, open_p = self._resolve_symbol_portfolio_state(sym_str, portfolio_state)
-                obs = self._extract_latest_obs(prices, position=pos, open_price=open_p)
+                pos = self._resolve_symbol_portfolio_state(sym_str, portfolio_state)
+                obs = self._extract_latest_obs(prices, position=pos)
                 symbol_obs_map[sym_str] = (obs, pos)
 
         return symbol_obs_map
