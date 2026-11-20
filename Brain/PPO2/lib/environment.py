@@ -5,20 +5,12 @@ import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
 from abc import ABC, abstractmethod
-from Brain.Common.env_components import State_time_step_template
+from Brain.Common.env_components import BasicState
 from Brain.Common.DataFeature import Prices, OriginalDataFeature
-import time
 
-STATIONARY_TIME_FEATURES = [
-    "hour_sin",
-    "hour_cos",
-    "minute_sin",
-    "minute_cos",
-    "dayofweek_sin",
-    "dayofweek_cos",
-]
 
-class State_time_step(State_time_step_template):
+
+class State_time_step(BasicState):
     def __init__(
         self,
         bars_count: int,
@@ -44,8 +36,6 @@ class State_time_step(State_time_step_template):
         assert int(downside_window_size) >= 1, "downside_window_size must be >= 1"
         assert float(w2_downside_ratio) >= 0.0, "w2_downside_ratio must be >= 0.0"
         assert float(weight_scale) > 0.0, "weight_scale must be > 0.0"
-
-        self.timelist = list(STATIONARY_TIME_FEATURES)
 
         self.deadzone_threshold = deadzone_threshold
         self.rebalance_threshold = rebalance_threshold
@@ -359,6 +349,8 @@ class TrainingEnv(BaseTradingEnv):
                     f"Instrument '{instrument}' has insufficient pre-cutoff data "
                     f"(end_date={self.train_end_date}, min_bars={self.min_bars})."
                 )
+
+
             self._data_cache.update(loaded)
         data = self._data_cache[instrument]
         if isinstance(data, dict) and instrument in data:

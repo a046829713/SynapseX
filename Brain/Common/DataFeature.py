@@ -6,7 +6,6 @@ import numpy as np
 from Brain.Common.DataFeature_tool import VolatilityCalculator
 from utils.Debug_tool import debug
 from Brain.Common.Error import InvalidModeError
-from datetime import timedelta
 
 Prices = collections.namedtuple(
     "Prices",
@@ -30,20 +29,12 @@ Prices = collections.namedtuple(
         "log_ma_120",
         "log_ma_240",
         "log_ma_360",
-        "age_log_minutes",
-        "age_years",
-        "month_sin",
-        "month_cos",
-        "day_sin",
-        "day_cos",
         "hour_sin",
         "hour_cos",
         "minute_sin",
         "minute_cos",
         "dayofweek_sin",
         "dayofweek_cos",
-        "week_sin",
-        "week_cos",
         # "atr_Volatility",
     ],
 )
@@ -170,29 +161,7 @@ class OriginalDataFeature:
     def add_time_feature(self, df: pd.DataFrame, first_date=None):
         datetime_index = pd.to_datetime(df.index)
 
-        if first_date is None:
-            first_date = datetime_index[0]
-        else:
-            first_date = first_date - timedelta(minutes=1)
-
-        # 1. 資產年齡 (分鐘計，對數尺度)
-        # 這本身就是一個從0開始的相對特徵，且log使其增長緩慢
-        minutes_since_start = (datetime_index - first_date).total_seconds() / 86400
-        df["age_log_minutes"] = np.log1p(minutes_since_start)
-
-        # 2. 資產年齡 (年計)
-        # 這也是一個從0開始的相對特徵，增長非常慢
-        df["age_years"] = (datetime_index.year - first_date.year).astype(float)
-        # (可選) 對年份做一個簡單的約束，防止其變得過大，例如除以一個常數
-        df["age_years"] = df["age_years"] / 100.0
-
-        # --- 週期性特徵 (天然標準化在 [-1, 1]) ---
-        df["month_sin"] = np.sin(2 * np.pi * datetime_index.month / 12)
-        df["month_cos"] = np.cos(2 * np.pi * datetime_index.month / 12)
-
-        df["day_sin"] = np.sin(2 * np.pi * datetime_index.day / 31)
-        df["day_cos"] = np.cos(2 * np.pi * datetime_index.day / 31)
-
+        # --- 平穩週期性時間特徵 (天然標準化在 [-1, 1]) ---
         df["hour_sin"] = np.sin(2 * np.pi * datetime_index.hour / 24)
         df["hour_cos"] = np.cos(2 * np.pi * datetime_index.hour / 24)
 
@@ -201,13 +170,6 @@ class OriginalDataFeature:
 
         df["dayofweek_sin"] = np.sin(2 * np.pi * datetime_index.dayofweek / 7)
         df["dayofweek_cos"] = np.cos(2 * np.pi * datetime_index.dayofweek / 7)
-
-        df["week_sin"] = np.sin(
-            2 * np.pi * datetime_index.isocalendar().week.astype(float) / 52
-        )
-        df["week_cos"] = np.cos(
-            2 * np.pi * datetime_index.isocalendar().week.astype(float) / 52
-        )
 
         return df
 
@@ -224,20 +186,12 @@ class OriginalDataFeature:
                 "trades",
                 "tb_base_av",
                 "tb_quote_av",
-                "age_log_minutes",
-                "age_years",
-                "month_sin",
-                "month_cos",
-                "day_sin",
-                "day_cos",
                 "hour_sin",
                 "hour_cos",
                 "minute_sin",
                 "minute_cos",
                 "dayofweek_sin",
                 "dayofweek_cos",
-                "week_sin",
-                "week_cos",
                 "atr_Volatility",
             ]
 
@@ -263,19 +217,11 @@ class OriginalDataFeature:
                 log_ma_120=self.df["log_ma_120"].values,
                 log_ma_240=self.df["log_ma_240"].values,
                 log_ma_360=self.df["log_ma_360"].values,
-                age_log_minutes=self.df["age_log_minutes"].values,
-                age_years=self.df["age_years"].values,
-                month_sin=self.df["month_sin"].values,
-                month_cos=self.df["month_cos"].values,
-                day_sin=self.df["day_sin"].values,
-                day_cos=self.df["day_cos"].values,
                 hour_sin=self.df["hour_sin"].values,
                 hour_cos=self.df["hour_cos"].values,
                 minute_sin=self.df["minute_sin"].values,
                 minute_cos=self.df["minute_cos"].values,
                 dayofweek_sin=self.df["dayofweek_sin"].values,
                 dayofweek_cos=self.df["dayofweek_cos"].values,
-                week_sin=self.df["week_sin"].values,
-                week_cos=self.df["week_cos"].values,
                 # atr_Volatility=self.df["ATR_14"].values,
             )

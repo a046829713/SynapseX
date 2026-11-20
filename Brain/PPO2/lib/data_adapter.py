@@ -3,7 +3,7 @@ from typing import Optional, Dict, Any, Tuple
 import numpy as np
 import pandas as pd
 from Brain.Common.DataFeature import OriginalDataFeature, Prices
-from Brain.PPO2.lib.environment import STATIONARY_TIME_FEATURES
+from Brain.Common.env_components import BasicState
 
 
 @dataclass
@@ -93,13 +93,12 @@ class PPO2DataAdapter:
             if f"log_ma_{p}" not in cleaned.columns:
                 cleaned[f"log_ma_{p}"] = 0.0
 
-        if "age_log_minutes" not in cleaned.columns and len(cleaned) > 0:
+        if (
+            not all(col in cleaned.columns for col in BasicState.STATIONARY_TIME_FEATURES)
+            and len(cleaned) > 0
+        ):
             cleaned = feature_loader.add_time_feature(cleaned)
-        for t_col in [
-            "age_log_minutes", "age_years", "month_sin", "month_cos",
-            "day_sin", "day_cos", "hour_sin", "hour_cos", "minute_sin",
-            "minute_cos", "dayofweek_sin", "dayofweek_cos", "week_sin", "week_cos",
-        ]:
+        for t_col in BasicState.STATIONARY_TIME_FEATURES:
             if t_col not in cleaned.columns:
                 cleaned[t_col] = 0.0
 
@@ -201,7 +200,7 @@ class PPO2DataAdapter:
             "log_quote_av", "log_trades", "log_tb_base_av", "log_tb_quote_av",
             "log_ma_30", "log_ma_60", "log_ma_120", "log_ma_240", "log_ma_360",
         ]
-        timelist = list(STATIONARY_TIME_FEATURES)
+        timelist = list(BasicState.STATIONARY_TIME_FEATURES)
 
         data_res = np.zeros(shape=(bars_count, len(info_list) + 1), dtype=np.float32)
         time_res = np.zeros(shape=(bars_count, len(timelist)), dtype=np.float32)
