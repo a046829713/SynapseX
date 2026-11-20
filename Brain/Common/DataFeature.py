@@ -1,69 +1,89 @@
-from typing import Optional
-import pandas as pd
+from typing import Optional, Sequence
 import collections
-import time
 import numpy as np
-from Brain.Common.DataFeature_tool import VolatilityCalculator
-from utils.Debug_tool import debug
-from Brain.Common.Error import InvalidModeError
+import pandas as pd
+from Brain.Common.env_components import BasicState
+
+OHLC_RAW_FIELDS = ("open", "high", "low", "close")
 
 Prices = collections.namedtuple(
     "Prices",
-    field_names=[
-        "open",
-        "high",
-        "low",
-        "close",
-        "log_open",
-        "log_high",
-        "log_low",
-        "log_close",
-        "log_volume",
-        "log_quote_av",
-        "log_trades",
-        "log_tb_base_av",
-        "log_tb_quote_av",
-        # 新增均線特徵
-        "log_ma_30",
-        "log_ma_60",
-        "log_ma_120",
-        "log_ma_240",
-        "log_ma_360",
-        "hour_sin",
-        "hour_cos",
-        "minute_sin",
-        "minute_cos",
-        "dayofweek_sin",
-        "dayofweek_cos",
-        # "atr_Volatility",
-    ],
+    field_names=(
+        *OHLC_RAW_FIELDS,
+        *BasicState.MARKET_FEATURES,
+        *BasicState.STATIONARY_TIME_FEATURES,
+    ),
 )
+
+SOFT_CLIP_LIMIT: float = 5.0
+VOL_FLOOR: float = 1e-4
+VOL_REF: float = 0.005
+VOL_LONG_SPAN: int = 60
+VOL_LONG_MIN_PERIODS: int = 20
+VOL_SHORT_SPAN: int = 12
+VOL_SHORT_MIN_PERIODS: int = 6
+VOL_EMA_SPAN: int = 60
+
+
+def soft_clip(x: np.ndarray, limit: float = SOFT_CLIP_LIMIT) -> np.ndarray:
+    """
+    Smoothly bounds inputs into (-limit, +limit) via limit * tanh(x / limit),
+    preserving near-linearity around zero while damping extreme outlier spikes.
+    """
+    return limit * np.tanh(x / limit)
 
 
 class OriginalDataFeature:
-    def __init__(
-        self,
-    ) -> None:
-        pass
+    def __init__(self) -> None:
+        self.df: Optional[pd.DataFrame] = None
 
     def cleanData(self, df: pd.DataFrame) -> pd.DataFrame:
-        df = df.replace([np.inf, -np.inf], np.nan)  # 将 Inf 替换为 NaN
-        df = df.ffill(axis=0)
-        df = df.bfill(axis=0)
-        return df
+        """
+        Causally cleans market OHLCV data without look-ahead bias:
+        - Replaces +-inf with NaN.
+        - Treats non-positive OHLC prices (<= 0) as invalid (NaN), forward-fills OHLC only,
+          and drops leading rows where OHLC remains NaN (no bfill).
+        - Clamps negative volume/microstructure columns to 0.0 and fills missing values with 0.0.
+        """
+        cleaned = df.copy()
+        cleaned = cleaned.replace([np.inf, -np.inf], np.nan)
+
+        ohlc_cols = [c for c in ("Open", "High", "Low", "Close") if c in cleaned.columns]
+        for col in ohlc_cols:
+            cleaned.loc[cleaned[col] <= 0.0, col] = np.nan
+        if ohlc_cols:
+            valid_complete = cleaned[ohlc_cols].notna().all(axis=1)
+            if not valid_complete.any():
+                cleaned = cleaned.iloc[0:0].copy()
+            else:
+                first_valid_pos = int(np.argmax(valid_complete.to_numpy()))
+                cleaned = cleaned.iloc[first_valid_pos:].copy()
+                cleaned[ohlc_cols] = cleaned[ohlc_cols].ffill(axis=0)
+
+        vol_cols = [
+            c
+            for c in ("Volume", "quote_av", "trades", "tb_base_av", "tb_quote_av")
+            if c in cleaned.columns
+        ]
+        for col in vol_cols:
+            cleaned.loc[cleaned[col] < 0.0, col] = 0.0
+            cleaned[col] = cleaned[col].fillna(0.0)
+
+        return cleaned.copy()
 
     def get_train_net_work_data_by_pd(
-        self, symbol: str, df: pd.DataFrame, first_date
+        self, symbol: str, df: pd.DataFrame, first_date=None
     ) -> dict:
         """
-        用來取得類神經網絡所需要的資料,正式交易的時候
+        用來取得類神經網絡所需要的資料（正式交易／DataFrame 入口），
+        與 get_train_net_work_data_by_path 執行完全一致的清洗與特徵計算流程。
         """
         out_dict = {}
-        self.df = self.add_average_metric(df)
-        self.df = self.add_time_feature(self.df, first_date)
-        # self.df = self.add_ATR(self.df)
-        out_dict.update({symbol: self.load_relative()})
-
+        cleaned = self.cleanData(df)
+        cleaned = self.add_market_features(cleaned)
+        cleaned = self.add_time_feature(cleaned, first_date)
+        self.df = cleaned
+        out_dict[symbol] = self.load_relative(cleaned)
         return out_dict
 
     def get_train_net_work_data_by_path(
@@ -90,138 +110,150 @@ class OriginalDataFeature:
                 df = df[pd.to_datetime(df.index) <= cutoff_ts]
             if len(df) <= 360:
                 continue
-            self.df = self.cleanData(df)
-            self.df = self.add_average_metric(self.df)
-            if len(self.df) < max(1, int(min_bars)):
+            cleaned = self.cleanData(df)
+            if len(cleaned) <= 360:
                 continue
-            self.df = self.add_time_feature(self.df)
-            # self.df = self.add_ATR(self.df)
-
-            out_dict[symbolName] = self.load_relative()
+            cleaned = self.add_market_features(cleaned)
+            if len(cleaned) < max(1, int(min_bars)):
+                continue
+            cleaned = self.add_time_feature(cleaned)
+            self.df = cleaned
+            out_dict[symbolName] = self.load_relative(cleaned)
 
         return out_dict
 
-    def add_average_metric(self, df: pd.DataFrame, periods=[30, 60, 120, 240, 360]):
+    def add_market_features(
+        self,
+        df: pd.DataFrame,
+        periods: Sequence[int] = (30, 60, 120, 240, 360),
+    ) -> pd.DataFrame:
         """
-        計算均線並生成相對特徵：log(Close / MA)
-        這能告訴模型目前價格相對於均線的偏離程度。
-        # 均線邏輯：不需要 shift
+        計算 14 維嚴格因果、尺度不變、無中心化波動率歸一化市場特徵：
+          1. 正交 4-DoF K 棒幾何（共用前一期波動率 sigma_{t-1}，不去均值）：
+             ret_gap, candle_body, upper_wick, lower_wick
+          2. 多週期 SMA 趨勢偏離（依隨機漫步尺度 sigma_{t-1} * sqrt(p/3) 縮放）：
+             ma_dev_30, ma_dev_60, ma_dev_120, ma_dev_240, ma_dev_360
+          3. 顯式波動率體制特徵（保留絕對規模與短期擴張/收斂）：
+             vol_regime_abs, vol_expansion
+          4. 量能與主動買賣微結構特徵（對數空間 Log-EMA 零中心化）：
+             rel_quote_vol, rel_trades, taker_imbalance
         """
+        out = df.copy()
+        if len(out) == 0:
+            for col in BasicState.MARKET_FEATURES:
+                out[col] = np.empty(0, dtype=np.float64)
+            return out
+
+        o = out["Open"].to_numpy(dtype=np.float64)
+        h = out["High"].to_numpy(dtype=np.float64)
+        l = out["Low"].to_numpy(dtype=np.float64)
+        c = out["Close"].to_numpy(dtype=np.float64)
+
+        # Defensive OHLC envelope so upper_wick >= 0 and lower_wick >= 0 always hold
+        oc_max = np.maximum(o, c)
+        oc_min = np.minimum(o, c)
+        h_safe = np.maximum(h, oc_max)
+        l_safe = np.minimum(l, oc_min)
+
+        close_s = pd.Series(c, index=out.index, dtype=np.float64)
+        prev_c = close_s.shift(1).to_numpy(dtype=np.float64)
+        log_ret = np.log(c / prev_c)
+        log_ret_s = pd.Series(log_ret, index=out.index, dtype=np.float64)
+
+        # Causal EWMA RMS volatility (zero-centered, no demeaning)
+        sigma_long_s = np.sqrt(
+            log_ret_s.pow(2)
+            .ewm(span=VOL_LONG_SPAN, min_periods=VOL_LONG_MIN_PERIODS, adjust=False)
+            .mean()
+        ).clip(lower=VOL_FLOOR)
+        sigma_short_s = np.sqrt(
+            log_ret_s.pow(2)
+            .ewm(span=VOL_SHORT_SPAN, min_periods=VOL_SHORT_MIN_PERIODS, adjust=False)
+            .mean()
+        ).clip(lower=VOL_FLOOR)
+
+        # Ex-ante volatility sigma_{t-1} scales bar t without self-damping breakouts
+        sigma_prev = sigma_long_s.shift(1).to_numpy(dtype=np.float64)
+        sigma_long = sigma_long_s.to_numpy(dtype=np.float64)
+        sigma_short = sigma_short_s.to_numpy(dtype=np.float64)
+
+        # 1. Orthogonal 4-DoF candlestick features
+        out["ret_gap"] = soft_clip(np.log(o / prev_c) / sigma_prev)
+        out["candle_body"] = soft_clip(np.log(c / o) / sigma_prev)
+        out["upper_wick"] = soft_clip(np.log(h_safe / oc_max) / sigma_prev)
+        out["lower_wick"] = soft_clip(np.log(oc_min / l_safe) / sigma_prev)
+
+        # 2. Multi-horizon SMA trend deviations
         for p in periods:
-            ma_col_name = f"MA_{p}"
-            feature_col_name = f"log_ma_{p}"
+            p_int = int(p)
+            sma = close_s.rolling(window=p_int).mean().to_numpy(dtype=np.float64)
+            scale_p = sigma_prev * np.sqrt(float(p_int) / 3.0)
+            out[f"ma_dev_{p_int}"] = soft_clip(np.log(c / sma) / scale_p)
 
-            # 計算簡單移動平均 (SMA)
-            df[ma_col_name] = df["Close"].rolling(window=p).mean()
-            df[feature_col_name] = np.log(df["Close"] / df[ma_col_name])
-            df.drop(columns=[ma_col_name], inplace=True)
+        # 3. Explicit volatility regime features
+        out["vol_regime_abs"] = soft_clip(np.log(sigma_long / VOL_REF))
+        out["vol_expansion"] = soft_clip(np.log(sigma_short / sigma_long))
 
-        # 因為 rolling 會產生 NaN (例如 MA_360 前 359 筆是空的)，這裡需要清除
-        df = df.dropna().copy()
-        return df
+        # 4. Volume & order flow microstructure features (causal log-EMA)
+        q = np.maximum(out["quote_av"].to_numpy(dtype=np.float64), 0.0)
+        trades = np.maximum(out["trades"].to_numpy(dtype=np.float64), 0.0)
+        tbq = np.maximum(out["tb_quote_av"].to_numpy(dtype=np.float64), 0.0)
 
-    # def add_ATR(self, df: pd.DataFrame, period: int = 14):
-    #     """
-    #         Calculates Wilder's ATR and aligns it as a next-step target for imagination models.
+        log_q_s = pd.Series(np.log1p(q), index=out.index, dtype=np.float64)
+        log_t_s = pd.Series(np.log1p(trades), index=out.index, dtype=np.float64)
+        log_q_ema = (
+            log_q_s.ewm(span=VOL_EMA_SPAN, adjust=False).mean().to_numpy(dtype=np.float64)
+        )
+        log_t_ema = (
+            log_t_s.ewm(span=VOL_EMA_SPAN, adjust=False).mean().to_numpy(dtype=np.float64)
+        )
 
-    #         This function computes the Average True Range (ATR) and shifts it backward by one
-    #         period (`shift(-1)`). This transforms the column into a ground-truth label for time
-    #         T+1, which is intended for imagination/world model predictions rather than direct
-    #         feature input to the RL agent.
+        out["rel_quote_vol"] = soft_clip(log_q_s.to_numpy(dtype=np.float64) - log_q_ema)
+        out["rel_trades"] = soft_clip(log_t_s.to_numpy(dtype=np.float64) - log_t_ema)
+        imb = np.where(q > 0.0, 2.0 * (tbq / np.maximum(q, 1e-12)) - 1.0, 0.0)
+        out["taker_imbalance"] = np.clip(imb, -1.0, 1.0)
 
-    #     Args:
-    #         df (pd.DataFrame): _description_
-    #         period (int, optional): _description_. Defaults to 5.
+        out = out.dropna(subset=list(BasicState.MARKET_FEATURES)).copy()
+        return out
 
-    #     Returns:
-    #         _type_: _description_
-    #     """
-    #     prev_close = df["Close"].shift(1)
-
-    #     # 計算 True Range (TR) 的三個組成部分
-    #     tr1 = df["High"] - df["Low"]
-    #     tr2 = (df["High"] - prev_close).abs()
-    #     tr3 = (df["Low"] - prev_close).abs()
-
-    #     # 取得真實範圍 (True Range, TR) - 取三者最大值
-    #     tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-
-    #     # 計算 ATR (使用 Wilder's Smoothing)
-    #     atr_col_name = f"ATR_{period}"
-
-    #     # ewm(alpha=1/period, adjust=False) 是 pandas 中
-    #     # 實現 Wilder's Smoothing (RMA) 的標準方法。
-    #     df[atr_col_name] = tr.ewm(alpha=1 / period, adjust=False).mean()
-    #     df[atr_col_name] = df[atr_col_name].shift(-1)
-    #     df[atr_col_name] = np.log1p(df[atr_col_name])
-
-    #     df = df.dropna()
-    #     return df
-
-    def add_time_feature(self, df: pd.DataFrame, first_date=None):
-        datetime_index = pd.to_datetime(df.index)
+    def add_time_feature(self, df: pd.DataFrame, first_date=None) -> pd.DataFrame:
+        out = df.copy()
+        datetime_index = pd.to_datetime(out.index)
 
         # --- 平穩週期性時間特徵 (天然標準化在 [-1, 1]) ---
-        df["hour_sin"] = np.sin(2 * np.pi * datetime_index.hour / 24)
-        df["hour_cos"] = np.cos(2 * np.pi * datetime_index.hour / 24)
+        out["hour_sin"] = np.sin(2 * np.pi * datetime_index.hour / 24)
+        out["hour_cos"] = np.cos(2 * np.pi * datetime_index.hour / 24)
 
-        df["minute_sin"] = np.sin(2 * np.pi * datetime_index.minute / 60)
-        df["minute_cos"] = np.cos(2 * np.pi * datetime_index.minute / 60)
+        out["minute_sin"] = np.sin(2 * np.pi * datetime_index.minute / 60)
+        out["minute_cos"] = np.cos(2 * np.pi * datetime_index.minute / 60)
 
-        df["dayofweek_sin"] = np.sin(2 * np.pi * datetime_index.dayofweek / 7)
-        df["dayofweek_cos"] = np.cos(2 * np.pi * datetime_index.dayofweek / 7)
+        out["dayofweek_sin"] = np.sin(2 * np.pi * datetime_index.dayofweek / 7)
+        out["dayofweek_cos"] = np.cos(2 * np.pi * datetime_index.dayofweek / 7)
 
-        return df
+        return out
 
-    def load_relative(self, if_log=True):
+    def load_relative(self, df: Optional[pd.DataFrame] = None) -> Prices:
         """
-        最後排序為:
-        [
-                "Open",
-                "High",
-                "Low",
-                "Close",
-                "Volume",
-                "quote_av",
-                "trades",
-                "tb_base_av",
-                "tb_quote_av",
-                "hour_sin",
-                "hour_cos",
-                "minute_sin",
-                "minute_cos",
-                "dayofweek_sin",
-                "dayofweek_cos",
-                "atr_Volatility",
-            ]
-
+        從已計算完成特徵的 DataFrame 封裝 24 欄 Prices namedtuple：
+          - 4 原始執行價格：open, high, low, close
+          - 14 維波動率歸一化市場特徵：BasicState.MARKET_FEATURES
+          - 6 維平穩週期時間特徵：BasicState.STATIONARY_TIME_FEATURES
         """
-        if if_log:
+        src = df if df is not None else self.df
+        if src is None:
+            raise ValueError("DataFrame is not loaded; pass df or run feature enrichment first.")
 
-            return Prices(
-                open=self.df["Open"].values,
-                high=self.df["High"].values,
-                low=self.df["Low"].values,
-                close=self.df["Close"].values,
-                log_open=np.log1p(self.df["Open"].values),
-                log_high=np.log1p(self.df["High"].values),
-                log_low=np.log1p(self.df["Low"].values),
-                log_close=np.log1p(self.df["Close"].values),
-                log_volume=np.log1p(self.df["Volume"].values),
-                log_quote_av=np.log1p(self.df["quote_av"].values),
-                log_trades=np.log1p(self.df["trades"].values),
-                log_tb_base_av=np.log1p(self.df["tb_base_av"].values),
-                log_tb_quote_av=np.log1p(self.df["tb_quote_av"].values),
-                log_ma_30=self.df["log_ma_30"].values,
-                log_ma_60=self.df["log_ma_60"].values,
-                log_ma_120=self.df["log_ma_120"].values,
-                log_ma_240=self.df["log_ma_240"].values,
-                log_ma_360=self.df["log_ma_360"].values,
-                hour_sin=self.df["hour_sin"].values,
-                hour_cos=self.df["hour_cos"].values,
-                minute_sin=self.df["minute_sin"].values,
-                minute_cos=self.df["minute_cos"].values,
-                dayofweek_sin=self.df["dayofweek_sin"].values,
-                dayofweek_cos=self.df["dayofweek_cos"].values,
-                # atr_Volatility=self.df["ATR_14"].values,
-            )
+        return Prices(
+            open=src["Open"].to_numpy(dtype=np.float64),
+            high=src["High"].to_numpy(dtype=np.float64),
+            low=src["Low"].to_numpy(dtype=np.float64),
+            close=src["Close"].to_numpy(dtype=np.float64),
+            **{
+                col: src[col].to_numpy(dtype=np.float64)
+                for col in BasicState.MARKET_FEATURES
+            },
+            **{
+                col: src[col].to_numpy(dtype=np.float64)
+                for col in BasicState.STATIONARY_TIME_FEATURES
+            },
+        )

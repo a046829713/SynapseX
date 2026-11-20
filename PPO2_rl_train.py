@@ -13,7 +13,6 @@ from Brain.Common.DataFeature import OriginalDataFeature
 from Brain.Common.PytorchModelTool import ModelTool
 from Brain.Common.optimization import build_optimizer
 from Brain.Common.grad_diagnostics import (
-    DAIN_GROUPS,
     build_param_groups,
     clip_coef,
     group_grad_norms,
@@ -266,26 +265,15 @@ class PPO2:
 
         # Read-only per-module parameter partition for gradient-norm telemetry
         self._param_groups = build_param_groups(self.agent.model)
-        self._rest_params = [
-            p
-            for g, ps in self._param_groups.items()
-            if g not in DAIN_GROUPS
-            for p in ps
-        ]
-        assert len(self._rest_params) > 0, "No non-DAIN parameters found for clipping"
-        n_dain = sum(
-            len(ps) for g, ps in self._param_groups.items() if g in DAIN_GROUPS
-        )
-        assert len(self._rest_params) + n_dain == sum(
-            len(ps) for ps in self._param_groups.values()
-        ), "Mismatch in partitioned parameter counts"
+        assert not hasattr(
+            self.agent.model, "dean"
+        ), "DAIN layer should be removed from PPO2 model"
 
     def _prepare_optimizer(self):
         lr = self.cfg_training.LEARNING_RATE
         weight_decay = self.cfg_training.WEIGHT_DECAY
-        base_lr = self.cfg_training.BASE_LR
         self.optimizer = build_optimizer(
-            self.agent.model, lr=lr, weight_decay=weight_decay, base_lr=base_lr
+            self.agent.model, lr=lr, weight_decay=weight_decay
         )
         print(f"--Optimizer--: AdamW created (lr={lr}, weight_decay={weight_decay})")
 
@@ -399,14 +387,13 @@ class PPO2:
                 total_loss.backward()
                 # Read-only pre-clip per-module gradient norms (does not touch .grad)
                 group_norms = group_grad_norms(self._param_groups)
-                # Exclude DAIN from clipping; clip only non-DAIN (rest) parameters
                 grad_norm = torch.nn.utils.clip_grad_norm_(
-                    self._rest_params, max_grad_norm
+                    self.agent.model.parameters(), max_grad_norm
                 )
                 self.optimizer.step()
                 n_updates += 1
                 group_norm_records.append(group_norms)
-                clip_coefs.append(clip_coef(group_norms["rest"], max_grad_norm))
+                clip_coefs.append(clip_coef(group_norms["total"], max_grad_norm))
 
                 policy_losses.append(policy_loss.item())
                 value_losses.append(value_loss.item())
@@ -429,8 +416,7 @@ class PPO2:
             return float(np.mean([rec.get(key, 0.0) for rec in group_norm_records]))
 
         return {
-            "grad_norm_dain": _mean_group("dain"),
-            "grad_norm_rest": _mean_group("rest"),
+            "grad_norm_total": _mean_group("total"),
             "grad_norm_actor": _mean_group("actor"),
             "grad_norm_critic": _mean_group("critic"),
             "grad_norm_backbone": _mean_group("backbone"),
@@ -668,8 +654,8 @@ class PPO2:
                     f"ClipFrac: {metrics['clipfrac']:.3f} | ExplainedVariance: {metrics['explained_variance']:+.3f} | "
                     f"Std: {metrics['policy_std']:.3f} | MeanAct: {metrics['mean_action']:.3f} | "
                     f"MeanMu: {metrics['mean_mu']:+.3f} | GradNorm: {metrics['grad_norm']:.3f} | "
-                    f"GN[dain/rest/actor/critic/backbone]: {metrics['grad_norm_dain']:.3f}/"
-                    f"{metrics['grad_norm_rest']:.3f}/{metrics['grad_norm_actor']:.3f}/"
+                    f"GN[total/actor/critic/backbone]: {metrics['grad_norm_total']:.3f}/"
+                    f"{metrics['grad_norm_actor']:.3f}/"
                     f"{metrics['grad_norm_critic']:.3f}/{metrics['grad_norm_backbone']:.3f} | "
                     f"ClipCoef: {metrics['clip_coef_mean']:.4f} (min {metrics['clip_coef_min']:.4f}) | "
                     f"AvgRet(20): {avg_ret_str} | MedRet(100): {med_ret_100_str} | "

@@ -87,11 +87,11 @@ class PPO2DataAdapter:
         if "tb_quote_av" not in cleaned.columns:
             cleaned["tb_quote_av"] = cleaned["quote_av"] * 0.5
 
-        if "log_ma_360" not in cleaned.columns:
-            cleaned = feature_loader.add_average_metric(cleaned)
-        for p in [30, 60, 120, 240, 360]:
-            if f"log_ma_{p}" not in cleaned.columns:
-                cleaned[f"log_ma_{p}"] = 0.0
+        if not all(col in cleaned.columns for col in BasicState.MARKET_FEATURES):
+            cleaned = feature_loader.add_market_features(cleaned)
+        for m_col in BasicState.MARKET_FEATURES:
+            if m_col not in cleaned.columns:
+                cleaned[m_col] = 0.0
 
         if (
             not all(col in cleaned.columns for col in BasicState.STATIONARY_TIME_FEATURES)
@@ -103,7 +103,7 @@ class PPO2DataAdapter:
                 cleaned[t_col] = 0.0
 
         feature_loader.df = cleaned
-        return feature_loader.load_relative()
+        return feature_loader.load_relative(cleaned)
 
     @classmethod
     def prepare_test_symbol_data(
@@ -195,11 +195,7 @@ class PPO2DataAdapter:
         start = n_bars - bars_count
         end = n_bars
 
-        info_list = [
-            "log_open", "log_high", "log_low", "log_close", "log_volume",
-            "log_quote_av", "log_trades", "log_tb_base_av", "log_tb_quote_av",
-            "log_ma_30", "log_ma_60", "log_ma_120", "log_ma_240", "log_ma_360",
-        ]
+        info_list = list(BasicState.MARKET_FEATURES)
         timelist = list(BasicState.STATIONARY_TIME_FEATURES)
 
         data_res = np.zeros(shape=(bars_count, len(info_list) + 1), dtype=np.float32)

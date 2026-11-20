@@ -1,6 +1,27 @@
 import numpy as np
 
 class BasicState():
+    MARKET_FEATURES = (
+        # K-bar orthogonal 4-DoF geometry (shared causal sigma_{t-1}, uncentered)
+        "ret_gap",
+        "candle_body",
+        "upper_wick",
+        "lower_wick",
+        # Multi-horizon SMA trend deviation (horizon-scaled by sigma_{t-1} * sqrt(p / 3))
+        "ma_dev_30",
+        "ma_dev_60",
+        "ma_dev_120",
+        "ma_dev_240",
+        "ma_dev_360",
+        # Explicit volatility regime (preserves absolute scale vs friction cost)
+        "vol_regime_abs",
+        "vol_expansion",
+        # Scale-invariant volume & order flow microstructure
+        "rel_quote_vol",
+        "rel_trades",
+        "taker_imbalance",
+    )
+
     STATIONARY_TIME_FEATURES = (
         "hour_sin",
         "hour_cos",
@@ -29,24 +50,7 @@ class BasicState():
         self.model_train = model_train
         self.default_slippage = default_slippage
 
-
-        self.info_list = [
-            "log_open",
-            "log_high",
-            "log_low",
-            "log_close",
-            "log_volume",
-            "log_quote_av",
-            "log_trades",
-            "log_tb_base_av",
-            "log_tb_quote_av",
-            "log_ma_30",
-            "log_ma_60",
-            "log_ma_120",
-            "log_ma_240",
-            "log_ma_360",
-        ]
-
+        self.info_list = list(self.MARKET_FEATURES)
         self.timelist = list(self.STATIONARY_TIME_FEATURES)
 
     def getStateShape(self):

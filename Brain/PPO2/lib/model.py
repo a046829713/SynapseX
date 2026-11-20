@@ -8,7 +8,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from typing import Optional
 from gymnasium.spaces import Tuple as TupleSpace, Discrete, Box
-from Brain.Common.dain import DAIN_Layer
 from Brain.Common.model_components import SineActivation
 from Brain.Common.ssm_tool import MixerModel
 
@@ -293,10 +292,10 @@ class TemporalAttentionPool(nn.Module):
 class MambaContinuousActorCritic(nn.Module):
     """
     Mamba2 Continuous Action Actor-Critic Network for Financial Reinforcement Learning:
-      - Decoupled Dual-Stream Input:
-          * Market stream (first d_model - portfolio_dim features) normalized via DAIN_Layer.
-          * Portfolio stream (last portfolio_dim features: position)
-            bypasses DAIN to preserve real account state signals.
+      - Pre-Normalized Stationary Market + Portfolio Input:
+          * Market stream (first d_model - portfolio_dim features) consists of causal,
+            volatility-normalized, soft-clipped stationary features entering linear projection directly.
+          * Portfolio stream (last portfolio_dim features: position) preserves real account state signals.
       - Gated Temporal-Market Fusion: SineActivation (Time2Vec) + Sigmoid Gate + GELU embedding.
       - Temporal Backbone: MixerModel (Mamba / Mamba2 SSM, deterministic without dropout).
       - Multi-Horizon Temporal Pooling + Late Portfolio Skip Connection:
@@ -318,7 +317,6 @@ class MambaContinuousActorCritic(nn.Module):
         hidden_size: int = 96,
         nlayers: int = 2,
         time_features_out: int = 32,
-        mode: str = "full",
         init_log_std: float = 0.0,
         portfolio_dim: int = 1,
         ssm_cfg: Optional[dict] = None,
@@ -338,7 +336,6 @@ class MambaContinuousActorCritic(nn.Module):
         self.portfolio_dim = portfolio_dim
         self.market_dim = d_model - self.portfolio_dim
         self.log_std_min = log_std_min
-        self.log_std_min = log_std_min
         self.log_std_max = log_std_max
         assert self.log_std_min < self.log_std_max, (
             f"log_std_min ({self.log_std_min}) must be strictly less than log_std_max ({self.log_std_max})"
@@ -350,7 +347,6 @@ class MambaContinuousActorCritic(nn.Module):
         self.time_embedding = SineActivation(
             in_features=time_features_in, out_features=time_features_out
         )
-        self.dean = DAIN_Layer(mode=mode, input_dim=self.market_dim)
         self.market_embedding = nn.Linear(d_model, hidden_size)
         self.time_emb_projection = nn.Linear(time_features_out, hidden_size)
 
@@ -428,18 +424,11 @@ class MambaContinuousActorCritic(nn.Module):
         self.log_std = nn.Parameter(torch.ones(action_dim) * init_log_std)
 
     def forward(self, states: torch.Tensor, time_states: torch.Tensor):
-        # 1. Extract time features and decoupled market/portfolio features
+        # 1. Extract time features and project pre-normalized market + portfolio features directly
         time_emb = self.time_embedding(time_states)
         time_proj = self.time_emb_projection(time_emb)
 
-        # Market stream (only first market_dim features enter DAIN normalization)
-        market_raw = states[:, :, : self.market_dim].transpose(1, 2)
-        market_norm = self.dean(market_raw).transpose(1, 2)
-
-        # Portfolio stream (last portfolio_dim features bypass DAIN)
-        portfolio_raw = states[:, :, self.market_dim :]
-        combined_states = torch.cat([market_norm, portfolio_raw], dim=-1)
-        market_emb = self.market_embedding(combined_states)
+        market_emb = self.market_embedding(states)
 
         # 2. Gated feature fusion
         gate = self.gate_layer(torch.cat([market_emb, time_proj], dim=-1))
@@ -451,7 +440,7 @@ class MambaContinuousActorCritic(nn.Module):
         # 4. Multi-horizon temporal pooling + late-fusion portfolio skip connection
         temporal_feat = self.temporal_pool(out)  # [B, 3 * hidden_size]
         if self.portfolio_encoder is not None:
-            current_portfolio = portfolio_raw[:, -1, :]  # [B, portfolio_dim]
+            current_portfolio = states[:, -1, self.market_dim :]  # [B, portfolio_dim]
             portfolio_feat = self.portfolio_encoder(current_portfolio)  # [B, portfolio_emb_dim]
             trunk = torch.cat([temporal_feat, portfolio_feat], dim=-1)
         else:
