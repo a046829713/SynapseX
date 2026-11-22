@@ -17,7 +17,6 @@ Prices = collections.namedtuple(
 
 SOFT_CLIP_LIMIT: float = 5.0
 VOL_FLOOR: float = 1e-4
-VOL_REF: float = 0.005
 VOL_LONG_SPAN: int = 60
 VOL_LONG_MIN_PERIODS: int = 20
 VOL_SHORT_SPAN: int = 12
@@ -128,13 +127,13 @@ class OriginalDataFeature:
         periods: Sequence[int] = (30, 60, 120, 240, 360),
     ) -> pd.DataFrame:
         """
-        計算 14 維嚴格因果、尺度不變、無中心化波動率歸一化市場特徵：
+        計算 13 維嚴格因果、尺度不變、無中心化波動率歸一化市場特徵：
           1. 正交 4-DoF K 棒幾何（共用前一期波動率 sigma_{t-1}，不去均值）：
              ret_gap, candle_body, upper_wick, lower_wick
           2. 多週期 SMA 趨勢偏離（依隨機漫步尺度 sigma_{t-1} * sqrt(p/3) 縮放）：
              ma_dev_30, ma_dev_60, ma_dev_120, ma_dev_240, ma_dev_360
-          3. 顯式波動率體制特徵（保留絕對規模與短期擴張/收斂）：
-             vol_regime_abs, vol_expansion
+          3. 相對波動率擴張/收斂特徵：
+             vol_expansion
           4. 量能與主動買賣微結構特徵（對數空間 Log-EMA 零中心化）：
              rel_quote_vol, rel_trades, taker_imbalance
         """
@@ -190,8 +189,7 @@ class OriginalDataFeature:
             scale_p = sigma_prev * np.sqrt(float(p_int) / 3.0)
             out[f"ma_dev_{p_int}"] = soft_clip(np.log(c / sma) / scale_p)
 
-        # 3. Explicit volatility regime features
-        out["vol_regime_abs"] = soft_clip(np.log(sigma_long / VOL_REF))
+        # 3. Relative volatility expansion feature
         out["vol_expansion"] = soft_clip(np.log(sigma_short / sigma_long))
 
         # 4. Volume & order flow microstructure features (causal log-EMA)
@@ -234,9 +232,9 @@ class OriginalDataFeature:
 
     def load_relative(self, df: Optional[pd.DataFrame] = None) -> Prices:
         """
-        從已計算完成特徵的 DataFrame 封裝 24 欄 Prices namedtuple：
+        從已計算完成特徵的 DataFrame 封裝 23 欄 Prices namedtuple：
           - 4 原始執行價格：open, high, low, close
-          - 14 維波動率歸一化市場特徵：BasicState.MARKET_FEATURES
+          - 13 維波動率歸一化市場特徵：BasicState.MARKET_FEATURES
           - 6 維平穩週期時間特徵：BasicState.STATIONARY_TIME_FEATURES
         """
         src = df if df is not None else self.df

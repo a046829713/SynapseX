@@ -13,8 +13,7 @@ class BasicState():
         "ma_dev_120",
         "ma_dev_240",
         "ma_dev_360",
-        # Explicit volatility regime (preserves absolute scale vs friction cost)
-        "vol_regime_abs",
+        # Relative volatility expansion (short vs long causal EWMA RMS)
         "vol_expansion",
         # Scale-invariant volume & order flow microstructure
         "rel_quote_vol",
