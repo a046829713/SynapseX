@@ -152,10 +152,8 @@ class PPO2Evaluator:
         applying deadzone_threshold and rebalance_threshold vectorized across symbols.
         """
         states_all = np.asarray(batch_obs["states"], dtype=np.float32)
-        time_states_all = np.asarray(batch_obs["time_states"], dtype=np.float32)
         if states_all.ndim == 2:
             states_all = states_all[np.newaxis, ...]
-            time_states_all = time_states_all[np.newaxis, ...]
 
         n_items = states_all.shape[0]
         if n_items == 0:
@@ -168,7 +166,6 @@ class PPO2Evaluator:
                 end_i = min(n_items, start_i + self.eval_batch_size)
                 chunk_obs = {
                     "states": states_all[start_i:end_i],
-                    "time_states": time_states_all[start_i:end_i],
                 }
                 out = self.agent.get_action(chunk_obs, stochastic=False)
                 act_tensor = (
@@ -236,9 +233,7 @@ class PPO2Evaluator:
             )
 
         state_shape = active_slots[0].state.getStateShape()
-        time_shape = active_slots[0].state.getTimeShape()
         batch_states_np = np.zeros((max_slots, *state_shape), dtype=np.float32)
-        batch_time_np = np.zeros((max_slots, *time_shape), dtype=np.float32)
 
         with torch.no_grad():
             while active_slots:
@@ -246,11 +241,9 @@ class PPO2Evaluator:
                 for i, slot in enumerate(active_slots):
                     obs_i = slot.state.encode()
                     batch_states_np[i] = obs_i["states"]
-                    batch_time_np[i] = obs_i["time_states"]
 
                 batch_obs = {
                     "states": batch_states_np[:active_count],
-                    "time_states": batch_time_np[:active_count],
                 }
                 out = self.agent.get_action(batch_obs, stochastic=False)
                 act_tensor = (

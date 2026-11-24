@@ -8,7 +8,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from typing import Optional
 from gymnasium.spaces import Tuple as TupleSpace, Discrete, Box
-from Brain.Common.model_components import SineActivation
 from Brain.Common.ssm_tool import MixerModel
 
 # policy gradient
@@ -296,7 +295,7 @@ class MambaContinuousActorCritic(nn.Module):
           * Market stream (first d_model - portfolio_dim features) consists of causal,
             volatility-normalized, soft-clipped stationary features entering linear projection directly.
           * Portfolio stream (last portfolio_dim features: position) preserves real account state signals.
-      - Gated Temporal-Market Fusion: SineActivation (Time2Vec) + Sigmoid Gate + GELU embedding.
+      - Direct Input Projection: Linear market_embedding + Linear/GELU feature_embedding (no Time2Vec / gate fusion).
       - Temporal Backbone: MixerModel (Mamba / Mamba2 SSM, deterministic without dropout).
       - Multi-Horizon Temporal Pooling + Late Portfolio Skip Connection:
           * TemporalAttentionPool compresses [B, L, D] -> [B, 3*D] with O(D^2) parameters.
@@ -311,12 +310,10 @@ class MambaContinuousActorCritic(nn.Module):
     def __init__(
         self,
         d_model: int,
-        time_features_in: int,
         action_dim: int = 1,
         seq_dim: int = 300,
         hidden_size: int = 96,
         nlayers: int = 2,
-        time_features_out: int = 32,
         init_log_std: float = 0.0,
         portfolio_dim: int = 1,
         ssm_cfg: Optional[dict] = None,
@@ -344,16 +341,7 @@ class MambaContinuousActorCritic(nn.Module):
             f"init_log_std ({init_log_std}) must lie within [{self.log_std_min}, {self.log_std_max}]"
         )
 
-        self.time_embedding = SineActivation(
-            in_features=time_features_in, out_features=time_features_out
-        )
         self.market_embedding = nn.Linear(d_model, hidden_size)
-        self.time_emb_projection = nn.Linear(time_features_out, hidden_size)
-
-        self.gate_layer = nn.Sequential(
-            nn.Linear(hidden_size * 2, hidden_size),
-            nn.Sigmoid(),
-        )
         self.feature_embedding = nn.Sequential(
             nn.Linear(hidden_size, hidden_size),
             nn.GELU(),
@@ -423,21 +411,15 @@ class MambaContinuousActorCritic(nn.Module):
         # State-independent learnable log_std parameter
         self.log_std = nn.Parameter(torch.ones(action_dim) * init_log_std)
 
-    def forward(self, states: torch.Tensor, time_states: torch.Tensor):
-        # 1. Extract time features and project pre-normalized market + portfolio features directly
-        time_emb = self.time_embedding(time_states)
-        time_proj = self.time_emb_projection(time_emb)
-
+    def forward(self, states: torch.Tensor):
+        # 1. Project pre-normalized market + portfolio features directly
         market_emb = self.market_embedding(states)
+        fused = self.feature_embedding(market_emb)
 
-        # 2. Gated feature fusion
-        gate = self.gate_layer(torch.cat([market_emb, time_proj], dim=-1))
-        fused = self.feature_embedding(gate * market_emb + (1 - gate) * time_proj)
-
-        # 3. Mamba2 temporal backbone
+        # 2. Mamba2 temporal backbone
         out, _ = self.mixer(fused)
 
-        # 4. Multi-horizon temporal pooling + late-fusion portfolio skip connection
+        # 3. Multi-horizon temporal pooling + late-fusion portfolio skip connection
         temporal_feat = self.temporal_pool(out)  # [B, 3 * hidden_size]
         if self.portfolio_encoder is not None:
             current_portfolio = states[:, -1, self.market_dim :]  # [B, portfolio_dim]

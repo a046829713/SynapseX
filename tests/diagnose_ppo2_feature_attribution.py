@@ -4,12 +4,12 @@ Offline PPO2 input feature attribution & policy behavior diagnostic tool.
 Spec: spec/feature/ppo2_feature_attribution_diagnostics.md
 
 Analyses (100% read-only w.r.t. the checkpoint on disk, no argparse):
-  A1  Four-metric feature attribution for states (market + portfolio) and time_states:
+  A1  Four-metric feature attribution for states (13 market + 1 portfolio):
         - Raw Gradient Saliency       : mean(|dY / dx_i|)
         - Scale-Normalized Saliency   : std(x_i) * mean(|dY / dx_i|)
         - Input x Gradient            : mean(|x_i * dY / dx_i|)
         - Permutation Importance      : mean(|Y(perm_i) - Y(orig)|) over PERM_REPEATS shuffles
-        - First-Layer Weight L2 Norm  : ||W[:, i]||_2 of market_embedding / time_embedding
+        - First-Layer Weight L2 Norm  : ||W[:, i]||_2 of market_embedding
   A2  Temporal saliency profile across 300-bar lookback buckets + 50%/80% effective horizon.
   A3  Policy behavior summary (log_std, mu/action quantiles, deadzone collapse rate,
       Buy vs. Cash conditional feature means, and automated diagnostic verdicts).
@@ -129,34 +129,28 @@ def load_model_from_checkpoint(
 
     portfolio_dim = int(getattr(cfg, "PORTFOLIO_DIM", 1))
     d_model = len(BasicState.MARKET_FEATURES) + portfolio_dim
-    time_features_in = len(BasicState.STATIONARY_TIME_FEATURES)
     bars_count = int(cfg.BARS_COUNT)
 
     assert "market_embedding.weight" in state_dict, (
         "Checkpoint state_dict missing 'market_embedding.weight'"
     )
-    assert "time_embedding.w" in state_dict, (
-        "Checkpoint state_dict missing 'time_embedding.w'"
+    assert "time_embedding.w" not in state_dict and "gate_layer.0.weight" not in state_dict, (
+        "Checkpoint appears to be a legacy time_states/Time2Vec model; "
+        "current PPO2 architecture operates on pure states without time_embedding or gate_layer."
     )
     ckpt_d_model = int(state_dict["market_embedding.weight"].shape[1])
-    ckpt_time_in = int(state_dict["time_embedding.w"].shape[0])
     assert ckpt_d_model == d_model, (
         f"Checkpoint market_embedding input dim ({ckpt_d_model}) != expected d_model ({d_model}). "
         f"Check BasicState.MARKET_FEATURES ({len(BasicState.MARKET_FEATURES)}) and PORTFOLIO_DIM ({portfolio_dim})."
-    )
-    assert ckpt_time_in == time_features_in, (
-        f"Checkpoint time_embedding input dim ({ckpt_time_in}) != expected time_features_in ({time_features_in})."
     )
 
     ssm_cfg = OmegaConf.to_container(cfg.SSM_CFG, resolve=True)
     model = MambaContinuousActorCritic(
         d_model=d_model,
-        time_features_in=time_features_in,
         action_dim=1,
         seq_dim=bars_count,
         hidden_size=int(cfg.HIDDEN_SIZE),
         nlayers=int(cfg.NLAYERS),
-        time_features_out=int(cfg.TIME_FEATURES_OUT),
         init_log_std=float(getattr(cfg, "INIT_LOG_STD", 0.0)),
         portfolio_dim=portfolio_dim,
         ssm_cfg=ssm_cfg,
@@ -172,7 +166,7 @@ def load_model_from_checkpoint(
             "d_model": d_model,
             "market_dim": len(BasicState.MARKET_FEATURES),
             "portfolio_dim": portfolio_dim,
-            "time_features_in": time_features_in,
+            "time_features_in": 0,
             "bars_count": bars_count,
             "n_parameters": int(sum(p.numel() for p in model.parameters())),
         }
@@ -188,15 +182,14 @@ def sample_observation_windows(
     samples_per_symbol: int = 20,
     position_mode: str = "binary",
     seed: int = 0,
-) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any]]:
+) -> Tuple[np.ndarray, Dict[str, Any]]:
     """
     Samples real market observation windows using OriginalDataFeature + State_time_step.encode()
     to guarantee exact train/inference feature parity.
 
     Returns:
-      states_np      : float32 array of shape (N, bars_count, 14 + portfolio_dim)
-      time_states_np : float32 array of shape (N, bars_count, 6)
-      sample_meta    : metadata dict summarizing sampled symbols and counts
+      states_np   : float32 array of shape (N, bars_count, len(MARKET_FEATURES) + portfolio_dim)
+      sample_meta : metadata dict summarizing sampled symbols and counts
     """
     split_norm = str(split).strip().lower()
     assert split_norm in ("train", "test", "all"), (
@@ -268,7 +261,6 @@ def sample_observation_windows(
     )
 
     states_list: List[np.ndarray] = []
-    time_list: List[np.ndarray] = []
     used_symbols: List[str] = []
     per_symbol_counts: Dict[str, int] = {}
 
@@ -334,7 +326,6 @@ def sample_observation_windows(
                 state_encoder.position = 0.0
             obs = state_encoder.encode()
             states_list.append(obs["states"])
-            time_list.append(obs["time_states"])
 
         used_symbols.append(sym)
         per_symbol_counts[sym] = int(k_draw)
@@ -344,9 +335,7 @@ def sample_observation_windows(
     )
 
     states_np = np.stack(states_list, axis=0).astype(np.float32)
-    time_states_np = np.stack(time_list, axis=0).astype(np.float32)
     assert np.all(np.isfinite(states_np)), "Sampled states contain non-finite values"
-    assert np.all(np.isfinite(time_states_np)), "Sampled time_states contain non-finite values"
 
     sample_meta = {
         "split": split_norm,
@@ -359,7 +348,7 @@ def sample_observation_windows(
         "position_mode": pos_mode,
         "seed": int(seed),
     }
-    return states_np, time_states_np, sample_meta
+    return states_np, sample_meta
 
 
 # =============================================================================
@@ -368,7 +357,6 @@ def sample_observation_windows(
 def compute_input_gradients(
     model: MambaContinuousActorCritic,
     states_np: np.ndarray,
-    time_states_np: np.ndarray,
     device: torch.device,
     batch_size: int = 32,
 ) -> Dict[str, np.ndarray]:
@@ -378,14 +366,9 @@ def compute_input_gradients(
 
     Returns a dict of NumPy float32 arrays:
       - g_mu_states, g_v_states : (N, L, d_model)
-      - g_mu_time,   g_v_time   : (N, L, time_features_in)
       - mu, value               : (N,)
     """
     assert states_np.ndim == 3, f"Expected states_np 3D (N, L, F), got {states_np.shape}"
-    assert time_states_np.ndim == 3, f"Expected time_states_np 3D (N, L, T), got {time_states_np.shape}"
-    assert states_np.shape[:2] == time_states_np.shape[:2], (
-        f"Batch/seq mismatch: states {states_np.shape} vs time_states {time_states_np.shape}"
-    )
     assert int(batch_size) >= 1, "batch_size must be >= 1"
 
     model.eval()
@@ -398,8 +381,6 @@ def compute_input_gradients(
 
     g_mu_s_chunks: List[np.ndarray] = []
     g_v_s_chunks: List[np.ndarray] = []
-    g_mu_t_chunks: List[np.ndarray] = []
-    g_v_t_chunks: List[np.ndarray] = []
     mu_chunks: List[np.ndarray] = []
     v_chunks: List[np.ndarray] = []
 
@@ -411,33 +392,25 @@ def compute_input_gradients(
             sb_mu = torch.tensor(
                 states_np[start:end], dtype=torch.float32, device=device, requires_grad=True
             )
-            tb_mu = torch.tensor(
-                time_states_np[start:end], dtype=torch.float32, device=device, requires_grad=True
-            )
-            mu_out, _, _ = model(sb_mu, tb_mu)
+            mu_out, _, _ = model(sb_mu)
             mu_scalar = mu_out.sum()
             mu_scalar.backward()
 
             g_mu_s_chunks.append(sb_mu.grad.detach().cpu().numpy().astype(np.float32))
-            g_mu_t_chunks.append(tb_mu.grad.detach().cpu().numpy().astype(np.float32))
             mu_chunks.append(mu_out.detach().squeeze(-1).cpu().numpy().astype(np.float32))
-            del sb_mu, tb_mu, mu_out, mu_scalar
+            del sb_mu, mu_out, mu_scalar
 
             # Pass 2: Critic value gradient (independent computation graph)
             sb_v = torch.tensor(
                 states_np[start:end], dtype=torch.float32, device=device, requires_grad=True
             )
-            tb_v = torch.tensor(
-                time_states_np[start:end], dtype=torch.float32, device=device, requires_grad=True
-            )
-            _, _, v_out = model(sb_v, tb_v)
+            _, _, v_out = model(sb_v)
             v_scalar = v_out.sum()
             v_scalar.backward()
 
             g_v_s_chunks.append(sb_v.grad.detach().cpu().numpy().astype(np.float32))
-            g_v_t_chunks.append(tb_v.grad.detach().cpu().numpy().astype(np.float32))
             v_chunks.append(v_out.detach().reshape(-1).cpu().numpy().astype(np.float32))
-            del sb_v, tb_v, v_out, v_scalar
+            del sb_v, v_out, v_scalar
     finally:
         for p, flag in zip(model.parameters(), orig_req_grad):
             p.requires_grad_(flag)
@@ -445,8 +418,6 @@ def compute_input_gradients(
     out = {
         "g_mu_states": np.concatenate(g_mu_s_chunks, axis=0),
         "g_v_states": np.concatenate(g_v_s_chunks, axis=0),
-        "g_mu_time": np.concatenate(g_mu_t_chunks, axis=0),
-        "g_v_time": np.concatenate(g_v_t_chunks, axis=0),
         "mu": np.concatenate(mu_chunks, axis=0),
         "value": np.concatenate(v_chunks, axis=0),
     }
@@ -458,7 +429,6 @@ def compute_input_gradients(
 def _batched_eval_outputs(
     model: MambaContinuousActorCritic,
     states_np: np.ndarray,
-    time_states_np: np.ndarray,
     device: torch.device,
     batch_size: int = 32,
 ) -> Tuple[np.ndarray, np.ndarray]:
@@ -472,8 +442,7 @@ def _batched_eval_outputs(
         for start in range(0, n_samples, mb):
             end = min(start + mb, n_samples)
             sb = torch.as_tensor(states_np[start:end], dtype=torch.float32, device=device)
-            tb = torch.as_tensor(time_states_np[start:end], dtype=torch.float32, device=device)
-            mu_b, _, v_b = model(sb, tb)
+            mu_b, _, v_b = model(sb)
             mus.append(mu_b.squeeze(-1).cpu().numpy().astype(np.float32))
             vals.append(v_b.reshape(-1).cpu().numpy().astype(np.float32))
     return np.concatenate(mus, axis=0), np.concatenate(vals, axis=0)
@@ -492,10 +461,8 @@ def _derangement_perm(rng: np.random.Generator, n: int) -> np.ndarray:
 def compute_feature_attribution(
     model: MambaContinuousActorCritic,
     states_np: np.ndarray,
-    time_states_np: np.ndarray,
     grad_pack: Dict[str, np.ndarray],
     feature_names: Sequence[str],
-    time_feature_names: Sequence[str],
     device: torch.device,
     batch_size: int = 32,
     perm_repeats: int = 3,
@@ -503,23 +470,17 @@ def compute_feature_attribution(
 ) -> Dict[str, Any]:
     """
     A1: Computes 4-metric feature attribution + first-layer weight L2 norms
-    for every channel in states (market + portfolio) and time_states, plus
-    group-level permutation perturbations (market_all, portfolio_all, time_all).
+    for every channel in states (market + portfolio), plus
+    group-level permutation perturbations (market_all, portfolio_all).
     """
     n_samples, _, d_model = states_np.shape
-    time_in = time_states_np.shape[2]
     assert len(feature_names) == d_model, (
         f"feature_names length ({len(feature_names)}) != d_model ({d_model})"
-    )
-    assert len(time_feature_names) == time_in, (
-        f"time_feature_names length ({len(time_feature_names)}) != time_in ({time_in})"
     )
     assert int(perm_repeats) >= 1, "perm_repeats must be >= 1"
 
     g_mu_s = grad_pack["g_mu_states"]
     g_v_s = grad_pack["g_v_states"]
-    g_mu_t = grad_pack["g_mu_time"]
-    g_v_t = grad_pack["g_v_time"]
     mu0 = grad_pack["mu"]
     v0 = grad_pack["value"]
 
@@ -528,12 +489,6 @@ def compute_feature_attribution(
         w_states_l2 = (
             model.market_embedding.weight.detach().float().norm(dim=0).cpu().numpy()
         )
-        # SineActivation combines w (in_features, out-1) and w0 (in_features, 1)
-        w_time_concat = torch.cat(
-            [model.time_embedding.w.detach().float(), model.time_embedding.w0.detach().float()],
-            dim=1,
-        )
-        w_time_l2 = w_time_concat.norm(dim=1).cpu().numpy()
 
     # Gradient-based metrics for states
     s_mean = states_np.mean(axis=(0, 1))
@@ -544,16 +499,6 @@ def compute_feature_attribution(
     s_std_v = s_raw_v * s_std
     s_ixg_mu = np.abs(g_mu_s * states_np).mean(axis=(0, 1))
     s_ixg_v = np.abs(g_v_s * states_np).mean(axis=(0, 1))
-
-    # Gradient-based metrics for time_states
-    t_mean = time_states_np.mean(axis=(0, 1))
-    t_std = time_states_np.std(axis=(0, 1))
-    t_raw_mu = np.abs(g_mu_t).mean(axis=(0, 1))
-    t_raw_v = np.abs(g_v_t).mean(axis=(0, 1))
-    t_std_mu = t_raw_mu * t_std
-    t_std_v = t_raw_v * t_std
-    t_ixg_mu = np.abs(g_mu_t * time_states_np).mean(axis=(0, 1))
-    t_ixg_v = np.abs(g_v_t * time_states_np).mean(axis=(0, 1))
 
     # Permutation importance (averaged over perm_repeats deterministic shuffles)
     rng = np.random.default_rng(int(seed) + 1009)
@@ -566,46 +511,28 @@ def compute_feature_attribution(
         for perm in perms:
             sp = states_np.copy()
             sp[:, :, j] = states_np[perm, :, j]
-            mup, vp = _batched_eval_outputs(model, sp, time_states_np, device, batch_size)
+            mup, vp = _batched_eval_outputs(model, sp, device, batch_size)
             dmu_acc += float(np.abs(mup - mu0).mean())
             dv_acc += float(np.abs(vp - v0).mean())
         s_perm_mu[j] = dmu_acc / len(perms)
         s_perm_v[j] = dv_acc / len(perms)
 
-    t_perm_mu = np.zeros(time_in, dtype=np.float64)
-    t_perm_v = np.zeros(time_in, dtype=np.float64)
-    for j in range(time_in):
-        dmu_acc, dv_acc = 0.0, 0.0
-        for perm in perms:
-            tp = time_states_np.copy()
-            tp[:, :, j] = time_states_np[perm, :, j]
-            mup, vp = _batched_eval_outputs(model, states_np, tp, device, batch_size)
-            dmu_acc += float(np.abs(mup - mu0).mean())
-            dv_acc += float(np.abs(vp - v0).mean())
-        t_perm_mu[j] = dmu_acc / len(perms)
-        t_perm_v[j] = dv_acc / len(perms)
-
     # Group-level permutation perturbations
     market_dim = int(model.market_dim)
     group_perm: Dict[str, Dict[str, float]] = {}
 
-    for gname in ("market_all", "portfolio_all", "time_all"):
+    for gname in ("market_all", "portfolio_all"):
         if gname == "portfolio_all" and market_dim >= d_model:
             group_perm[gname] = {"perm_dmu": 0.0, "perm_dv": 0.0}
             continue
         dmu_acc, dv_acc = 0.0, 0.0
         for perm in perms:
+            sp = states_np.copy()
             if gname == "market_all":
-                sp = states_np.copy()
                 sp[:, :, :market_dim] = states_np[perm, :, :market_dim]
-                mup, vp = _batched_eval_outputs(model, sp, time_states_np, device, batch_size)
-            elif gname == "portfolio_all":
-                sp = states_np.copy()
-                sp[:, :, market_dim:] = states_np[perm, :, market_dim:]
-                mup, vp = _batched_eval_outputs(model, sp, time_states_np, device, batch_size)
             else:
-                tp = time_states_np[perm]
-                mup, vp = _batched_eval_outputs(model, states_np, tp, device, batch_size)
+                sp[:, :, market_dim:] = states_np[perm, :, market_dim:]
+            mup, vp = _batched_eval_outputs(model, sp, device, batch_size)
             dmu_acc += float(np.abs(mup - mu0).mean())
             dv_acc += float(np.abs(vp - v0).mean())
         group_perm[gname] = {
@@ -634,31 +561,10 @@ def compute_feature_attribution(
             }
         )
 
-    time_rows: List[Dict[str, Any]] = []
-    for i, name in enumerate(time_feature_names):
-        time_rows.append(
-            {
-                "index": i,
-                "name": str(name),
-                "stream": "time",
-                "x_mean": float(t_mean[i]),
-                "x_std": float(t_std[i]),
-                "weight_l2": float(w_time_l2[i]),
-                "raw_grad_mu": float(t_raw_mu[i]),
-                "std_grad_mu": float(t_std_mu[i]),
-                "input_x_grad_mu": float(t_ixg_mu[i]),
-                "perm_dmu": float(t_perm_mu[i]),
-                "raw_grad_v": float(t_raw_v[i]),
-                "std_grad_v": float(t_std_v[i]),
-                "input_x_grad_v": float(t_ixg_v[i]),
-                "perm_dv": float(t_perm_v[i]),
-            }
-        )
-
     return {
         "perm_repeats": int(perm_repeats),
         "states": states_rows,
-        "time_states": time_rows,
+        "time_states": [],
         "group_permutation": group_perm,
     }
 
@@ -917,15 +823,18 @@ def print_report(report: Dict[str, Any]) -> None:
             f"{r['raw_grad_v']:>9.5f} {r['std_grad_v']:>9.5f} {r['input_x_grad_v']:>9.5f} {r['perm_dv']:>9.4f}"
         )
 
-    print("\n[A1-b] Time States Attribution:")
-    print(header)
-    print("  " + "-" * (len(header) - 2))
-    for r in report["A1"]["time_states"]:
-        print(
-            f"  {r['name']:<17} {r['stream']:<9} {r['x_std']:>6.3f} {r['weight_l2']:>6.2f} | "
-            f"{r['raw_grad_mu']:>9.5f} {r['std_grad_mu']:>9.5f} {r['input_x_grad_mu']:>9.5f} {r['perm_dmu']:>9.4f} | "
-            f"{r['raw_grad_v']:>9.5f} {r['std_grad_v']:>9.5f} {r['input_x_grad_v']:>9.5f} {r['perm_dv']:>9.4f}"
-        )
+    if report["A1"]["time_states"]:
+        print("\n[A1-b] Time States Attribution:")
+        print(header)
+        print("  " + "-" * (len(header) - 2))
+        for r in report["A1"]["time_states"]:
+            print(
+                f"  {r['name']:<17} {r['stream']:<9} {r['x_std']:>6.3f} {r['weight_l2']:>6.2f} | "
+                f"{r['raw_grad_mu']:>9.5f} {r['std_grad_mu']:>9.5f} {r['input_x_grad_mu']:>9.5f} {r['perm_dmu']:>9.4f} | "
+                f"{r['raw_grad_v']:>9.5f} {r['std_grad_v']:>9.5f} {r['input_x_grad_v']:>9.5f} {r['perm_dv']:>9.4f}"
+            )
+    else:
+        print("\n[A1-b] Time States Attribution: (removed — pure states model)")
 
     gp = report["A1"]["group_permutation"]
     print("\n[A1-c] Group-Level Permutation Perturbation:")
@@ -1007,7 +916,7 @@ def run_diagnostics(
 
     device = resolve_device(device_spec)
     model, ckpt_meta = load_model_from_checkpoint(checkpoint_path, cfg, device)
-    states_np, time_states_np, sample_meta = sample_observation_windows(
+    states_np, sample_meta = sample_observation_windows(
         cfg=cfg,
         split=split,
         symbols=symbols,
@@ -1018,22 +927,18 @@ def run_diagnostics(
     )
 
     feature_names = get_state_feature_names(ckpt_meta["portfolio_dim"])
-    time_feature_names = list(BasicState.STATIONARY_TIME_FEATURES)
 
     grad_pack = compute_input_gradients(
         model=model,
         states_np=states_np,
-        time_states_np=time_states_np,
         device=device,
         batch_size=batch_size,
     )
     a1 = compute_feature_attribution(
         model=model,
         states_np=states_np,
-        time_states_np=time_states_np,
         grad_pack=grad_pack,
         feature_names=feature_names,
-        time_feature_names=time_feature_names,
         device=device,
         batch_size=batch_size,
         perm_repeats=perm_repeats,

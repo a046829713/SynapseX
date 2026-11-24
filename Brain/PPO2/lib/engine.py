@@ -86,7 +86,6 @@ class PPO2Engine:
         self.default_slippage = float(self.cfg.DEFAULT_SLIPPAGE)
         self.hidden_size = int(self.cfg.HIDDEN_SIZE)
         self.nlayers = int(self.cfg.NLAYERS)
-        self.time_features_out = int(self.cfg.TIME_FEATURES_OUT)
         self.portfolio_dim = int(self.cfg.PORTFOLIO_DIM)
         self.w1_step_return = float(self.cfg.W1_STEP_RETURN)
         self.downside_window_size = int(self.cfg.DOWNSIDE_WINDOW_SIZE)
@@ -340,9 +339,6 @@ class PPO2Engine:
             "states": spaces.Box(
                 low=-np.inf, high=np.inf, shape=dummy_state.getStateShape(), dtype=np.float32
             ),
-            "time_states": spaces.Box(
-                low=-np.inf, high=np.inf, shape=dummy_state.getTimeShape(), dtype=np.float32
-            ),
         })
         ac_space = spaces.Box(low=0.0, high=1.0, shape=(1,), dtype=np.float32)
 
@@ -361,7 +357,6 @@ class PPO2Engine:
             seq_dim=self.bars_count,
             hidden_size=self.hidden_size,
             nlayers=self.nlayers,
-            time_features_out=self.time_features_out,
             init_log_std=self.init_log_std,
             portfolio_dim=self.portfolio_dim,
             ssm_cfg=ssm_cfg,
@@ -833,7 +828,6 @@ class PPO2Engine:
         symbols = list(symbol_obs_map.keys())
         batch_obs = {
             "states": np.stack([symbol_obs_map[s][0]["states"] for s in symbols], axis=0),
-            "time_states": np.stack([symbol_obs_map[s][0]["time_states"] for s in symbols], axis=0),
         }
         prev_positions = np.array([symbol_obs_map[s][1] for s in symbols], dtype=np.float64)
         actions = evaluator.evaluate_batch_step(
@@ -855,7 +849,6 @@ class PPO2Engine:
         symbols = list(symbol_obs_map.keys())
         batch_obs = {
             "states": np.stack([symbol_obs_map[s][0]["states"] for s in symbols], axis=0),
-            "time_states": np.stack([symbol_obs_map[s][0]["time_states"] for s in symbols], axis=0),
         }
         prev_positions = np.array([symbol_obs_map[s][1] for s in symbols], dtype=np.float64)
 

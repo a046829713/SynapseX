@@ -20,7 +20,6 @@ class RolloutBuffer:
         self.gamma = gamma
         self.lam = lam
         self.states = []
-        self.time_states = []
         self.actions = []
         self.log_probs = []
         self.rewards = []
@@ -42,9 +41,6 @@ class RolloutBuffer:
         s_data = state["states"]
         if torch.is_tensor(s_data):
             s_data = s_data.cpu().numpy()
-        t_data = state["time_states"]
-        if torch.is_tensor(t_data):
-            t_data = t_data.cpu().numpy()
 
         act = action.cpu().numpy() if torch.is_tensor(action) else np.asarray(action)
         lp = logp.cpu().numpy() if torch.is_tensor(logp) else np.asarray(logp)
@@ -59,7 +55,6 @@ class RolloutBuffer:
         # 支援單環境輸入：如果維度為 scalar 或 2D state，自動擴展至 N=1 維度
         if s_data.ndim == 2:
             s_data = np.expand_dims(s_data, 0)
-            t_data = np.expand_dims(t_data, 0)
             act = np.expand_dims(act, 0)
             lp = np.reshape(lp, (1,))
             rew = np.reshape(rew, (1,))
@@ -70,7 +65,6 @@ class RolloutBuffer:
             act = np.expand_dims(act, -1)
 
         self.states.append(s_data)
-        self.time_states.append(t_data)
         self.actions.append(act)
         self.log_probs.append(lp)
         self.rewards.append(rew)
@@ -155,7 +149,6 @@ class RolloutBuffer:
             for i in range(N):
                 st = {
                     "states": self.states[t][i],
-                    "time_states": self.time_states[t][i],
                 }
                 ret = (
                     float(returns[idx])
@@ -189,9 +182,6 @@ class RolloutBuffer:
         states = torch.as_tensor(
             np.concatenate(self.states, axis=0), dtype=torch.float32
         )
-        time_states = torch.as_tensor(
-            np.concatenate(self.time_states, axis=0), dtype=torch.float32
-        )
         actions = torch.as_tensor(
             np.concatenate(self.actions, axis=0), dtype=torch.float32
         )
@@ -215,7 +205,6 @@ class RolloutBuffer:
             b_idx = indices[start_idx : start_idx + batch_size]
             yield (
                 states[b_idx],
-                time_states[b_idx],
                 actions[b_idx],
                 old_log_probs[b_idx],
                 self.returns[b_idx],
@@ -225,7 +214,6 @@ class RolloutBuffer:
 
     def clear(self):
         self.states.clear()
-        self.time_states.clear()
         self.actions.clear()
         self.log_probs.clear()
         self.rewards.clear()

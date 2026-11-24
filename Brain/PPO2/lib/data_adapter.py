@@ -177,7 +177,7 @@ class PPO2DataAdapter:
     ) -> Dict[str, np.ndarray]:
         """
         Extracts the latest observation window of length bars_count for formal live mode,
-        matching State_time_step.encode() bit-for-bit across market, portfolio, and 6-dim time features.
+        matching State_time_step.encode() bit-for-bit across market and portfolio features.
         """
         if portfolio_state is not None:
             position = float(portfolio_state.get("position", position))
@@ -196,17 +196,12 @@ class PPO2DataAdapter:
         end = n_bars
 
         info_list = list(BasicState.MARKET_FEATURES)
-        timelist = list(BasicState.STATIONARY_TIME_FEATURES)
 
         data_res = np.zeros(shape=(bars_count, len(info_list) + 1), dtype=np.float32)
-        time_res = np.zeros(shape=(bars_count, len(timelist)), dtype=np.float32)
 
         for idx, field in enumerate(info_list):
             data_res[:, idx] = getattr(prices, field)[start:end]
 
         data_res[:, len(info_list)] = pos
 
-        for idx, field in enumerate(timelist):
-            time_res[:, idx] = getattr(prices, field)[start:end]
-
-        return {"states": data_res, "time_states": time_res}
+        return {"states": data_res}

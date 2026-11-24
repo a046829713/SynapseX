@@ -17,7 +17,6 @@ class PPO2Agent:
         seq_dim: int = 300,
         hidden_size: int = 96,
         nlayers: int = 2,
-        time_features_out: int = 32,
         init_log_std: float = 0.0,
         portfolio_dim: int = 1,
         ssm_cfg: Optional[dict] = None,
@@ -54,17 +53,14 @@ class PPO2Agent:
         ).view(1, 1, -1)
 
         d_model = self.ob_space["states"].shape[1]
-        time_features_in = self.ob_space["time_states"].shape[1]
         action_dim = self.ac_space.shape[0]
 
         self.model = MambaContinuousActorCritic(
             d_model=d_model,
-            time_features_in=time_features_in,
             action_dim=action_dim,
             seq_dim=seq_dim,
             hidden_size=hidden_size,
             nlayers=nlayers,
-            time_features_out=time_features_out,
             init_log_std=init_log_std,
             portfolio_dim=portfolio_dim,
             ssm_cfg=ssm_cfg,
@@ -90,20 +86,16 @@ class PPO2Agent:
             self.ob_space, Dict
         ), "PPO2Agent 觀測空間必須為 gym.spaces.Dict"
         assert (
-            "states" in self.ob_space.spaces and "time_states" in self.ob_space.spaces
-        ), "PPO2Agent 觀測字典必須包含 'states' 與 'time_states'"
+            "states" in self.ob_space.spaces
+        ), "PPO2Agent 觀測字典必須包含 'states'"
 
     def _preprocess_obs(self, obs):
         states = torch.as_tensor(obs["states"], dtype=torch.float32, device=self.device)
-        time_states = torch.as_tensor(
-            obs["time_states"], dtype=torch.float32, device=self.device
-        )
         is_single = False
         if states.dim() == 2:
             states = states.unsqueeze(0)
-            time_states = time_states.unsqueeze(0)
             is_single = True
-        return states, time_states, is_single
+        return states, is_single
 
     def _squash_action(self, latent_u: torch.Tensor) -> torch.Tensor:
         """Bijective Sigmoid transformation from R^D onto (ac_space.low, ac_space.high)."""
@@ -139,9 +131,9 @@ class PPO2Agent:
 
     def get_action(self, obs, stochastic: bool = True) -> AgentOutput:
         self.model.eval()
-        states, time_states, is_single = self._preprocess_obs(obs)
+        states, is_single = self._preprocess_obs(obs)
         with torch.no_grad():
-            mu, std, value = self.model(states, time_states)
+            mu, std, value = self.model(states)
             dist = torch.distributions.Normal(mu, std)
             if stochastic:
                 latent_action = dist.sample()
@@ -169,7 +161,6 @@ class PPO2Agent:
     def evaluate_actions(
         self,
         states: torch.Tensor,
-        time_states: torch.Tensor,
         actions: torch.Tensor,
         return_stats: bool = False,
     ) -> Union[
@@ -178,12 +169,11 @@ class PPO2Agent:
     ]:
         self.model.train()
         states = states.to(self.device)
-        time_states = time_states.to(self.device)
         actions = actions.to(self.device)
         if actions.dim() == 1:
             actions = actions.unsqueeze(-1)
 
-        mu, std, value = self.model(states, time_states)
+        mu, std, value = self.model(states)
         dist = torch.distributions.Normal(mu, std)
 
         log_prob = self._squashed_log_prob(dist, actions)

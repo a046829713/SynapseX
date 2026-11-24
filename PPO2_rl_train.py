@@ -253,7 +253,6 @@ class PPO2:
             seq_dim=self.cfg_training.BARS_COUNT,
             hidden_size=self.cfg_training.HIDDEN_SIZE,
             nlayers=self.cfg_training.NLAYERS,
-            time_features_out=self.cfg_training.TIME_FEATURES_OUT,
             init_log_std=init_log_std,
             portfolio_dim=self.cfg_training.PORTFOLIO_DIM,
             ssm_cfg=ssm_cfg,
@@ -268,6 +267,9 @@ class PPO2:
         assert not hasattr(
             self.agent.model, "dean"
         ), "DAIN layer should be removed from PPO2 model"
+        assert not hasattr(self.agent.model, "time_embedding") and not hasattr(
+            self.agent.model, "gate_layer"
+        ), "Time2Vec and gate fusion layers should be removed from PPO2 model"
 
     def _prepare_optimizer(self):
         lr = self.cfg_training.LEARNING_RATE
@@ -309,7 +311,6 @@ class PPO2:
                 break
             for (
                 states_b,
-                time_states_b,
                 actions_b,
                 old_log_probs_b,
                 returns_b,
@@ -317,7 +318,6 @@ class PPO2:
                 old_values_b,
             ) in self.buffer.get_batches(batch_size=batch_size, shuffle=True):
                 states_b = states_b.to(self.device)
-                time_states_b = time_states_b.to(self.device)
                 actions_b = actions_b.to(self.device)
                 old_log_probs_b = old_log_probs_b.to(self.device)
                 returns_b = returns_b.to(self.device)
@@ -325,7 +325,7 @@ class PPO2:
                 old_values_b = old_values_b.to(self.device)
 
                 log_probs, entropy, values, stats = self.agent.evaluate_actions(
-                    states_b, time_states_b, actions_b, return_stats=True
+                    states_b, actions_b, return_stats=True
                 )
 
                 # Ratio
@@ -518,7 +518,6 @@ class PPO2:
                         trunc_indices = np.where(is_trunc)[0]
                         trunc_obs = {
                             "states": next_obs["states"][trunc_indices],
-                            "time_states": next_obs["time_states"][trunc_indices],
                         }
                         with torch.no_grad():
                             trunc_out = self.agent.get_action(
@@ -584,7 +583,6 @@ class PPO2:
                             current_symbols[i] = next_sym
                             new_obs_i = self.vec_env.reset_at(i, symbol=next_sym)
                             obs["states"][i] = new_obs_i["states"]
-                            obs["time_states"][i] = new_obs_i["time_states"]
                             episode_rewards[i] = 0.0
                             episode_cost[i] = 0.0
                             episode_trades[i] = 0

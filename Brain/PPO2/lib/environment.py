@@ -205,11 +205,10 @@ class State_time_step(BasicState):
 
     def encode(self):
         """
-        Encodes observation dict {"states": data_res, "time_states": time_res}
+        Encodes observation dict {"states": data_res} (13 market + 1 position = 14 dims)
         using vectorized NumPy slicing without look-ahead bias.
         """
         data_res = np.zeros(shape=self.getStateShape(), dtype=np.float32)
-        time_res = np.zeros(shape=self.getTimeShape(), dtype=np.float32)
 
         start = self._offset - self.bars_count
         end = self._offset
@@ -219,10 +218,7 @@ class State_time_step(BasicState):
 
         data_res[:, len(self.info_list)] = self.position
 
-        for idx, field in enumerate(self.timelist):
-            time_res[:, idx] = getattr(self._prices, field)[start:end]
-
-        return {"states": data_res, "time_states": time_res}
+        return {"states": data_res}
 
 
 class BaseTradingEnv(gym.Env, ABC):
@@ -243,12 +239,6 @@ class BaseTradingEnv(gym.Env, ABC):
                     low=-np.inf,
                     high=np.inf,
                     shape=self._state.getStateShape(),
-                    dtype=np.float32,
-                ),
-                "time_states": spaces.Box(
-                    low=-np.inf,
-                    high=np.inf,
-                    shape=self._state.getTimeShape(),
                     dtype=np.float32,
                 ),
             }
@@ -287,7 +277,6 @@ class BaseTradingEnv(gym.Env, ABC):
         if isinstance(self._state, State_time_step):
             return {
                 "data_input_size": self._state.getStateShape()[1],
-                "time_input_size": self._state.getTimeShape()[1],
                 "action_space_dim": self.action_space.shape[0],
             }
         return {}
@@ -488,7 +477,6 @@ class SubprocVecEnv:
     def _stack_obs(self, obs_list):
         return {
             "states": np.stack([o["states"] for o in obs_list], axis=0),
-            "time_states": np.stack([o["time_states"] for o in obs_list], axis=0),
         }
 
     def reset(self, symbols: Optional[List[Optional[str]]] = None):

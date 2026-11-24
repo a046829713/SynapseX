@@ -92,7 +92,6 @@ def collect_rollouts(ppo: PPO2, n_rollouts: int):
             idx = np.where(is_trunc)[0]
             trunc_obs = {
                 "states": next_obs["states"][idx],
-                "time_states": next_obs["time_states"][idx],
             }
             with torch.no_grad():
                 tv = ppo.agent.get_action(trunc_obs, stochastic=False).value
@@ -108,7 +107,6 @@ def collect_rollouts(ppo: PPO2, n_rollouts: int):
             if done:
                 new_obs_i = ppo.vec_env.reset_at(i, symbol=ppo.symbol_queue.get_next())
                 obs["states"][i] = new_obs_i["states"]
-                obs["time_states"][i] = new_obs_i["time_states"]
 
     with torch.no_grad():
         last_values = ppo.agent.get_action(obs, stochastic=False).value.cpu()
@@ -117,7 +115,7 @@ def collect_rollouts(ppo: PPO2, n_rollouts: int):
     # Pull the full flattened dataset (one batch, unshuffled)
     dataset_size = len(ppo.buffer.advantages)
     full = next(ppo.buffer.get_batches(batch_size=dataset_size, shuffle=False))
-    keys = ("states", "time_states", "actions", "old_log_probs", "returns", "advantages", "old_values")
+    keys = ("states", "actions", "old_log_probs", "returns", "advantages", "old_values")
     data = {k: v.cpu() for k, v in zip(keys, full)}
     ppo.buffer.clear()
     return data
@@ -131,7 +129,7 @@ def take(data: Dict[str, torch.Tensor], idx: np.ndarray, device) -> Dict[str, to
 def compute_losses(ppo: PPO2, b: Dict[str, torch.Tensor], clip_eps: float):
     """Replicates the exact loss terms of PPO2.update_ppo for one minibatch."""
     log_probs, entropy, values = ppo.agent.evaluate_actions(
-        b["states"], b["time_states"], b["actions"]
+        b["states"], b["actions"]
     )
     ratio = torch.exp(log_probs - b["old_log_probs"])
     adv = b["advantages"]
@@ -303,7 +301,7 @@ def a4_counterfactual(ppo, groups, data, cfg, n_mb: int, rng) -> Dict:
     for m in range(n_mb):
         b = take(data, perm[m * bs:(m + 1) * bs], device)
         with torch.no_grad():
-            lp0, _, v0 = ppo.agent.evaluate_actions(b["states"], b["time_states"], b["actions"])
+            lp0, _, v0 = ppo.agent.evaluate_actions(b["states"], b["actions"])
         for s in strategies:
             restore()
             total_loss_backward(ppo, b, cfg)
@@ -319,7 +317,7 @@ def a4_counterfactual(ppo, groups, data, cfg, n_mb: int, rng) -> Dict:
                     if id(p) in group_of:
                         sq[group_of[id(p)]] += float((p - p0).double().pow(2).sum())
                 lp1, _, v1 = ppo.agent.evaluate_actions(
-                    b["states"], b["time_states"], b["actions"]
+                    b["states"], b["actions"]
                 )
                 log_r = lp1 - lp0
                 approx_kl = float(((log_r.exp() - 1.0) - log_r).mean())
