@@ -270,6 +270,12 @@ class PPO2:
         assert not hasattr(self.agent.model, "time_embedding") and not hasattr(
             self.agent.model, "gate_layer"
         ), "Time2Vec and gate fusion layers should be removed from PPO2 model"
+        assert (
+            self.agent.model.market_embedding.in_features == self.agent.model.market_dim
+        ), (
+            f"market_embedding must project pure market_dim ({self.agent.model.market_dim}) "
+            f"without portfolio leakage, got {self.agent.model.market_embedding.in_features}"
+        )
 
     def _prepare_optimizer(self):
         lr = self.cfg_training.LEARNING_RATE

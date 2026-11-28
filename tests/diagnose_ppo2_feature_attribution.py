@@ -138,11 +138,20 @@ def load_model_from_checkpoint(
         "Checkpoint appears to be a legacy time_states/Time2Vec model; "
         "current PPO2 architecture operates on pure states without time_embedding or gate_layer."
     )
-    ckpt_d_model = int(state_dict["market_embedding.weight"].shape[1])
-    assert ckpt_d_model == d_model, (
-        f"Checkpoint market_embedding input dim ({ckpt_d_model}) != expected d_model ({d_model}). "
-        f"Check BasicState.MARKET_FEATURES ({len(BasicState.MARKET_FEATURES)}) and PORTFOLIO_DIM ({portfolio_dim})."
+    expected_market_dim = len(BasicState.MARKET_FEATURES)
+    ckpt_market_dim = int(state_dict["market_embedding.weight"].shape[1])
+    assert ckpt_market_dim == expected_market_dim, (
+        f"Checkpoint market_embedding input dim ({ckpt_market_dim}) != expected market_dim ({expected_market_dim}). "
+        f"Legacy coupled checkpoints (in_features == d_model={d_model}) are incompatible with decoupled Mamba2 backbone."
     )
+    if portfolio_dim > 0:
+        assert "portfolio_encoder.0.weight" in state_dict, (
+            "Checkpoint state_dict missing 'portfolio_encoder.0.weight'"
+        )
+        ckpt_port_dim = int(state_dict["portfolio_encoder.0.weight"].shape[1])
+        assert ckpt_port_dim == portfolio_dim, (
+            f"Checkpoint portfolio_encoder input dim ({ckpt_port_dim}) != expected portfolio_dim ({portfolio_dim})."
+        )
 
     ssm_cfg = OmegaConf.to_container(cfg.SSM_CFG, resolve=True)
     model = MambaContinuousActorCritic(
@@ -484,13 +493,20 @@ def compute_feature_attribution(
     mu0 = grad_pack["mu"]
     v0 = grad_pack["value"]
 
-    # First-layer weight L2 norms
+    # First-layer weight L2 norms (stream-aligned: market_embedding for market, portfolio_encoder for portfolio)
     with torch.no_grad():
-        w_states_l2 = (
+        w_market_l2 = (
             model.market_embedding.weight.detach().float().norm(dim=0).cpu().numpy()
         )
+        if model.portfolio_encoder is not None:
+            w_port_l2 = (
+                model.portfolio_encoder[0].weight.detach().float().norm(dim=0).cpu().numpy()
+            )
+            w_states_l2 = np.concatenate([w_market_l2, w_port_l2], axis=0)
+        else:
+            w_states_l2 = w_market_l2
 
-    # Gradient-based metrics for states
+    # Gradient-based metrics for states (note: decoupled portfolio channels receive gradient at t=-1 only)
     s_mean = states_np.mean(axis=(0, 1))
     s_std = states_np.std(axis=(0, 1))
     s_raw_mu = np.abs(g_mu_s).mean(axis=(0, 1))
@@ -944,9 +960,10 @@ def run_diagnostics(
         perm_repeats=perm_repeats,
         seed=seed,
     )
+    market_dim = int(ckpt_meta["market_dim"])
     a2 = compute_temporal_saliency_profile(
-        g_mu_states=grad_pack["g_mu_states"],
-        g_v_states=grad_pack["g_v_states"],
+        g_mu_states=grad_pack["g_mu_states"][:, :, :market_dim],
+        g_v_states=grad_pack["g_v_states"][:, :, :market_dim],
     )
     a3 = compute_policy_behavior_summary(
         states_np=states_np,

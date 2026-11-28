@@ -291,11 +291,12 @@ class TemporalAttentionPool(nn.Module):
 class MambaContinuousActorCritic(nn.Module):
     """
     Mamba2 Continuous Action Actor-Critic Network for Financial Reinforcement Learning:
-      - Pre-Normalized Stationary Market + Portfolio Input:
+      - Decoupled Market & Portfolio Streams:
           * Market stream (first d_model - portfolio_dim features) consists of causal,
-            volatility-normalized, soft-clipped stationary features entering linear projection directly.
-          * Portfolio stream (last portfolio_dim features: position) preserves real account state signals.
-      - Direct Input Projection: Linear market_embedding + Linear/GELU feature_embedding (no Time2Vec / gate fusion).
+            volatility-normalized, soft-clipped stationary features exclusively projected into Mamba2.
+          * Portfolio stream (last portfolio_dim features: position) bypasses Mamba2 completely
+            and enters only via late-fusion portfolio_encoder to prevent constant-position DC bias.
+      - Direct Input Projection: Linear market_embedding(market_dim, hidden_size) + Linear/GELU feature_embedding (no Time2Vec / gate fusion).
       - Temporal Backbone: MixerModel (Mamba / Mamba2 SSM, deterministic without dropout).
       - Multi-Horizon Temporal Pooling + Late Portfolio Skip Connection:
           * TemporalAttentionPool compresses [B, L, D] -> [B, 3*D] with O(D^2) parameters.
@@ -325,6 +326,9 @@ class MambaContinuousActorCritic(nn.Module):
         log_std_max: float = 1.0,
     ):
         super().__init__()
+        assert portfolio_dim >= 0, (
+            f"portfolio_dim ({portfolio_dim}) must be >= 0"
+        )
         assert d_model > portfolio_dim, (
             f"d_model ({d_model}) must be greater than portfolio_dim ({portfolio_dim})"
         )
@@ -341,7 +345,9 @@ class MambaContinuousActorCritic(nn.Module):
             f"init_log_std ({init_log_std}) must lie within [{self.log_std_min}, {self.log_std_max}]"
         )
 
-        self.market_embedding = nn.Linear(d_model, hidden_size)
+        # Pure market stream projection (strictly excludes portfolio_dim to prevent
+        # constant-position DC bias from entering the Mamba2 temporal backbone)
+        self.market_embedding = nn.Linear(self.market_dim, hidden_size)
         self.feature_embedding = nn.Sequential(
             nn.Linear(hidden_size, hidden_size),
             nn.GELU(),
@@ -412,11 +418,12 @@ class MambaContinuousActorCritic(nn.Module):
         self.log_std = nn.Parameter(torch.ones(action_dim) * init_log_std)
 
     def forward(self, states: torch.Tensor):
-        # 1. Project pre-normalized market + portfolio features directly
-        market_emb = self.market_embedding(states)
+        # 1. Project pure market features only (portfolio stream bypasses Mamba2 completely)
+        market_states = states[:, :, : self.market_dim]
+        market_emb = self.market_embedding(market_states)
         fused = self.feature_embedding(market_emb)
 
-        # 2. Mamba2 temporal backbone
+        # 2. Mamba2 temporal backbone (strictly position-invariant market representation)
         out, _ = self.mixer(fused)
 
         # 3. Multi-horizon temporal pooling + late-fusion portfolio skip connection
